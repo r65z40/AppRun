@@ -25,7 +25,9 @@ type Row = {
 type Stat = { article_id: string; likes: number; comments: number };
 
 async function get<T>(path: string, signal: AbortSignal): Promise<T> {
-  const r = await fetch(`${URL}/rest/v1/${path}`, { headers: { apikey: KEY!, Authorization: `Bearer ${KEY}` }, signal });
+  // Nouvelle clé « publishable » (sb_publishable_…) : seulement dans apikey. Ancienne clé « anon » (JWT) : aussi en Bearer.
+  const headers: Record<string, string> = KEY!.startsWith('sb_') ? { apikey: KEY! } : { apikey: KEY!, Authorization: `Bearer ${KEY}` };
+  const r = await fetch(`${URL}/rest/v1/${path}`, { headers, signal });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json() as Promise<T>;
 }

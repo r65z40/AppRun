@@ -16,9 +16,9 @@ Pour voir le back office **sans rien installer**, ouvrez-le simplement : sans Su
    update public.profiles set role = 'admin'
     where id = (select id from auth.users where email = 'vous@exemple.fr');
    ```
-5. Notez trois valeurs :
-   - **Project Settings > API** : la *Project URL* et la clé *anon public* ;
-   - l'adresse de la base. Cliquez sur le bouton **Connect**, tout en haut de la page du projet. Restez sur l'onglet *Connection String* (type *URI*) et copiez l'adresse du **Session pooler**, la seule qui fonctionne depuis GitHub. Elle ressemble à :
+5. Notez trois valeurs. Elles sont toutes dans le bouton **Connect**, tout en haut de la page du projet :
+   - onglet **Framework** : la ligne `…SUPABASE_URL=https://xxxx.supabase.co` donne **l'adresse du projet**, et la ligne `…PUBLISHABLE_KEY=sb_publishable_…` donne **la clé publique**. Elle s'appelait autrefois clé *anon*, et l'ancienne clé *anon* marche aussi ;
+   - onglet **Direct (Connection string)** : choisissez la méthode **Session pooler**, la seule qui fonctionne depuis GitHub. Copiez l'adresse, qui ressemble à :
      `postgresql://postgres.abcdefgh:[YOUR-PASSWORD]@aws-0-eu-west-3.pooler.supabase.com:5432/postgres`
      Remplacez `[YOUR-PASSWORD]`, **crochets compris**, par le mot de passe de la base choisi à la création du projet. Ce n'est pas celui de votre compte Supabase. Si vous l'avez oublié, allez dans *Project Settings > Database > Reset database password*, et choisissez des lettres et des chiffres seulement : `@`, `#` ou `/` cassent l'adresse.
 
@@ -34,8 +34,8 @@ Dans le dépôt, ouvrez **Settings > Secrets and variables > Actions**.
   - `DATABASE_URL` : l'adresse `postgresql://…` de l'étape 1 ;
   - `ANTHROPIC_API_KEY` : la clé de l'étape 2.
 - Onglet **Variables** :
-  - `SUPABASE_URL` : la Project URL ;
-  - `SUPABASE_ANON_KEY` : la clé anon public ;
+  - `SUPABASE_URL` : l'adresse du projet (`https://xxxx.supabase.co`) ;
+  - `SUPABASE_ANON_KEY` : la clé publique (`sb_publishable_…`) ;
   - `AUTO_PUBLISH` (facultatif) : `1` pour publier les cartes sans relecture. Laissez cette variable vide pendant les essais.
 
 Ouvrez ensuite **Settings > Pages**. Dans *Source*, choisissez **GitHub Actions**.
@@ -75,7 +75,7 @@ Sur le web, les vibrations, les notifications et l'achat Premium ne fonctionnent
 
 ```bash
 cd app
-cp .env.example .env      # collez la Project URL et la clé anon public
+cp .env.example .env      # collez l'adresse du projet et la clé publique
 npm install
 npx expo start
 ```
