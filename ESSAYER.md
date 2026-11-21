@@ -16,9 +16,11 @@ Pour voir le back office **sans rien installer**, ouvrez-le simplement : sans Su
    update public.profiles set role = 'admin'
     where id = (select id from auth.users where email = 'vous@exemple.fr');
    ```
-5. Notez trois valeurs :
-   - **Project Settings > API** : la *Project URL* et la clé *anon public* ;
-   - **Connect** (en haut), onglet *Session pooler* : l'adresse `postgresql://…`, avec votre mot de passe à la place de `[YOUR-PASSWORD]`.
+5. Notez trois valeurs. Elles sont toutes dans le bouton **Connect**, tout en haut de la page du projet :
+   - onglet **Framework** : la ligne `…SUPABASE_URL=https://xxxx.supabase.co` donne **l'adresse du projet**, et la ligne `…PUBLISHABLE_KEY=sb_publishable_…` donne **la clé publique**. Elle s'appelait autrefois clé *anon*, et l'ancienne clé *anon* marche aussi ;
+   - onglet **Direct (Connection string)** : choisissez la méthode **Session pooler**, la seule qui fonctionne depuis GitHub. Copiez l'adresse, qui ressemble à :
+     `postgresql://postgres.abcdefgh:[YOUR-PASSWORD]@aws-0-eu-west-3.pooler.supabase.com:5432/postgres`
+     Remplacez `[YOUR-PASSWORD]`, **crochets compris**, par le mot de passe de la base choisi à la création du projet. Ce n'est pas celui de votre compte Supabase. Si vous l'avez oublié, allez dans *Project Settings > Database > Reset database password*, et choisissez des lettres et des chiffres seulement : `@`, `#` ou `/` cassent l'adresse.
 
 ## 2. La clé Claude (2 min)
 
@@ -26,17 +28,25 @@ Sur [console.anthropic.com](https://console.anthropic.com), ouvrez **API Keys > 
 
 ## 3. GitHub (5 min)
 
-Dans le dépôt, ouvrez **Settings > Secrets and variables > Actions**.
+On range 4 informations dans GitHub. Chaque lien ouvre directement le bon formulaire. Recopiez les noms exactement, en majuscules avec les tirets bas.
 
-- Onglet **Secrets** :
-  - `DATABASE_URL` : l'adresse `postgresql://…` de l'étape 1 ;
-  - `ANTHROPIC_API_KEY` : la clé de l'étape 2.
-- Onglet **Variables** :
-  - `SUPABASE_URL` : la Project URL ;
-  - `SUPABASE_ANON_KEY` : la clé anon public ;
-  - `AUTO_PUBLISH` (facultatif) : `1` pour publier les cartes sans relecture. Laissez cette variable vide pendant les essais.
+**Les 2 secrets (privés)** : ouvrez [Nouveau secret](https://github.com/r65z40/AppRun/settings/secrets/actions/new), remplissez *Name* et *Secret*, puis cliquez sur **Add secret**. Faites-le deux fois :
 
-Ouvrez ensuite **Settings > Pages**. Dans *Source*, choisissez **GitHub Actions**.
+| Name | Secret |
+|---|---|
+| `DATABASE_URL` | l'adresse `postgresql://…` de l'étape 1, avec votre mot de passe |
+| `ANTHROPIC_API_KEY` | la clé Claude de l'étape 2 (`sk-ant-…`) |
+
+**Les variables (publiques)** : ouvrez [Nouvelle variable](https://github.com/r65z40/AppRun/settings/variables/actions/new), remplissez *Name* et *Value*, puis cliquez sur **Add variable**. Faites-le deux fois :
+
+| Name | Value |
+|---|---|
+| `SUPABASE_URL` | l'adresse du projet (`https://xxxx.supabase.co`) |
+| `SUPABASE_ANON_KEY` | la clé publique (`sb_publishable_…`) |
+
+Facultatif : une variable `AUTO_PUBLISH` réglée sur `1` publie les cartes sans relecture. Laissez-la de côté pendant les essais.
+
+**Pages** : ouvrez [Settings > Pages](https://github.com/r65z40/AppRun/settings/pages). Si la page propose « Use a suggested workflow », c'est déjà bon, ne cliquez sur rien. Sinon, dans *Source*, choisissez **GitHub Actions**.
 
 ## 4. Mettre l'app web et le back office en ligne
 
@@ -73,7 +83,7 @@ Sur le web, les vibrations, les notifications et l'achat Premium ne fonctionnent
 
 ```bash
 cd app
-cp .env.example .env      # collez la Project URL et la clé anon public
+cp .env.example .env      # collez l'adresse du projet et la clé publique
 npm install
 npx expo start
 ```
