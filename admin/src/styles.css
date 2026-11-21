@@ -84,9 +84,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--violet); ou
 @keyframes fade { from { opacity: 0; } }
 .modal { background: var(--night2); border: 1px solid var(--line); border-radius: 22px; width: min(1080px, 100%); max-height: calc(100vh - 32px); display: grid; grid-template-columns: 1fr 340px; overflow: hidden; animation: rise .35s cubic-bezier(.32,.72,0,1); }
 @keyframes rise { from { transform: translateY(16px); opacity: 0; } }
-.form { padding: 24px; overflow: auto; display: grid; gap: 12px; align-content: start; }
+.form { padding: 24px; overflow: auto; min-height: 0; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); display: grid; gap: 12px; align-content: start; }
 .fact { display: grid; gap: 8px; padding: 12px; border-radius: 14px; background: var(--surface); }
-.preview { border-left: 1px solid var(--line); padding: 20px; display: flex; flex-direction: column; gap: 14px; overflow: auto; }
+.preview { border-left: 1px solid var(--line); padding: 20px; display: flex; flex-direction: column; gap: 14px; overflow: auto; min-height: 0; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); }
 .pfoot { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; } .pfoot .warn { width: 100%; }
 .phone { position: relative; aspect-ratio: 9/18; border-radius: 30px; overflow: hidden; background: linear-gradient(160deg, #3a2a8f, #0e0b1f); background-size: cover; background-position: center; border: 6px solid #000; flex-shrink: 0; }
 .phone .veil { position: absolute; inset: 0; backdrop-filter: blur(6px); background: linear-gradient(180deg, rgba(40,24,110,0.35), rgba(14,11,31,0.92) 70%); }
@@ -103,7 +103,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--violet); ou
   .shell { grid-template-columns: minmax(0, 1fr); } .side { min-width: 0; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; }
   .side nav { display: flex; overflow-x: auto; width: 100%; min-width: 0; order: 3; } .side nav button { white-space: nowrap; flex: none; } .who { margin: 0 0 0 auto; }
-  .modal { grid-template-columns: 1fr; } .preview { border-left: 0; border-top: 1px solid var(--line); }
+  .modal { grid-template-columns: 1fr; overflow: auto; } .form, .preview { max-height: none; overflow: visible; } .preview { border-left: 0; border-top: 1px solid var(--line); }
   .phone { max-width: 260px; }
   .card { flex-wrap: wrap; align-items: flex-start; } .card .body { flex: 1 1 calc(100% - 50px); } .card .btns { width: 100%; justify-content: flex-start; padding-left: 42px; }
   .row2, .row3 { grid-template-columns: 1fr; }
