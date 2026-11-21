@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, ENGINE_URL, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, ENGINE_URL, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'edition' | 'flash' | 'engine' | 'sources' | 'moderation' | 'team';
-const PAGES: [Page, string][] = [['edition', 'Édition'], ['flash', 'Dernière minute'], ['engine', 'Moteur'], ['sources', 'Sources'], ['moderation', 'Modération'], ['team', 'Équipe']];
+type Page = 'edition' | 'flash' | 'engine' | 'sources' | 'moderation' | 'team' | 'settings';
+const PAGES: [Page, string][] = [['edition', 'Édition'], ['flash', 'Dernière minute'], ['engine', 'Moteur'], ['sources', 'Sources'], ['moderation', 'Modération'], ['team', 'Équipe'], ['settings', 'Réglages']];
 const LIMITS = { title: 60, key: 140, fact: 90, summary: 280 };
 const SUMMARY_HEADS = ['Contexte', 'Ce qui change', 'Et après'];
 
@@ -40,7 +40,7 @@ export default function App() {
       <aside className="side">
         <div className="logo"><Glyph /> TITRE <span>back office</span></div>
         <nav>
-          {PAGES.filter(([p]) => p !== 'team' || me.role === 'admin').map(([p, l]) => (
+          {PAGES.filter(([p]) => (p !== 'team' && p !== 'settings') || me.role === 'admin').map(([p, l]) => (
             <button key={p} className={page === p ? 'on' : ''} onClick={() => setPage(p)}>{l}</button>
           ))}
         </nav>
@@ -57,6 +57,7 @@ export default function App() {
         {page === 'sources' && <SourcesPage say={say} />}
         {page === 'moderation' && <ModerationPage say={say} />}
         {page === 'team' && me.role === 'admin' && <TeamPage say={say} me={me} />}
+        {page === 'settings' && me.role === 'admin' && <SettingsPage say={say} />}
       </main>
       {toast ? <div className="toast">{toast}</div> : null}
     </div>
@@ -79,16 +80,35 @@ function Login({ onIn }: { onIn: () => void }) {
   const [pw, setPw] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [first, setFirst] = useState(false); // installation : aucun administrateur encore
+  const [sent, setSent] = useState(false);
+  useEffect(() => { api.needsAdmin().then(setFirst).catch(() => {}); }, []);
+  const submit = async () => {
+    setBusy(true);
+    const m = first ? await api.signUp(email, pw) : await api.signIn(email, pw);
+    setBusy(false);
+    if (m === 'confirm') return setSent(true);
+    m ? setErr(m) : onIn();
+  };
+  if (sent) return (
+    <div className="center"><div className="panel narrow">
+      <div className="logo big"><Glyph /> TITRE</div>
+      <h1>Vérifiez votre boîte mail</h1>
+      <p className="muted">Supabase vous a envoyé un lien de confirmation à {email}. Cliquez dessus, puis revenez ici pour vous connecter.</p>
+      <button className="btn primary" onClick={() => { setSent(false); setFirst(false); }}>J'ai confirmé, me connecter</button>
+    </div></div>
+  );
   return (
     <div className="center">
-      <form className="panel narrow" onSubmit={async (e) => { e.preventDefault(); setBusy(true); const m = await api.signIn(email, pw); setBusy(false); m ? setErr(m) : onIn(); }}>
+      <form className="panel narrow" onSubmit={async (e) => { e.preventDefault(); await submit(); }}>
         <div className="logo big"><Glyph /> TITRE</div>
-        <h1>Back office</h1>
+        <h1>{first ? 'Bienvenue' : 'Back office'}</h1>
+        {first ? <p className="muted">La base est installée. Créez le compte administrateur : c'est le premier compte, il aura tous les droits.</p> : null}
         {api.demo ? <p className="demo">Mode démo : aucune base n'est branchée. Cliquez sur « Se connecter » pour essayer avec des données fictives.</p> : null}
         <label>Adresse e-mail<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required={!api.demo} autoComplete="username" /></label>
         <label>Mot de passe<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} required={!api.demo} autoComplete="current-password" /></label>
         {err ? <p className="error">{err}</p> : null}
-        <button className="btn primary" disabled={busy}>{busy ? 'Connexion…' : 'Se connecter'}</button>
+        <button className="btn primary" disabled={busy}>{busy ? 'Un instant…' : first ? 'Créer le compte administrateur' : 'Se connecter'}</button>
       </form>
     </div>
   );
@@ -326,6 +346,76 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
 const safeBold = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>');
 
 /* ---------------- Sources ---------------- */
+/* ---------------- Réglages ---------------- */
+const MODELS: [string, string][] = [['claude-opus-5-5', 'Claude Opus 5.5 (meilleure qualité)'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 (équilibré)'], ['claude-haiku-5-5', 'Claude Haiku 5.5 (le moins cher)']];
+function SettingsPage({ say }: { say: (m: string) => void }) {
+  const [list, setList] = useState<Setting[] | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const load = () => api.settings().then(setList).catch((e) => { setList([]); say(e instanceof Error ? e.message : 'Lecture impossible'); });
+  useEffect(() => { load(); }, []);
+  const get = (k: string) => list?.find((s) => s.key === k)?.value ?? '';
+  const save = async (k: string, v: string, msg = 'Réglage enregistré') => {
+    try { await api.setSetting(k, v); setDraft((d) => ({ ...d, [k]: '' })); await load(); say(msg); }
+    catch (e) { say(e instanceof Error ? e.message : 'Enregistrement impossible'); }
+  };
+  const Key = ({ k, label, help, link }: { k: string; label: string; help: string; link: [string, string] }) => (
+    <div className="setting">
+      <div>
+        <b>{label}</b> {get(k) ? <span className="pill published">Enregistrée {get(k)}</span> : <span className="pill rejected">Manquante</span>}
+        <p className="muted small">{help} <a href={link[0]} target="_blank" rel="noreferrer">{link[1]} ↗</a></p>
+      </div>
+      <form className="setting-row" onSubmit={(e) => { e.preventDefault(); if (draft[k]?.trim()) save(k, draft[k], 'Clé enregistrée'); }}>
+        <input type="password" autoComplete="off" placeholder={get(k) ? 'Coller une nouvelle clé pour la remplacer' : 'Coller la clé ici'} value={draft[k] ?? ''} onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} />
+        <button className="btn primary" disabled={!draft[k]?.trim()}>Enregistrer</button>
+        {get(k) ? <button type="button" className="btn ghost" onClick={() => save(k, '', 'Clé effacée')}>Effacer</button> : null}
+      </form>
+    </div>
+  );
+  const Toggle = ({ k, label, help, def }: { k: string; label: string; help: string; def: boolean }) => {
+    const on = get(k) ? get(k) === '1' : def;
+    return (
+      <label className="setting toggle">
+        <div><b>{label}</b><p className="muted small">{help}</p></div>
+        <input type="checkbox" checked={on} onChange={(e) => save(k, e.target.checked ? '1' : '0')} />
+      </label>
+    );
+  };
+  if (!list) return <p className="muted">Chargement…</p>;
+  return (
+    <>
+      <header className="head">
+        <div>
+          <div className="eyebrow">Réglages</div>
+          <h1>Installation et moteur</h1>
+          <p className="muted">Tout se règle ici. Le moteur relit ces réglages à chaque passage : pas besoin de toucher à GitHub. Les clés sont gardées dans la base et ne sont plus jamais affichées en entier.</p>
+        </div>
+      </header>
+      <section className="panel settings">
+        <h2>Clés</h2>
+        {Key({ k: "ANTHROPIC_API_KEY", label: "Clé Claude", help: "Pour choisir les sujets et écrire les cartes. Elle commence par sk-ant-.", link: ['https://console.anthropic.com/settings/keys', 'Créer une clé'] })}
+        {Key({ k: "PEXELS_API_KEY", label: "Clé Pexels (photos)", help: "Facultatif. Une vraie photo libre de droits par article ; sans clé, les photos d'ambiance de l'app.", link: ['https://www.pexels.com/api/', 'Créer une clé gratuite'] })}
+      </section>
+      <section className="panel settings">
+        <h2>Édition du matin</h2>
+        <div className="setting">
+          <div><b>Modèle Claude</b><p className="muted small">Opus écrit le mieux ; Sonnet et Haiku coûtent nettement moins cher.</p></div>
+          <select value={get('TITRE_MODEL') || 'claude-opus-5-5'} onChange={(e) => save('TITRE_MODEL', e.target.value)}>{MODELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        </div>
+        <div className="setting">
+          <div><b>Sujets par rubrique</b><p className="muted small">Nombre maximum de cartes écrites par rubrique et par édition.</p></div>
+          <select value={get('PER_RUBRIC') || '8'} onChange={(e) => save('PER_RUBRIC', e.target.value)}>{[4, 6, 8, 10, 12, 16].map((n) => <option key={n} value={String(n)}>{n}</option>)}</select>
+        </div>
+        {Toggle({ k: "AUTO_PUBLISH", label: "Publier sans relecture", help: "Les cartes sans alerte sont mises en ligne directement, ainsi que l'édition. Pratique pendant les essais.", def: false })}
+      </section>
+      <section className="panel settings">
+        <h2>Dernière minute</h2>
+        {Toggle({ k: "FLASH_ENABLED", label: "Activée", help: "Le moteur cherche les infos majeures toutes les 20 minutes, de 6 h à 23 h.", def: true })}
+        {Toggle({ k: "FLASH_AUTO_PUBLISH", label: "Publier sans relecture", help: "Sinon, les infos arrivent masquées et vous les mettez en ligne depuis la page Dernière minute.", def: true })}
+      </section>
+    </>
+  );
+}
+
 /* ---------------- Moteur ---------------- */
 function EnginePage() {
   const [runs, setRuns] = useState<EngineRun[] | null>(null);

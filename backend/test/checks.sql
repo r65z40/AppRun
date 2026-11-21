@@ -30,7 +30,16 @@ select (:vus = 1) as ok \gset
 \echo ÉCHEC  info publiée non visible
 \endif
 -- 4. Un lecteur ne peut pas modifier une info, un membre de l'équipe si
+-- Le tout premier compte devient administrateur (installation), les suivants sont lecteurs.
+insert into auth.users (id) values ('00000000-0000-0000-0000-0000000000ad');
 insert into auth.users (id) values ('00000000-0000-0000-0000-000000000001'), ('00000000-0000-0000-0000-000000000002');
+select (select role from profiles where id = '00000000-0000-0000-0000-0000000000ad') = 'admin'
+   and (select role from profiles where id = '00000000-0000-0000-0000-000000000001') = 'reader' as ok \gset
+\if :ok
+\echo OK  premier compte = administrateur, les suivants = lecteurs
+\else
+\echo ÉCHEC  rôle du premier compte
+\endif
 update profiles set pseudo = 'lecteur' where id = '00000000-0000-0000-0000-000000000001';
 update profiles set pseudo = 'redac', role = 'editor' where id = '00000000-0000-0000-0000-000000000002';
 set role authenticated;
@@ -93,4 +102,27 @@ select count(*) filter (where kind = 'edition' and status = 'ok') = 1 and count(
 \echo OK  journal du moteur : 1 édition + 2 dernière minute, avec leurs lignes
 \else
 \echo ÉCHEC  journal du moteur incomplet
+\endif
+
+-- Réglages : invisibles pour un lecteur, modifiables par l'administrateur, clés masquées.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001';
+\set ON_ERROR_STOP off
+select public.set_setting('ANTHROPIC_API_KEY', 'sk-ant-pirate');
+select count(*) from public.app_settings;
+\set ON_ERROR_STOP on
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000ad';
+select public.set_setting('ANTHROPIC_API_KEY', 'sk-ant-test-1234');
+select value = '••••1234' as ok from public.admin_settings() where key = 'ANTHROPIC_API_KEY' \gset
+reset role;
+\if :ok
+\echo OK  réglages : refusés au lecteur, clé enregistrée par l’admin et affichée masquée
+\else
+\echo ÉCHEC  réglages
+\endif
+select count(*) = 1 and bool_and(value = 'sk-ant-test-1234') as ok from public.app_settings \gset
+\if :ok
+\echo OK  réglages : la clé du lecteur n’a pas été enregistrée
+\else
+\echo ÉCHEC  un lecteur a pu écrire un réglage
 \endif

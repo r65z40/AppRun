@@ -7,11 +7,12 @@
  *
  * Usage : npm run engine -- [--date 2026-11-22] [--fixtures test/feeds] [--per-rubric 8]
  */
+import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
 import { findPhoto, pexelsOn } from './pexels.js';
-import { MODEL, checkCard, selectStories, writeCard, type Item, type Story } from './ai.js';
+import { model, checkCard, selectStories, writeCard, type Item, type Story } from './ai.js';
 
 const args = process.argv.slice(2);
 const arg = (k: string) => {
@@ -42,7 +43,7 @@ async function main() {
 }
 
 async function edition() {
-  log(`Édition du ${DATE} · modèle ${MODEL}${process.env.MOCK_AI === '1' ? ' (mode test, sans IA)' : ''}`);
+  log(`Édition du ${DATE} · modèle ${model()}${process.env.MOCK_AI === '1' ? ' (mode test, sans IA)' : ''}`);
 
   const ed = await q<{ status: string }>('select status from editions where date = $1', [DATE]);
   if (ed[0]?.status === 'published' && !args.includes('--force')) {
@@ -105,7 +106,7 @@ async function edition() {
         const r = fresh[f.item_number - 1] ?? fresh[its[0].n - 1];
         return { text: f.text, source: r.source, url: r.link };
       });
-      const photo = pexelsOn ? await findPhoto(card.photo_query).catch((e) => { log(`   photo introuvable (${e instanceof Error ? e.message : e})`); return null; }) : null;
+      const photo = pexelsOn() ? await findPhoto(card.photo_query).catch((e) => { log(`   photo introuvable (${e instanceof Error ? e.message : e})`); return null; }) : null;
       const publish = AUTO_PUBLISH && issues.length === 0;
       await q(
         `insert into articles (edition_date, rubric_id, status, rank, importance, essential, title, key_sentence, facts, summary,
@@ -115,13 +116,13 @@ async function edition() {
           DATE, s.rubric, publish ? 'published' : 'draft', (ranks[s.rubric] = (ranks[s.rubric] ?? 0) + 1) - 1,
           s.importance, s.essential, card.title.slice(0, 90), card.key_sentence, JSON.stringify(facts),
           JSON.stringify([card.summary.context, card.summary.change, card.summary.next]), card.photo_tag,
-          its.map((i) => fresh[i.n - 1].id), issues, MODEL, publish ? new Date() : null, photo?.url ?? null, photo?.credit ?? null,
+          its.map((i) => fresh[i.n - 1].id), issues, model(), publish ? new Date() : null, photo?.url ?? null, photo?.credit ?? null,
         ],
       );
       written++;
       if (issues.length) flagged++;
       log(`   ✓ [${s.rubric}] ${card.title}${issues.length ? `  ⚠ ${issues.join(', ')}` : ''}`);
-      cards.push({ rubric: s.rubric, title: card.title, issues, photo: photo ? `${card.photo_query} → ${photo.credit}` : pexelsOn ? `${card.photo_query} → aucune photo` : undefined } as never);
+      cards.push({ rubric: s.rubric, title: card.title, issues, photo: photo ? `${card.photo_query} → ${photo.credit}` : pexelsOn() ? `${card.photo_query} → aucune photo` : undefined } as never);
     } catch (e) {
       failed++;
       log(`   ✗ [${s.rubric}] ${s.label} : ${e instanceof Error ? e.message : e}`);
@@ -135,7 +136,7 @@ async function edition() {
   }));
 
   log('4/4 Édition');
-  const stats = { fetched, window: raws.length, items: items.length, stories: stories.length, written, flagged, failed, model: MODEL };
+  const stats = { fetched, window: raws.length, items: items.length, stories: stories.length, written, flagged, failed, model: model() };
   await q(
     `update editions set status = $2, stats = $3, published_at = case when $2 = 'published' then now() else published_at end where date = $1`,
     [DATE, AUTO_PUBLISH ? 'published' : 'ready', JSON.stringify(stats)],

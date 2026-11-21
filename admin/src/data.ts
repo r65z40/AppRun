@@ -40,6 +40,7 @@ export type EngineRun = {
     flashes?: { title: string; sources: string[]; rejected?: string }[];
   };
 };
+export type Setting = { key: string; value: string; is_set: boolean; updated_at: string };
 export type Me = { id: string; email: string; role: Role };
 
 export const RUBRICS: Record<string, string> = { france: 'France', monde: 'Monde', eco: 'Éco', tech: 'Tech', sport: 'Sport', culture: 'Culture' };
@@ -49,6 +50,12 @@ export interface Api {
   demo: boolean;
   me(): Promise<Me | null>;
   signIn(email: string, password: string): Promise<string | null>;
+  /** Installation : vrai tant qu'aucun administrateur n'existe. */
+  needsAdmin(): Promise<boolean>;
+  /** Crée un compte. Renvoie un message d'erreur, 'confirm' si l'adresse doit être confirmée, ou null. */
+  signUp(email: string, password: string): Promise<string | null>;
+  settings(): Promise<Setting[]>;
+  setSetting(key: string, value: string): Promise<void>;
   signOut(): Promise<void>;
   editions(): Promise<Edition[]>;
   articles(date: string): Promise<Article[]>;
@@ -106,6 +113,19 @@ function supabaseApi(sb: SupabaseClient): Api {
     async signIn(email, password) {
       const { error } = await sb.auth.signInWithPassword({ email, password });
       return error ? 'Adresse ou mot de passe incorrect.' : null;
+    },
+    async needsAdmin() {
+      const { data, error } = await sb.rpc('needs_admin');
+      return !error && data === true;
+    },
+    async signUp(email, password) {
+      const { data, error } = await sb.auth.signUp({ email, password });
+      if (error) return error.message.includes('Password') ? 'Mot de passe trop court (6 caractères minimum).' : error.message;
+      return data.session ? null : 'confirm';
+    },
+    settings: async () => ok(await sb.rpc('admin_settings')) as Setting[],
+    async setSetting(key, value) {
+      ok(await sb.rpc('set_setting', { k: key, v: value }));
     },
     async signOut() {
       await sb.auth.signOut();

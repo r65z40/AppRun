@@ -15,10 +15,9 @@ Pour la rédaction : valider l'édition du jour, gérer les sources, modérer le
 4. Pour le brancher : **Settings > Secrets and variables > Actions > Variables** : `SUPABASE_URL` et `SUPABASE_ANON_KEY`, puis relancer le workflow.
 
 ## Premier accès
-1. Supabase > **Authentication > Users > Add user** : créez votre compte (e-mail + mot de passe).
-2. Supabase > **SQL Editor** :
-   `update public.profiles set role = 'admin', pseudo = 'fen' where id = (select id from auth.users where email = 'votre@email.fr');`
-3. Connectez-vous au back office. Ajoutez ensuite la rédaction depuis la page Équipe.
+1. Ouvrez le back office : la première fois, il propose **Créer le compte administrateur**. Le premier compte créé devient administrateur.
+2. Page **Réglages** (administrateurs seulement) : clés Claude et Pexels, modèle, sujets par rubrique, publication sans relecture, Dernière minute. Les clés sont masquées (4 derniers caractères).
+3. Ajoutez ensuite la rédaction depuis la page Équipe.
 
 ## En local
 ```bash

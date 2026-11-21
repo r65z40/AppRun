@@ -17,12 +17,17 @@ const RUBRIC_IDS = Object.keys(RUBRICS) as [RubricId, ...RubricId[]];
 /** Une info brute telle que le moteur la donne à l'IA (titre + chapô de chaque média). */
 export type Item = { n: number; source: string; title: string; description: string; publishedAt: string | null };
 
-export const MODEL = process.env.TITRE_MODEL || 'claude-opus-5-5';
+// Lu à l'usage : le réglage peut venir du back office, chargé au démarrage.
+export const model = () => process.env.TITRE_MODEL || 'claude-opus-5-5';
 const EFFORT = (process.env.TITRE_EFFORT as 'low' | 'medium' | 'high') || 'medium';
 const MOCK = process.env.MOCK_AI === '1';
 
 let client: Anthropic | null = null;
-const api = () => (client ??= new Anthropic());
+const api = () => {
+  if (!client && !process.env.ANTHROPIC_API_KEY)
+    throw new Error('Clé Claude manquante : collez-la dans le back office, page Réglages.');
+  return (client ??= new Anthropic());
+};
 
 /* ---------- Étape 1 : choisir et regrouper les sujets du jour ---------- */
 
@@ -59,7 +64,7 @@ export async function selectStories(items: Item[], perRubric: number): Promise<S
     .map((i) => `[${i.n}] (${i.source}) ${i.title}${i.description ? ' — ' + i.description.slice(0, 280) : ''}`)
     .join('\n');
   const res = await api().beta.messages.parse({
-    model: MODEL,
+    model: model(),
     max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
@@ -117,7 +122,7 @@ export async function writeCard(story: Story, items: Item[]): Promise<CardOut> {
   if (MOCK) return mockCard(story, items);
   const docs = items.map((i) => `[${i.n}] ${i.source}${i.publishedAt ? ` (${i.publishedAt})` : ''}\nTitre : ${i.title}\nChapô : ${i.description || '—'}`).join('\n\n');
   const res = await api().beta.messages.parse({
-    model: MODEL,
+    model: model(),
     max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
@@ -226,7 +231,7 @@ export async function selectFlashes(items: Item[], published: string[]): Promise
   if (MOCK) return mockFlashes(items, published);
   const list = items.map((i) => `[${i.n}] (${i.source}) ${i.title}${i.description ? ' — ' + i.description.slice(0, 240) : ''}`).join('\n');
   const res = await api().beta.messages.parse({
-    model: MODEL,
+    model: model(),
     max_tokens: 8000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
