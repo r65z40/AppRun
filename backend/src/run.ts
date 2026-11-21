@@ -14,7 +14,8 @@ import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
 import { findPhoto, pexelsOn } from './pexels.js';
-import { model, checkCard, selectStories, writeCard, type Item, type Story } from './ai.js';
+import { model, checkCard, selectStories, writeCard, usage, type Item, type Story } from './ai.js';
+import { cfg, snapshot } from './config.js';
 
 const args = process.argv.slice(2);
 const arg = (k: string) => {
@@ -23,9 +24,9 @@ const arg = (k: string) => {
 };
 const DATE = arg('date') ?? new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 const FIXTURES = arg('fixtures');
-const PER_RUBRIC = Number(arg('per-rubric') ?? process.env.PER_RUBRIC ?? 8);
-const AUTO_PUBLISH = process.env.AUTO_PUBLISH !== '0';
-const WINDOW_H = Number(process.env.WINDOW_HOURS ?? 30);
+const PER_RUBRIC = arg('per-rubric') ? Number(arg('per-rubric')) : cfg.perRubric();
+const AUTO_PUBLISH = cfg.autoPublish();
+const WINDOW_H = cfg.windowHours();
 const CONCURRENCY = Number(process.env.CONCURRENCY ?? 4);
 
 let J: Journal;
@@ -46,6 +47,11 @@ async function main() {
 
 async function edition() {
   log(`Édition du ${DATE} · modèle ${model()}${process.env.MOCK_AI === '1' ? ' (mode test, sans IA)' : ''}`);
+  J.details.config = snapshot('edition');
+  if (cfg.paused()) {
+    log('Moteur en pause (Réglages) : aucun passage.');
+    return J.finish('ok', 'Moteur en pause dans les réglages : rien fait.');
+  }
 
   const ed = await q<{ status: string }>('select status from editions where date = $1', [DATE]);
   if (ed[0]?.status === 'published' && !args.includes('--force')) {
@@ -82,8 +88,22 @@ async function edition() {
   }));
 
   log('2/4 Choix des sujets');
-  const stories = await selectStories(items, PER_RUBRIC);
-  log(`   ${stories.length} sujets retenus sur ${items.length} titres`);
+  const proposed = await selectStories(items, PER_RUBRIC);
+  // Réglages de la rédaction : importance et nombre de médias minimum, essentiels et total plafonnés.
+  const mediaCount = (s: Story) => new Set(s.item_numbers.map((n) => items[n - 1]?.source).filter(Boolean)).size;
+  const dropped: { label: string; why: string }[] = [];
+  let ess = 0;
+  const stories = proposed
+    .filter((s) => {
+      if (s.importance < cfg.minImportance()) return dropped.push({ label: s.label, why: `importance ${s.importance} < ${cfg.minImportance()}` }), false;
+      if (mediaCount(s) < cfg.minSources()) return dropped.push({ label: s.label, why: `${mediaCount(s)} média(s) < ${cfg.minSources()}` }), false;
+      return true;
+    })
+    .sort((a, b) => Number(b.essential) - Number(a.essential) || b.importance - a.importance)
+    .map((s) => (s.essential && ++ess > cfg.maxEssential() ? { ...s, essential: false } : s))
+    .filter((s, k) => (k < cfg.maxCards() ? true : (dropped.push({ label: s.label, why: `plafond de ${cfg.maxCards()} cartes` }), false)));
+  J.details.dropped = dropped;
+  log(`   ${proposed.length} sujets proposés par l'IA, ${stories.length} gardés selon les réglages, sur ${items.length} titres`);
   J.details.stories = stories.map((s) => ({
     label: s.label, rubric: s.rubric, importance: s.importance, essential: s.essential,
     items: s.item_numbers.map((n) => items[n - 1]).filter(Boolean).map((i) => ({ source: i.source, title: i.title })),
@@ -104,7 +124,7 @@ async function edition() {
     try {
       let card = await writeCard(s, its);
       let issues = checkCard(card, its);
-      if (issues.length) {
+      if (issues.length && cfg.autoFix()) {
         // Autocorrection : l'IA réécrit la carte en sachant ce qui n'allait pas.
         log(`   ↻ [${s.rubric}] réécriture : ${issues.join(', ')}`);
         const again = await writeCard(s, its, issues).catch(() => null);
@@ -116,7 +136,7 @@ async function edition() {
         return { text: f.text, source: r.source, url: r.link };
       });
       const photo = pexelsOn() ? await findPhoto(card.photo_query).catch((e) => { log(`   photo introuvable (${e instanceof Error ? e.message : e})`); return null; }) : null;
-      const publish = AUTO_PUBLISH && issues.length === 0;
+      const publish = AUTO_PUBLISH && (issues.length === 0 || cfg.publishFlagged()) && s.importance >= cfg.publishMinImportance();
       await q(
         `insert into articles (edition_date, rubric_id, status, rank, importance, essential, title, key_sentence, facts, summary,
                                photo_tag, raw_item_ids, review_notes, model, published_at, photo_url, photo_credit)
@@ -145,7 +165,7 @@ async function edition() {
   }));
 
   log('4/4 Édition');
-  const stats = { fetched, window: raws.length, items: items.length, stories: stories.length, written, flagged, fixed, failed, model: model() };
+  const stats = { fetched, window: raws.length, items: items.length, proposed: proposed.length, stories: stories.length, written, flagged, fixed, failed, model: model(), ai: { ...usage } };
   // L'édition passe en ligne dès qu'au moins une carte l'est (sinon elle attend la relecture).
   const live = AUTO_PUBLISH && (await q<{ n: number }>(`select count(*)::int as n from articles where edition_date = $1 and status = 'published'`, [DATE]))[0].n > 0;
   await q(

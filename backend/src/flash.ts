@@ -9,12 +9,13 @@ import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
-import { model, checkFlash, selectFlashes, type Item } from './ai.js';
+import { model, checkFlash, selectFlashes, usage, type Item } from './ai.js';
+import { cfg, snapshot } from './config.js';
 
 const args = process.argv.slice(2);
 const fx = args.indexOf('--fixtures');
 const FIXTURES = fx >= 0 ? args[fx + 1] : undefined;
-const AUTO = process.env.FLASH_AUTO_PUBLISH !== '0';
+const AUTO = cfg.flashAutoPublish();
 let J: Journal;
 const log = (...a: unknown[]) => J.log(...a);
 
@@ -32,7 +33,11 @@ async function main() {
 }
 
 async function flash() {
-  if (process.env.FLASH_ENABLED === '0') return J.finish('ok', 'Dernière minute désactivée dans les réglages.');
+  J.details.config = snapshot('flash');
+  if (cfg.paused()) return J.finish('ok', 'Moteur en pause dans les réglages : rien fait.');
+  if (!cfg.flashEnabled()) return J.finish('ok', 'Dernière minute désactivée dans les réglages.');
+  const todayCount = (await q<{ n: number }>("select count(*)::int as n from flashes where published_at > date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris'"))[0].n;
+  if (todayCount >= cfg.flashMaxPerDay()) return J.finish('ok', `Plafond atteint : ${todayCount} infos aujourd'hui (réglage : ${cfg.flashMaxPerDay()}).`);
   const fetched = await collect(FIXTURES, log);
   const used = new Set((await q<{ id: string }>("select unnest(raw_item_ids)::text as id from flashes where created_at > now() - interval '24 hours'")).map((r) => r.id));
   const raws = (await q<Raw>(
@@ -52,6 +57,7 @@ async function flash() {
   let n = 0;
   for (const f of found) {
     const issues = checkFlash(f, items);
+    if (todayCount + n >= cfg.flashMaxPerDay()) issues.push(`plafond de ${cfg.flashMaxPerDay()} infos par jour atteint`);
     if (issues.length) {
       log(`  écartée : ${f.title} (${issues.join(', ')})`);
       kept.push({ title: f.title, sources: f.item_numbers.map((k) => items[k - 1]?.source).filter(Boolean), rejected: issues.join(', ') });
@@ -62,7 +68,7 @@ async function flash() {
     await q(
       `insert into flashes (status, rubric_id, importance, title, sentence, sources, raw_item_ids, model)
        values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [AUTO ? 'published' : 'hidden', f.rubric, Math.min(10, Math.max(8, f.importance)), f.title.slice(0, 90), f.sentence.slice(0, 220), JSON.stringify(sources), its.map((r) => r.id), model()],
+      [AUTO ? 'published' : 'hidden', f.rubric, Math.min(10, Math.max(1, f.importance)), f.title.slice(0, 90), f.sentence.slice(0, 220), JSON.stringify(sources), its.map((r) => r.id), model()],
     );
     n++;
     log(`  ⚡ ${f.title}`);
@@ -70,7 +76,7 @@ async function flash() {
   }
   const summary = `${fetched} titres lus, ${items.length} dépêches récentes, ${n} info(s) publiée(s).`;
   log(`Dernière minute : ${summary}`);
-  await J.finish('ok', summary, { fetched, items: items.length, proposed: found.length, published: n });
+  await J.finish('ok', summary, { fetched, items: items.length, proposed: found.length, published: n, ai: { ...usage } });
 }
 
 main().catch((e) => { console.error(e); process.exitCode = 1; }).finally(() => pool.end());

@@ -1,3 +1,4 @@
+import { cfg, editorialNotes } from './config.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
@@ -19,7 +20,15 @@ export type Item = { n: number; source: string; title: string; description: stri
 
 // Lu à l'usage : le réglage peut venir du back office, chargé au démarrage.
 export const model = () => process.env.TITRE_MODEL || 'claude-opus-5-5';
-const EFFORT = (process.env.TITRE_EFFORT as 'low' | 'medium' | 'high') || 'medium';
+const EFFORT = () => cfg.effort();
+/** Consommation de l'IA pendant le passage (affichée dans la page Moteur). */
+export const usage = { calls: 0, input: 0, output: 0 };
+const track = <T extends { usage?: { input_tokens?: number | null; output_tokens?: number | null } }>(res: T): T => {
+  usage.calls++;
+  usage.input += res.usage?.input_tokens ?? 0;
+  usage.output += res.usage?.output_tokens ?? 0;
+  return res;
+};
 const MOCK = process.env.MOCK_AI === '1';
 
 let client: Anthropic | null = null;
@@ -52,7 +61,7 @@ Règles :
 - Un sujet = un événement précis. Deux dépêches sur le même événement vont dans le même sujet.
 - Ignore les contenus qui ne sont pas des infos : jeux, horoscopes, bons plans, publicités, programmes télé, directs sans fait nouveau, tribunes d'opinion.
 - Préfère les sujets confirmés par plusieurs médias. Une rumeur isolée n'est pas un sujet.
-- « essential » : au plus 4 sujets, ceux qu'une personne bien informée doit absolument connaître aujourd'hui.
+- « essential » : au plus MAX_ESSENTIAL sujets, ceux qu'une personne bien informée doit absolument connaître aujourd'hui.
 - Au plus PER_RUBRIC sujets par rubrique, les plus importants d'abord.
 
 Rubriques :
@@ -63,15 +72,17 @@ export async function selectStories(items: Item[], perRubric: number): Promise<S
   const list = items
     .map((i) => `[${i.n}] (${i.source}) ${i.title}${i.description ? ' — ' + i.description.slice(0, 280) : ''}`)
     .join('\n');
-  const res = await api().beta.messages.parse({
+  const res = track(await api().beta.messages.parse({
     model: model(),
     max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    system: SELECT_SYSTEM.replace('PER_RUBRIC', String(perRubric)),
-    output_config: { effort: EFFORT, format: betaZodOutputFormat(Selection) },
+    system: SELECT_SYSTEM.replace('PER_RUBRIC', String(perRubric)).replace('MAX_ESSENTIAL', String(cfg.maxEssential()))
+      + (cfg.minSources() > 1 ? `\n\nNe retiens que les sujets annoncés par au moins ${cfg.minSources()} médias différents.` : '')
+      + editorialNotes(),
+    output_config: { effort: EFFORT(), format: betaZodOutputFormat(Selection) },
     messages: [{ role: 'user', content: `Dépêches du jour :\n\n${list}` }],
-  });
+  }));
   if (res.stop_reason === 'refusal') throw new Error('Sélection refusée par le modèle');
   const out = res.parsed_output;
   if (!out) throw new Error(`Sélection illisible (stop_reason=${res.stop_reason})`);
@@ -121,15 +132,15 @@ ${Object.entries(PHOTO_TAGS).map(([k, v]) => `- ${k} : ${v}`).join('\n')}`;
 export async function writeCard(story: Story, items: Item[], fix?: string[]): Promise<CardOut> {
   if (MOCK) return mockCard(story, items);
   const docs = items.map((i) => `[${i.n}] ${i.source}${i.publishedAt ? ` (${i.publishedAt})` : ''}\nTitre : ${i.title}\nChapô : ${i.description || '—'}`).join('\n\n');
-  const res = await api().beta.messages.parse({
+  const res = track(await api().beta.messages.parse({
     model: model(),
     max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    system: WRITE_SYSTEM,
-    output_config: { effort: EFFORT, format: betaZodOutputFormat(CardSchema) },
+    system: WRITE_SYSTEM + editorialNotes(false),
+    output_config: { effort: EFFORT(), format: betaZodOutputFormat(CardSchema) },
     messages: [{ role: 'user', content: `Rubrique : ${story.rubric}\n\n${docs}${fix?.length ? `\n\nUne première version a été refusée par les contrôles automatiques : ${fix.join(' ; ')}. Réécris la carte en corrigeant ces points, sans reprendre les formulations des médias.` : ''}` }],
-  });
+  }));
   if (res.stop_reason === 'refusal') throw new Error('Carte refusée par le modèle');
   const out = res.parsed_output;
   if (!out) throw new Error(`Carte illisible (stop_reason=${res.stop_reason})`);
@@ -208,7 +219,7 @@ const Flashes = z.object({
     z.object({
       item_numbers: z.array(z.number().int()).describe('Numéros des dépêches qui annoncent ce même fait'),
       rubric: z.enum(RUBRIC_IDS),
-      importance: z.number().int().describe('8 (important) à 10 (événement majeur)'),
+      importance: z.number().int().describe('1 (mineur) à 10 (événement majeur)'),
       title: z.string().describe('Titre factuel, 60 caractères maximum'),
       sentence: z.string().describe('Le fait en une phrase : quoi, qui, où, 160 caractères maximum'),
     }),
@@ -221,7 +232,7 @@ On te donne les dépêches publiées par plusieurs médias ces deux dernières h
 Retiens UNIQUEMENT les faits nouveaux et vraiment importants pour toute la France : catastrophe, attentat, décision politique majeure, résultat d'élection, décès d'une personnalité de premier plan, événement international grave, annonce économique de grande ampleur, résultat sportif historique.
 
 Règles :
-- Le fait doit être annoncé par au moins deux médias différents dans la liste.
+- Le fait doit être annoncé par au moins MIN_SOURCES médias différents dans la liste.
 - Rien qui soit déjà dans les infos publiées aujourd'hui, sauf un développement nouveau et majeur (bilan qui change fortement, décision finale…).
 - Pas d'analyse, pas d'opinion, pas de direct sans fait nouveau, pas de faits divers locaux.
 - Écris avec tes propres mots, ton neutre, phrases courtes. Ne recopie jamais une phrase d'un média.
@@ -230,18 +241,18 @@ Règles :
 export async function selectFlashes(items: Item[], published: string[]): Promise<FlashOut[]> {
   if (MOCK) return mockFlashes(items, published);
   const list = items.map((i) => `[${i.n}] (${i.source}) ${i.title}${i.description ? ' — ' + i.description.slice(0, 240) : ''}`).join('\n');
-  const res = await api().beta.messages.parse({
+  const res = track(await api().beta.messages.parse({
     model: model(),
     max_tokens: 8000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    system: FLASH_SYSTEM,
+    system: FLASH_SYSTEM.replace('MIN_SOURCES', String(cfg.flashMinSources())) + `\n- N'en retiens aucune dont l'importance est inférieure à ${cfg.flashMinImportance()} sur 10.` + editorialNotes(),
     output_config: { effort: 'low', format: betaZodOutputFormat(Flashes) },
     messages: [{
       role: 'user',
       content: `Déjà publié aujourd'hui :\n${published.length ? published.map((t) => '- ' + t).join('\n') : '(rien)'}\n\nDépêches des deux dernières heures :\n\n${list}`,
     }],
-  });
+  }));
   if (res.stop_reason === 'refusal') throw new Error('Dernière minute refusée par le modèle');
   if (!res.parsed_output) throw new Error(`Réponse illisible (stop_reason=${res.stop_reason})`);
   return res.parsed_output.flashes;
@@ -251,8 +262,9 @@ export async function selectFlashes(items: Item[], published: string[]): Promise
 export function checkFlash(f: FlashOut, items: Item[]): string[] {
   const issues: string[] = [];
   const its = f.item_numbers.map((n) => items.find((i) => i.n === n)).filter(Boolean) as Item[];
-  if (new Set(its.map((i) => i.source)).size < 2) issues.push('un seul média');
-  if (f.importance < 8) issues.push('importance insuffisante');
+  const n = new Set(its.map((i) => i.source)).size;
+  if (n < cfg.flashMinSources()) issues.push(n === 1 ? 'un seul média' : `${n} médias seulement`);
+  if (f.importance < cfg.flashMinImportance()) issues.push('importance insuffisante');
   if (f.title.length > 70 || f.sentence.length > 200) issues.push('trop long');
   const src = its.map((i) => norm(i.title + ' ' + i.description)).join(' | ');
   const w = norm(f.sentence).split(' ');
