@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Linking, StyleSheet, Text, View, Pressable, type LayoutChangeEvent } from 'react-native';
+import { Linking, Platform, StyleSheet, Text, View, Pressable, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -197,7 +197,9 @@ export function Feed(p: FeedApi & { W: number; H: number }) {
 
   return (
     <View style={StyleSheet.absoluteFill}>
+      {/* Le geste est posé sur un cadre fixe : la rangée qui glisse sort de l'écran et ne recevrait plus les doigts. */}
       <GestureDetector gesture={pan}>
+        <View style={StyleSheet.absoluteFill}>
         <Animated.View style={[StyleSheet.absoluteFill, rowStyle]}>
           {/* Couche des photos : toutes sous tous les textes, pour un fondu propre */}
           {cols.map((col, ci) => (
@@ -215,6 +217,7 @@ export function Feed(p: FeedApi & { W: number; H: number }) {
             </ColumnStack>
           ))}
         </Animated.View>
+        </View>
       </GestureDetector>
       <Header api={p} top={insets.top} W={W} goRub={(n) => goRub(n)} />
     </View>
@@ -426,6 +429,16 @@ function LiveDot({ size }: { size: number }) {
   );
 }
 
+/** Nom de rubrique qui s'efface en approchant des bords du bandeau, au lieu d'être coupé net. */
+function TabFade({ x, w, tx, boxW, children }: { x?: number; w?: number; tx: SharedValue<number>; boxW: number; children: React.ReactNode }) {
+  const a = useAnimatedStyle(() => {
+    if (x == null || w == null || !boxW) return { opacity: 1 };
+    const d = Math.abs(x + w / 2 + tx.value - boxW / 2);
+    return { opacity: interpolate(d, [boxW * 0.3, boxW * 0.56], [1, 0.15], Extrapolation.CLAMP) };
+  });
+  return <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', gap: 7 }, a]}>{children}</Animated.View>;
+}
+
 function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; goRub: (n: number) => void }) {
   const [lay, setLay] = useState<Record<number, { x: number; w: number }>>({});
   const [boxW, setBoxW] = useState(0);
@@ -464,10 +477,10 @@ function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; 
                 accessibilityRole="tab"
                 accessibilityState={{ selected: i === api.ri }}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                <TabFade x={lay[i]?.x} w={lay[i]?.w} tx={tx} boxW={boxW}>
                   {c.id === 'flash' ? <LiveDot size={7} /> : null}
                   <Text style={[styles.rubTxt, c.id === 'flash' && flashFresh && i !== api.ri && { color: C.coral }, i === api.ri && styles.rubOn]}>{c.name}</Text>
-                </View>
+                </TabFade>
                 {i === api.ri ? <View style={styles.rubDot} /> : null}
               </Pressable>
             ))}
@@ -530,7 +543,7 @@ const styles = StyleSheet.create({
   head: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 22, gap: 10 },
   headRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logo: { color: '#b9a8ff', fontFamily: F.black, fontSize: 19, letterSpacing: -0.3, width: 62 },
-  rubs: { flex: 1, height: 36, overflow: 'hidden' },
+  rubs: { flex: 1, height: 36, overflow: 'hidden', ...(Platform.OS === 'web' ? ({ maskImage: 'linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent)', WebkitMaskImage: 'linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent)' } as object) : null) },
   rub: { height: 36, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   rubTxt: { color: C.text2, fontFamily: F.semi, fontSize: 12.5 },
   rubOn: { color: '#fff', fontFamily: F.black },
