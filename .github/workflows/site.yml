@@ -1,0 +1,65 @@
+name: Site en ligne (app web + back office)
+
+# Publie sur GitHub Pages :
+#   https://<compte>.github.io/<dépôt>/        → l'app (version web de test)
+#   https://<compte>.github.io/<dépôt>/admin/  → le back office
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', 'admin/**', '.github/workflows/site.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency: pages
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    env:
+      # Variables du dépôt (pas des secrets : la clé « anon » est faite pour être publique).
+      # Tant qu'elles sont vides, l'app et le back office s'ouvrent en mode démo.
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+            admin/package-lock.json
+
+      - name: App (version web)
+        working-directory: app
+        run: |
+          npm ci
+          npx expo export --platform web --output-dir ../site
+        env:
+          EXPO_BASE_URL: /${{ github.event.repository.name }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+
+      - name: Back office
+        working-directory: admin
+        run: |
+          npm ci
+          npm run build
+          cp -r dist ../site/admin
+        env:
+          VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          VITE_GITHUB_REPO: ${{ github.repository }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: pages
+        uses: actions/deploy-pages@v4

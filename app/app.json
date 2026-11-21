@@ -28,6 +28,20 @@
       },
       "predictiveBackGestureEnabled": false
     },
-    "plugins": ["expo-audio", "expo-font"]
+    "plugins": [
+      "expo-audio",
+      "expo-font"
+    ],
+    "web": {
+      "name": "TITRE",
+      "shortName": "TITRE",
+      "description": "L'actu ultra résumée, 80 % plus vite.",
+      "lang": "fr",
+      "themeColor": "#0E0B1F",
+      "backgroundColor": "#0E0B1F",
+      "favicon": "./assets/icon.png",
+      "display": "standalone",
+      "orientation": "portrait"
+    }
   }
 }
