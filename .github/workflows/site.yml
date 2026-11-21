@@ -17,11 +17,8 @@ permissions:
 concurrency: pages
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.pages.outputs.page_url }}
     env:
       # Variables du dépôt (pas des secrets : la clé « anon » est faite pour être publique).
       # Tant qu'elles sont vides, l'app et le back office s'ouvrent en mode démo.
@@ -61,5 +58,15 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
+  # Publication dans un job séparé (modèle officiel GitHub) : dans le même job,
+  # la publication cherchait parfois l'archive avant qu'elle soit enregistrée.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
       - id: pages
         uses: actions/deploy-pages@v4
