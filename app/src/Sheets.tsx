@@ -101,17 +101,12 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
               <Icon name="up" size={20} fill={reaction === 1 ? C.violet : 'none'} />
               <Text style={styles.footTxt}>{a.likes + (reaction === 1 ? 1 : 0)}</Text>
             </Press>
-            <Press style={styles.footBtn} onPress={() => onReact(-1)} accessibilityLabel="Je n'aime pas">
-              <Icon name="down" size={20} fill={reaction === -1 ? C.coral : 'none'} />
-              <Text style={styles.footTxt}>Bof</Text>
-            </Press>
             <Press style={styles.footBtn} onPress={onComments} accessibilityLabel="Commentaires">
               <Icon name="cmt" size={20} />
               <Text style={styles.footTxt}>{commentCount}</Text>
             </Press>
             <Press style={styles.footBtn} onPress={() => feel('light')} accessibilityLabel="Partager">
               <Icon name="share" size={20} />
-              <Text style={styles.footTxt}>Partager</Text>
             </Press>
           </View>
         </>
@@ -235,9 +230,9 @@ const styles = StyleSheet.create({
   srcList: { borderTopWidth: 1, borderColor: C.line, paddingTop: 14, gap: 12 },
   lbl: { color: C.text3, fontFamily: F.semi, fontSize: 11, letterSpacing: 1.6 },
   srcLink: { color: '#cfe0ff', fontFamily: F.regular, fontSize: 14 },
-  foot: { flexDirection: 'row', paddingHorizontal: 22, paddingTop: 10, borderTopWidth: 1, borderColor: C.line },
-  footBtn: { flex: 1, height: 52, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  footTxt: { color: C.text2, fontFamily: F.semi, fontSize: 10 },
+  foot: { flexDirection: 'row', alignItems: 'center', gap: 26, paddingHorizontal: 30, paddingTop: 12, borderTopWidth: 1, borderColor: C.line },
+  footBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, height: 44 },
+  footTxt: { color: C.text2, fontFamily: F.semi, fontSize: 14 },
   sort: { flexDirection: 'row', padding: 3, borderRadius: 12, backgroundColor: C.surface, gap: 2 },
   sortBtn: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 9 },
   sortOn: { backgroundColor: C.surface2 },

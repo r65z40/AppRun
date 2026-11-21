@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, View, useWindowDimensions } from 'react-native';
+import { AppState, Platform, Text, View, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +21,13 @@ type Overlay = null | 'bravo' | 'end' | 'settings';
 
 const DWELL_MS = 1200; // une info compte comme lue après ~1 s à l'écran
 
+// Sur ordinateur (version web), l'app s'affiche dans un cadre de téléphone au centre de la page.
+const framed = (w: number) => Platform.OS === 'web' && w > 560;
+function useFrame() {
+  const { width, height } = useWindowDimensions();
+  return framed(width) ? { width: 400, height: Math.min(height - 48, 860) } : { width, height };
+}
+
 export default function App() {
   const [loaded] = useFonts({ Archivo_400Regular, Archivo_600SemiBold, Archivo_900Black });
   useEffect(() => { initFeel(); }, []);
@@ -28,14 +35,14 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: C.night }}>
       <SafeAreaProvider>
         <StatusBar style="light" />
-        {loaded ? <Main /> : null}
+        {loaded ? <Framed><Main /></Framed> : null}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
 
 function Main() {
-  const { width: W, height: H } = useWindowDimensions();
+  const { width: W, height: H } = useFrame();
   const insets = useSafeAreaInsets();
   const [phase, setPhase] = useState<Phase>('splash');
   // La vraie édition se charge pendant l'écran de lancement (4 s au plus, sinon contenu de démo).
@@ -305,3 +312,15 @@ function Main() {
   );
 }
 
+
+function Framed({ children }: { children: React.ReactNode }) {
+  const { width } = useWindowDimensions();
+  const f = useFrame();
+  if (!framed(width)) return <>{children}</>;
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#07051a' }}>
+      <View style={{ width: f.width, height: f.height, borderRadius: 36, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>{children}</View>
+      <Text style={{ position: 'absolute', bottom: 8, color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>Version de test · sur téléphone, ajoutez-la à l'écran d'accueil</Text>
+    </View>
+  );
+}

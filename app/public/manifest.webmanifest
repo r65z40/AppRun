@@ -1,0 +1,13 @@
+{
+  "name": "TITRE",
+  "short_name": "TITRE",
+  "description": "L'actu ultra résumée, 80 % plus vite.",
+  "lang": "fr",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0E0B1F",
+  "theme_color": "#0E0B1F",
+  "icons": [{ "src": "apple-touch-icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }]
+}

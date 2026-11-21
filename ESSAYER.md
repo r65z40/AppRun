@@ -38,9 +38,11 @@ Dans le dépôt, ouvrez **Settings > Secrets and variables > Actions**.
 
 Ouvrez ensuite **Settings > Pages**. Dans *Source*, choisissez **GitHub Actions**.
 
-## 4. Mettre le back office en ligne
+## 4. Mettre l'app web et le back office en ligne
 
-Ouvrez **Actions > Back office en ligne > Run workflow**. Après environ une minute, l'adresse s'affiche dans **Settings > Pages**, du type `https://r65z40.github.io/AppRun/`. Connectez-vous avec le compte créé à l'étape 1.
+Ouvrez **Actions > Site en ligne > Run workflow**. Ensuite, la mise en ligne se refait seule à chaque modification. Après environ deux minutes, deux adresses fonctionnent :
+- `https://r65z40.github.io/AppRun/` : **l'app**, en version web de test ;
+- `https://r65z40.github.io/AppRun/admin/` : **le back office**. Connectez-vous avec le compte créé à l'étape 1.
 
 ## 5. Lancer le moteur
 
@@ -61,9 +63,13 @@ Le moteur tourne seul ensuite :
 - l'édition, chaque matin à 5 h 30 ;
 - la Dernière minute, toutes les 20 minutes de 6 h à 23 h. Vous pouvez aussi la lancer à la main avec **Actions > Dernière minute > Run workflow**.
 
-## 6. L'app sur l'iPhone
+## 6. L'app sur le téléphone
 
-Sur votre ordinateur, avec Node 22 :
+**Version web, le plus simple pour tester.** Ouvrez `https://r65z40.github.io/AppRun/` dans Safari ou Chrome, puis faites *Partager > Sur l'écran d'accueil*. L'app s'ouvre alors en plein écran, comme une vraie app. Envoyez le lien aux testeurs : ils n'ont rien à installer.
+
+Sur le web, les vibrations, les notifications et l'achat Premium ne fonctionnent pas. Ces fonctions arriveront avec la version iPhone et Android.
+
+**Version native, avec Expo Go.** Sur votre ordinateur, avec Node 22 :
 
 ```bash
 cd app
@@ -79,6 +85,6 @@ Installez **Expo Go** sur l'iPhone et scannez le QR code affiché. L'app charge 
 ### En cas de souci
 
 - **Le workflow échoue à la connexion à la base** : utilisez l'adresse du *Session pooler*, pas *Direct connection*, et vérifiez le mot de passe.
-- **Le back office affiche « Mode démo »** : les variables `SUPABASE_URL` et `SUPABASE_ANON_KEY` étaient vides lors de la mise en ligne. Relancez « Back office en ligne ».
+- **Le back office affiche « Mode démo »** : les variables `SUPABASE_URL` et `SUPABASE_ANON_KEY` étaient vides lors de la mise en ligne. Relancez « Site en ligne ».
 - **Une source est en erreur** : la page Sources affiche l'erreur. Désactivez la source ou remplacez l'adresse du flux.
 - **Vous voulez lancer le moteur depuis votre ordinateur** : allez dans `backend/`, lancez `npm install`, puis `DATABASE_URL=… ANTHROPIC_API_KEY=… npm run engine`.

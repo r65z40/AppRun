@@ -44,6 +44,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
+      - run: npx expo export --platform web --output-dir /tmp/web
   admin:
     runs-on: ubuntu-latest
     defaults:
