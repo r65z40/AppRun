@@ -5,7 +5,7 @@ L'actu ultra résumée : tout ce que vous devez savoir, sur ce qui vous intéres
 | Dossier | Contenu |
 |---|---|
 | `app/` | App iPhone/Android (Expo, React Native). Mode d'emploi : `app/LISEZMOI.md` |
-| `backend/` | Moteur de contenu et base de données (à venir) |
-| `admin/` | Back office (à venir) |
+| `backend/` | Base de données Supabase et moteur qui prépare l'édition chaque matin. Voir `backend/LISEZMOI.md` |
+| `admin/` | Back office : valider les cartes, gérer les sources, modérer, gérer l'équipe. Voir `admin/LISEZMOI.md` |
 
 Pour essayer l'app : `cd app && npm install && npx expo start`, puis scanner le QR code avec Expo Go.

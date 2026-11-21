@@ -1,0 +1,130 @@
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { demoApi } from './demo';
+
+export type Fact = { text: string; source: string; url: string };
+export type Status = 'draft' | 'published' | 'rejected';
+export type Article = {
+  id: string;
+  edition_date: string;
+  rubric_id: string;
+  status: Status;
+  rank: number;
+  importance: number;
+  essential: boolean;
+  title: string;
+  key_sentence: string;
+  facts: Fact[];
+  summary: string[];
+  photo_tag: string | null;
+  photo_url: string | null;
+  review_notes: string[];
+  model: string | null;
+  published_at: string | null;
+  created_at: string;
+};
+export type Edition = { date: string; status: 'building' | 'ready' | 'published'; published_at: string | null; stats: Record<string, unknown> };
+export type Source = { id: string; name: string; url: string; rubric_hint: string | null; active: boolean; last_fetch_at: string | null; last_error: string | null };
+export type Role = 'reader' | 'editor' | 'admin';
+export type Profile = { id: string; pseudo: string | null; role: Role; premium: boolean; created_at: string };
+export type Comment = { id: string; article_id: string; user_id: string; text: string; status: 'visible' | 'hidden'; created_at: string; article_title?: string; pseudo?: string | null };
+export type Report = { id: string; comment_id: string; reason: string | null; resolved: boolean; created_at: string; comment?: Comment };
+export type Me = { id: string; email: string; role: Role };
+
+export const RUBRICS: Record<string, string> = { france: 'France', monde: 'Monde', eco: 'Éco', tech: 'Tech', sport: 'Sport', culture: 'Culture' };
+export const PHOTO_TAGS = ['train', 'neige', 'eau', 'fjord', 'facade', 'velo', 'batiment', 'sommet', 'route', 'livre', 'lampe'];
+
+export interface Api {
+  demo: boolean;
+  me(): Promise<Me | null>;
+  signIn(email: string, password: string): Promise<string | null>;
+  signOut(): Promise<void>;
+  editions(): Promise<Edition[]>;
+  articles(date: string): Promise<Article[]>;
+  saveArticle(id: string, patch: Partial<Article>): Promise<void>;
+  saveArticles(patches: { id: string; patch: Partial<Article> }[]): Promise<void>;
+  setEdition(date: string, status: Edition['status']): Promise<void>;
+  sources(): Promise<Source[]>;
+  saveSource(s: Partial<Source> & { id?: string }): Promise<void>;
+  reports(): Promise<Report[]>;
+  resolveReport(r: Report, hide: boolean): Promise<void>;
+  comments(): Promise<Comment[]>;
+  setComment(id: string, status: Comment['status']): Promise<void>;
+  team(): Promise<Profile[]>;
+  setRole(id: string, role: Role): Promise<void>;
+  findProfile(pseudo: string): Promise<Profile | null>;
+}
+
+const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+function ok<T>(r: { data: T | null; error: { message: string } | null }): T {
+  if (r.error) throw new Error(r.error.message);
+  return r.data as T;
+}
+
+function supabaseApi(sb: SupabaseClient): Api {
+  const withNames = async (cs: Comment[]): Promise<Comment[]> => {
+    const ids = [...new Set(cs.map((c) => c.user_id))];
+    const arts = [...new Set(cs.map((c) => c.article_id))];
+    const [ps, as] = await Promise.all([
+      ids.length ? sb.from('profiles').select('id,pseudo').in('id', ids).then(ok<{ id: string; pseudo: string | null }[]>) : [],
+      arts.length ? sb.from('articles').select('id,title').in('id', arts).then(ok<{ id: string; title: string }[]>) : [],
+    ]);
+    return cs.map((c) => ({ ...c, pseudo: ps.find((p) => p.id === c.user_id)?.pseudo, article_title: as.find((a) => a.id === c.article_id)?.title }));
+  };
+  return {
+    demo: false,
+    async me() {
+      const { data } = await sb.auth.getUser();
+      if (!data.user) return null;
+      const p = await sb.from('profiles').select('role').eq('id', data.user.id).maybeSingle();
+      return { id: data.user.id, email: data.user.email ?? '', role: (p.data?.role as Role) ?? 'reader' };
+    },
+    async signIn(email, password) {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      return error ? 'Adresse ou mot de passe incorrect.' : null;
+    },
+    async signOut() {
+      await sb.auth.signOut();
+    },
+    editions: async () => sb.from('editions').select('*').order('date', { ascending: false }).limit(60).then(ok<Edition[]>),
+    articles: async (date) => sb.from('articles').select('*').eq('edition_date', date).order('rank').then(ok<Article[]>),
+    async saveArticle(id, patch) {
+      ok(await sb.from('articles').update(patch).eq('id', id));
+    },
+    async saveArticles(patches) {
+      for (const p of patches) ok(await sb.from('articles').update(p.patch).eq('id', p.id));
+    },
+    async setEdition(date, status) {
+      ok(await sb.from('editions').update({ status, published_at: status === 'published' ? new Date().toISOString() : null }).eq('date', date));
+    },
+    sources: async () => sb.from('sources').select('*').order('name').then(ok<Source[]>),
+    async saveSource(s) {
+      if (s.id) ok(await sb.from('sources').update(s).eq('id', s.id));
+      else ok(await sb.from('sources').insert(s));
+    },
+    async reports() {
+      const rs = ok(await sb.from('reports').select('*').eq('resolved', false).order('created_at', { ascending: false })) as Report[];
+      const cids = [...new Set(rs.map((r) => r.comment_id))];
+      const cs = cids.length ? await withNames(ok(await sb.from('comments').select('*').in('id', cids)) as Comment[]) : [];
+      return rs.map((r) => ({ ...r, comment: cs.find((c) => c.id === r.comment_id) }));
+    },
+    async resolveReport(r, hide) {
+      if (hide) ok(await sb.from('comments').update({ status: 'hidden' }).eq('id', r.comment_id));
+      ok(await sb.from('reports').update({ resolved: true }).eq('comment_id', r.comment_id));
+    },
+    comments: async () => withNames(ok(await sb.from('comments').select('*').order('created_at', { ascending: false }).limit(100)) as Comment[]),
+    async setComment(id, status) {
+      ok(await sb.from('comments').update({ status }).eq('id', id));
+    },
+    team: async () => sb.from('profiles').select('*').in('role', ['editor', 'admin']).order('created_at').then(ok<Profile[]>),
+    async setRole(id, role) {
+      ok(await sb.from('profiles').update({ role }).eq('id', id));
+    },
+    async findProfile(pseudo) {
+      return (ok(await sb.from('profiles').select('*').ilike('pseudo', pseudo).limit(1)) as Profile[])[0] ?? null;
+    },
+  };
+}
+
+export const api: Api = URL && KEY ? supabaseApi(createClient(URL, KEY)) : demoApi();

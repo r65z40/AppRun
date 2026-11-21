@@ -31,7 +31,8 @@ select (:vus = 1) as ok \gset
 \endif
 -- 4. Un lecteur ne peut pas modifier une info, un membre de l'équipe si
 insert into auth.users (id) values ('00000000-0000-0000-0000-000000000001'), ('00000000-0000-0000-0000-000000000002');
-insert into profiles (id, pseudo, role) values ('00000000-0000-0000-0000-000000000001', 'lecteur', 'reader'), ('00000000-0000-0000-0000-000000000002', 'redac', 'editor');
+update profiles set pseudo = 'lecteur' where id = '00000000-0000-0000-0000-000000000001';
+update profiles set pseudo = 'redac', role = 'editor' where id = '00000000-0000-0000-0000-000000000002';
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001';
 update articles set title = 'piraté';
@@ -53,5 +54,20 @@ select (:pub = :n) as ok \gset
 \echo OK  la rédaction voit et publie tous les brouillons (:n)
 \else
 \echo ÉCHEC  la rédaction ne peut pas publier
+\endif
+-- 5. Un membre de la rédaction ne peut pas se donner le rôle admin
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000002';
+\set ON_ERROR_STOP off
+update profiles set role = 'admin' where id = '00000000-0000-0000-0000-000000000002';
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001';
+update profiles set premium = true where id = '00000000-0000-0000-0000-000000000001';
+\set ON_ERROR_STOP on
+reset role;
+select (select role = 'editor' from profiles where id = '00000000-0000-0000-0000-000000000002') and (select not premium from profiles where id = '00000000-0000-0000-0000-000000000001') as ok \gset
+\if :ok
+\echo OK  ni rôle admin ni Premium gratuit sans être admin
+\else
+\echo ÉCHEC  élévation de rôle possible
 \endif
 select a.title, s.likes, s.comments from articles a join article_stats s on s.article_id = a.id order by a.rubric_id, a.rank limit 3;
