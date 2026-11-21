@@ -1,5 +1,5 @@
 // Données fictives : le back office fonctionne sans Supabase pour qu'on puisse l'essayer.
-import type { Api, Article, Comment, Edition, Flash, Profile, Report, Source } from './data';
+import type { Api, Article, Comment, EngineRun, Edition, Flash, Profile, Report, Source } from './data';
 
 const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 const yday = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date(Date.now() - 86400e3));
@@ -77,6 +77,23 @@ const SIMULATED: Article[] = [
     ['Écart de <b>2 points</b> dans les sondages', 'RFI'], ['Participation attendue au-dessus de <b>80 %</b>', 'Le Monde'], ['Résultats attendus <b>dimanche soir</b>', 'franceinfo'],
   ], ['Le vote est obligatoire au Chili depuis 2022.', 'Le nouveau président entrera en fonction en mars.', 'Le Parlement reste divisé.'], { importance: 6, photo_tag: 'sommet', review_notes: ['fait 2 : vérifier le chiffre'], created_at: new Date().toISOString() }),
 ];
+const at = (min: number) => new Date(Date.now() - min * 60000).toISOString();
+let runs: EngineRun[] = [
+  { id: 'r3', kind: 'flash', status: 'ok', started_at: at(9), finished_at: at(8), summary: '226 titres lus, 41 dépêches récentes, 1 info(s) publiée(s).', stats: {},
+    log: ['20:11:02 226 titres lus, 41 dépêches des 2 dernières heures pas encore utilisées.', "20:11:09 L'IA propose 2 info(s) majeure(s).", '20:11:09   ⚡ Séisme de magnitude 6,1 au large de la Grèce', '20:11:09   écartée : Un joueur du PSG transféré pour 90 M€ (une seule source)'],
+    details: { flashes: [{ title: 'Séisme de magnitude 6,1 au large de la Grèce', sources: ['franceinfo', 'RFI'] }, { title: 'Un joueur du PSG transféré pour 90 M€', sources: ['L’Équipe'], rejected: 'une seule source' }] } },
+  { id: 'r2', kind: 'flash', status: 'ok', started_at: at(29), finished_at: at(28), summary: '224 titres lus, 37 dépêches récentes, 0 info(s) publiée(s).', stats: {}, log: ['19:51:03 224 titres lus, 37 dépêches des 2 dernières heures pas encore utilisées.', "19:51:08 L'IA propose 0 info(s) majeure(s)."], details: { flashes: [] } },
+  { id: 'r1', kind: 'edition', status: 'ok', started_at: at(15 * 60), finished_at: at(15 * 60 - 6), summary: '412 titres lus, 318 à traiter, 7 sujets retenus, 7 cartes écrites (2 à relire, 0 échecs).', stats: {},
+    log: ['05:30:04 Édition du jour · modèle claude-opus-5-5', '05:30:05 1/4 Récupération des sources', '05:30:06   franceinfo : 30 titres', '05:30:07   Les Echos : échec (HTTP 503)', '05:30:20    412 titres lus, 318 publiés dans les 30 dernières heures, dont 318 pas encore traités', '05:30:20 2/4 Choix des sujets', '05:30:41    7 sujets retenus sur 318 titres', '05:30:41 3/4 Écriture des cartes', '05:31:02    ✓ [france] Grève SNCF : un TGV sur deux lundi', '05:31:40 Terminé : 7 cartes écrites (2 à relire, 0 échecs).'],
+    details: {
+      stories: [
+        { label: 'Grève SNCF lundi', rubric: 'france', importance: 9, essential: true, items: [{ source: 'franceinfo', title: 'Grève à la SNCF : un TGV sur deux lundi' }, { source: 'Le Monde', title: 'Les contrôleurs appelés à la grève' }] },
+        { label: 'Budget 2027 à l’Assemblée', rubric: 'france', importance: 8, essential: false, items: [{ source: 'franceinfo', title: 'Le budget adopté en première lecture' }] },
+      ],
+      left: [{ source: 'L’Équipe', title: 'Les notes du match' }, { source: 'Numerama', title: 'Le meilleur forfait mobile du moment' }],
+      cards: [{ rubric: 'france', title: 'Grève SNCF : un TGV sur deux lundi', issues: [] }, { rubric: 'sport', title: 'Le PSG s’impose à Munich', issues: ['fait 2 sans source valable'] }],
+    } },
+];
 const readers: Profile[] = [{ id: 'u0', pseudo: 'Camille_R', role: 'reader', premium: false, created_at: iso(50) }];
 
 const wait = <T>(v: T) => new Promise<T>((r) => setTimeout(() => r(structuredClone(v)), 120));
@@ -112,6 +129,7 @@ export function demoApi(): Api {
       const flagged = fresh.filter((s) => s.review_notes.length).length;
       onStep(`Terminé : ${fresh.length} brouillons ajoutés${flagged ? `, dont ${flagged} à relire` : ''}.`);
     },
+    runs: () => wait(runs),
     flashes: () => wait(flashes),
     async saveFlash(f) {
       if (f.id) flashes = flashes.map((x) => (x.id === f.id ? { ...x, ...f } : x));

@@ -13,7 +13,7 @@ import { Feed } from './src/Feed';
 import { SummarySheet, CommentsSheet } from './src/Sheets';
 import { Bravo, End, Onboarding, Settings, Splash, Toast, type OnbResult, type Prefs } from './src/Screens';
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
-import { loadEdition, loadFlashes } from './src/remote';
+import { loadEdition, loadFlashes, remoteConfigured } from './src/remote';
 import { isArticle, type Article, type Card, type Comment } from './src/types';
 
 type Phase = 'splash' | 'onb' | 'feed';
@@ -48,7 +48,9 @@ function Main() {
   // La vraie édition se charge pendant l'écran de lancement (4 s au plus, sinon contenu de démo).
   const [loaded, setLoaded] = useState(false);
   const [splashDone, setSplashDone] = useState(false);
-  useEffect(() => { loadEdition().finally(() => setLoaded(true)); }, []);
+  // Base branchée mais aucune édition publiée : on le dit, pour ne pas confondre la démo avec le vrai contenu.
+  const demoNote = useRef(false);
+  useEffect(() => { loadEdition().then((d) => { demoNote.current = !d && remoteConfigured; }).finally(() => setLoaded(true)); }, []);
   useEffect(() => { if (loaded && splashDone && phase === 'splash') setPhase('onb'); }, [loaded, splashDone]);
   const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded]);
   const [overlay, setOverlay] = useState<Overlay>(null);
@@ -118,8 +120,15 @@ function Main() {
   const showToast = useCallback((m: string) => {
     setToast(m);
     if (toastT.current) clearTimeout(toastT.current);
-    toastT.current = setTimeout(() => setToast(null), 2200);
+    toastT.current = setTimeout(() => setToast(null), m.length > 60 ? 4500 : 2200);
   }, []);
+  useEffect(() => {
+    if (phase === 'feed' && demoNote.current) {
+      demoNote.current = false;
+      const t = setTimeout(() => showToast('Aucune édition publiée pour l’instant : vous voyez le contenu de démonstration.'), 1200);
+      return () => clearTimeout(t);
+    }
+  }, [phase]);
 
   // Carte affichée → marquée comme lue après un court instant.
   const current: Card | undefined = cols[ri]?.cards[idx[cols[ri]?.id] ?? 0];

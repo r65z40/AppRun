@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, TextInput, View, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
 import Animated, { Easing, interpolate, Extrapolation, useAnimatedStyle, useSharedValue, withTiming, withSpring, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
@@ -91,9 +91,10 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
             ))}
             <View style={styles.srcList}>
               <Text style={styles.lbl}>SOURCES CONSULTÉES</Text>
-              {["L'Écho national", 'Agence Presse Europe', 'Radio Horizon'].map((m) => (
-                <Text key={m} style={styles.srcLink}>Lire l'article complet sur {m} ›</Text>
+              {[...new Map(a.facts.map((f) => [f.source, f.doc])).entries()].map(([m, url]) => (
+                <Text key={m} style={styles.srcLink} onPress={() => typeof url === 'string' && url.startsWith('http') && Linking.openURL(url)}>Lire l'article complet sur {m} ›</Text>
               ))}
+              {a.credit ? <Text style={[styles.srcLink, { color: C.text3, fontSize: 12, marginTop: 8 }]}>Photo : {a.credit}</Text> : null}
             </View>
           </ScrollView>
           <View style={[styles.foot, { paddingBottom: Math.max(18, insets.bottom + 6) }]}>

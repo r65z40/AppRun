@@ -19,6 +19,7 @@ type Row = {
   summary: string[];
   photo_tag: string | null;
   photo_url: string | null;
+  photo_credit?: string | null;
   published_at: string | null;
   created_at: string;
 };
@@ -74,6 +75,7 @@ export async function loadEdition(timeoutMs = 4000): Promise<string | null> {
           summary: a.summary,
           essential: a.essential,
           media: `D'après ${media.join(', ')}`,
+          credit: a.photo_url ? a.photo_credit ?? undefined : undefined,
         };
       }),
     })).filter((r) => r.items.length);

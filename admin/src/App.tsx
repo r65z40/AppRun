@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, ENGINE_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type Flash, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, ENGINE_URL, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'edition' | 'flash' | 'sources' | 'moderation' | 'team';
-const PAGES: [Page, string][] = [['edition', 'Édition'], ['flash', 'Dernière minute'], ['sources', 'Sources'], ['moderation', 'Modération'], ['team', 'Équipe']];
+type Page = 'edition' | 'flash' | 'engine' | 'sources' | 'moderation' | 'team';
+const PAGES: [Page, string][] = [['edition', 'Édition'], ['flash', 'Dernière minute'], ['engine', 'Moteur'], ['sources', 'Sources'], ['moderation', 'Modération'], ['team', 'Équipe']];
 const LIMITS = { title: 60, key: 140, fact: 90, summary: 280 };
 const SUMMARY_HEADS = ['Contexte', 'Ce qui change', 'Et après'];
 
@@ -53,6 +53,7 @@ export default function App() {
       <main className="main">
         {page === 'edition' && <EditionPage say={say} />}
         {page === 'flash' && <FlashPage say={say} />}
+        {page === 'engine' && <EnginePage />}
         {page === 'sources' && <SourcesPage say={say} />}
         {page === 'moderation' && <ModerationPage say={say} />}
         {page === 'team' && me.role === 'admin' && <TeamPage say={say} me={me} />}
@@ -325,6 +326,85 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
 const safeBold = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>');
 
 /* ---------------- Sources ---------------- */
+/* ---------------- Moteur ---------------- */
+function EnginePage() {
+  const [runs, setRuns] = useState<EngineRun[] | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const load = () => api.runs().then((r) => { setRuns(r); setOpen((o) => o ?? r[0]?.id ?? null); }).catch(() => setRuns([]));
+  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
+  const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return (
+    <>
+      <header className="head">
+        <div>
+          <div className="eyebrow">Moteur</div>
+          <h1>Ce que fait l'IA</h1>
+          <p className="muted">Chaque passage du moteur, dans l'ordre : sources lues, sujets retenus et les titres qui les composent, cartes écrites, infos écartées et pourquoi. La page se met à jour toute seule.</p>
+        </div>
+        <div className="actions">
+          <a className="btn" href={ENGINE_URL} target="_blank" rel="noreferrer">Lancer l'édition ↗</a>
+          <a className="btn" href={FLASH_URL} target="_blank" rel="noreferrer">Lancer Dernière minute ↗</a>
+        </div>
+      </header>
+      {runs && !runs.length ? <p className="muted">Aucun passage enregistré. Appliquez la migration <code>0004_engine_runs.sql</code> dans Supabase, puis lancez le moteur.</p> : null}
+      <div className="runs">
+        {(runs ?? []).map((r) => (
+          <div key={r.id} className={`panel run ${r.status}`}>
+            <button className="run-head" onClick={() => setOpen(open === r.id ? null : r.id)}>
+              <span className={`pill ${r.status === 'ok' ? 'published' : r.status === 'error' ? 'rejected' : ''}`}>{r.kind === 'edition' ? 'Édition' : 'Dernière minute'}</span>
+              <span className="muted small">{when(r.started_at)}</span>
+              <span className="run-sum">{r.status === 'running' ? 'En cours…' : r.summary}</span>
+              <span className="muted">{open === r.id ? '▾' : '▸'}</span>
+            </button>
+            {open === r.id ? <RunDetails r={r} /> : null}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function RunDetails({ r }: { r: EngineRun }) {
+  const d = r.details ?? {};
+  return (
+    <div className="run-body">
+      {d.stories?.length ? (
+        <section>
+          <h3>Sujets retenus ({d.stories.length})</h3>
+          {d.stories.map((s, i) => (
+            <div key={i} className="story">
+              <div><b>{s.label}</b> <span className="muted small">· {RUBRICS[s.rubric] ?? s.rubric} · importance {s.importance}/10{s.essential ? ' · essentiel' : ''}</span></div>
+              <ul>{s.items.map((it, k) => <li key={k} className="muted small">{it.source} : {it.title}</li>)}</ul>
+            </div>
+          ))}
+        </section>
+      ) : null}
+      {d.cards?.length ? (
+        <section>
+          <h3>Cartes écrites</h3>
+          <ul>{d.cards.map((c, i) => <li key={i}>{c.error ? '✗' : c.issues.length ? '⚠' : '✓'} <span className="muted small">[{RUBRICS[c.rubric] ?? c.rubric}]</span> {c.title}{c.error ? <span className="warn"> : {c.error}</span> : c.issues.length ? <span className="warn"> : {c.issues.join(', ')}</span> : null}{c.photo ? <span className="muted small"> · photo : {c.photo}</span> : null}</li>)}</ul>
+        </section>
+      ) : null}
+      {d.flashes ? (
+        <section>
+          <h3>Infos proposées par l'IA ({d.flashes.length})</h3>
+          {d.flashes.length ? <ul>{d.flashes.map((f, i) => <li key={i}>{f.rejected ? '✗' : '⚡'} {f.title} <span className="muted small">({f.sources.join(', ')}){f.rejected ? ` : écartée, ${f.rejected}` : ''}</span></li>)}</ul> : <p className="muted small">Rien d'assez important et confirmé par deux médias.</p>}
+        </section>
+      ) : null}
+      {d.left?.length ? (
+        <details>
+          <summary className="muted">Titres non retenus ({d.left.length}{d.left.length >= 150 ? '+' : ''})</summary>
+          <ul>{d.left.map((it, i) => <li key={i} className="muted small">{it.source} : {it.title}</li>)}</ul>
+        </details>
+      ) : null}
+      <details open={!d.stories && !d.flashes}>
+        <summary className="muted">Journal complet ({r.log.length} lignes)</summary>
+        <pre className="log">{r.log.join('\n')}</pre>
+      </details>
+    </div>
+  );
+}
+
 /* ---------------- Dernière minute ---------------- */
 const emptyFlash = { id: '', title: '', sentence: '', rubric_id: '', src1: '', url1: '', src2: '', url2: '' };
 function FlashPage({ say }: { say: (m: string) => void }) {
@@ -346,6 +426,7 @@ function FlashPage({ say }: { say: (m: string) => void }) {
           <h1>Infos de la journée</h1>
           <p className="muted">Le moteur passe toutes les 20 minutes, de 6 h à 23 h, et publie seul les infos majeures confirmées par au moins deux médias. Elles restent 24 heures dans l'app. Masquez, corrigez ou ajoutez une info ici.</p>
         </div>
+        <div className="actions"><a className="btn" href={FLASH_URL} target="_blank" rel="noreferrer">Lancer maintenant ↗</a></div>
       </header>
       {!list.length && <p className="muted">Aucune info pour l'instant.</p>}
       <div className="flashes">

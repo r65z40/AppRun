@@ -22,20 +22,27 @@ Pour voir le back office **sans rien installer**, ouvrez-le simplement : sans Su
      `postgresql://postgres.abcdefgh:[YOUR-PASSWORD]@aws-0-eu-west-3.pooler.supabase.com:5432/postgres`
      Remplacez `[YOUR-PASSWORD]`, **crochets compris**, par le mot de passe de la base choisi à la création du projet. Ce n'est pas celui de votre compte Supabase. Si vous l'avez oublié, allez dans *Project Settings > Database > Reset database password*, et choisissez des lettres et des chiffres seulement : `@`, `#` ou `/` cassent l'adresse.
 
+> **Vous aviez déjà collé `setup.sql` avant le 21 novembre au soir ?** Collez aussi, une seule fois, le fichier [`backend/supabase/migrations/0004_journal_photos.sql`](backend/supabase/migrations/0004_journal_photos.sql) dans le SQL Editor, puis cliquez sur Run. Il ajoute le journal du moteur et les photos.
+
 ## 2. La clé Claude (2 min)
 
 Sur [console.anthropic.com](https://console.anthropic.com), ouvrez **API Keys > Create Key**, puis ajoutez quelques euros de crédit dans **Billing**.
+
+## 2 bis. Les photos (Pexels, gratuit, 2 min)
+
+Sur [pexels.com/api](https://www.pexels.com/api/), créez un compte puis cliquez sur **Your API Key**. Copiez la clé. Pour chaque article, Claude choisit des mots-clés et le moteur prend une vraie photo libre de droits. Sans cette clé, l'app garde ses photos d'ambiance.
 
 ## 3. GitHub (5 min)
 
 On range 4 informations dans GitHub. Chaque lien ouvre directement le bon formulaire. Recopiez les noms exactement, en majuscules avec les tirets bas.
 
-**Les 2 secrets (privés)** : ouvrez [Nouveau secret](https://github.com/r65z40/AppRun/settings/secrets/actions/new), remplissez *Name* et *Secret*, puis cliquez sur **Add secret**. Faites-le deux fois :
+**Les 2 secrets (privés)** : ouvrez [Nouveau secret](https://github.com/r65z40/AppRun/settings/secrets/actions/new), remplissez *Name* et *Secret*, puis cliquez sur **Add secret**. Faites-le pour chaque ligne :
 
 | Name | Secret |
 |---|---|
 | `DATABASE_URL` | l'adresse `postgresql://…` de l'étape 1, avec votre mot de passe |
 | `ANTHROPIC_API_KEY` | la clé Claude de l'étape 2 (`sk-ant-…`) |
+| `PEXELS_API_KEY` | la clé Pexels de l'étape 2 bis (facultatif) |
 
 **Les variables (publiques)** : ouvrez [Nouvelle variable](https://github.com/r65z40/AppRun/settings/variables/actions/new), remplissez *Name* et *Value*, puis cliquez sur **Add variable**. Faites-le deux fois :
 

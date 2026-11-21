@@ -86,3 +86,11 @@ reset role;
 \echo ÉCHEC  dernière minute invisible
 \endif
 select a.title, s.likes, s.comments from articles a join article_stats s on s.article_id = a.id order by a.rubric_id, a.rank limit 3;
+
+select count(*) filter (where kind = 'edition' and status = 'ok') = 1 and count(*) filter (where kind = 'flash' and status = 'ok') = 2
+       and bool_and(jsonb_array_length(log) > 0) as ok from engine_runs \gset
+\if :ok
+\echo OK  journal du moteur : 1 édition + 2 dernière minute, avec leurs lignes
+\else
+\echo ÉCHEC  journal du moteur incomplet
+\endif
