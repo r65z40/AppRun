@@ -7,10 +7,8 @@
  *
  * Usage : npm run engine -- [--date 2026-11-22] [--fixtures test/feeds] [--per-rubric 8]
  */
-import { readFileSync, readdirSync } from 'node:fs';
-import path from 'node:path';
 import { pool, q } from './db.js';
-import { fetchFeed, parseFeed, type FeedItem } from './rss.js';
+import { collect } from './collect.js';
 import { MODEL, checkCard, selectStories, writeCard, type Item, type Story } from './ai.js';
 
 const args = process.argv.slice(2);
@@ -26,43 +24,6 @@ const WINDOW_H = Number(process.env.WINDOW_HOURS ?? 30);
 const CONCURRENCY = Number(process.env.CONCURRENCY ?? 4);
 
 const log = (...a: unknown[]) => console.log(new Date().toISOString().slice(11, 19), ...a);
-const slug = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-
-type Source = { id: string; name: string; url: string };
-
-async function collect() {
-  const sources = await q<Source>('select id, name, url from sources where active order by name');
-  let total = 0;
-  const fixtureFiles = FIXTURES ? readdirSync(FIXTURES) : [];
-  for (const s of sources) {
-    let items: FeedItem[] = [];
-    try {
-      if (FIXTURES) {
-        const f = fixtureFiles.find((x) => x.replace(/\.xml$/, '') === slug(s.name));
-        if (!f) continue;
-        items = parseFeed(readFileSync(path.join(FIXTURES, f), 'utf8'));
-      } else {
-        items = await fetchFeed(s.url);
-      }
-      for (const it of items) {
-        await q(
-          `insert into raw_items (source_id, guid, title, description, link, published_at)
-           values ($1, $2, $3, $4, $5, $6)
-           on conflict (source_id, guid) do update set title = excluded.title, description = excluded.description`,
-          [s.id, it.guid, it.title, it.description, it.link, it.publishedAt],
-        );
-      }
-      await q('update sources set last_fetch_at = now(), last_error = null where id = $1', [s.id]);
-      total += items.length;
-      log(`  ${s.name} : ${items.length} titres`);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      await q('update sources set last_fetch_at = now(), last_error = $2 where id = $1', [s.id, msg]);
-      log(`  ${s.name} : échec (${msg})`);
-    }
-  }
-  return total;
-}
 
 type Raw = { id: string; title: string; description: string; link: string; published_at: Date | null; source: string };
 
@@ -77,7 +38,7 @@ async function main() {
   await q(`insert into editions (date) values ($1) on conflict (date) do nothing`, [DATE]);
 
   log('1/4 Récupération des sources');
-  const fetched = await collect();
+  const fetched = await collect(FIXTURES, log);
 
   // Fenêtre : les dernières heures avant la fin de la journée demandée.
   const until = new Date(`${DATE}T06:00:00+01:00`);

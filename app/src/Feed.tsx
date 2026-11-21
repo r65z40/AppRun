@@ -17,8 +17,9 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, GRAD3, SPRING, SPRING_FLICK } from './theme';
-import { isAd, type Article, type Card, type Column, type Tag } from './types';
+import { isAd, isArticle, isFlash, type Article, type Card, type Column, type Tag } from './types';
 import { rubricOf } from './edition';
+import { flashTime } from './dates';
 import { PHOTOS } from './content';
 import { Icon, Press, Rich } from './ui';
 import { feel } from './feel';
@@ -128,7 +129,7 @@ export function Feed(p: FeedApi & { W: number; H: number }) {
   function goRub(n: number, v = 0) {
     const q = latest.current;
     const col = q.cols[n];
-    const first = col.cards.findIndex((c) => !isAd(c) && !q.seen.has(c.id));
+    const first = col.cards.findIndex((c) => isArticle(c) && !q.seen.has(c.id));
     if (first >= 0) {
       if (!q.canEnter(col.cards[first])) {
         colX.value = withSpring(-q.ri * W, { ...SPRING, velocity: v });
@@ -230,8 +231,8 @@ function ColumnStack({ y, W, H, ci, children }: { y: SharedValue<number>; W: num
 function Background({ card, k, ci, W, H, colX, y, tiltX, tiltY, parallax }: {
   card: Card; k: number; ci: number; W: number; H: number; colX: SharedValue<number>; y: SharedValue<number>; tiltX: SharedValue<number>; tiltY: SharedValue<number>; parallax: boolean;
 }) {
-  const photo = isAd(card) ? PHOTOS.lampe : card.photo;
-  const grad = isAd(card) ? null : card.grad;
+  const photo = isAd(card) ? PHOTOS.lampe : isFlash(card) ? null : card.photo;
+  const grad = isArticle(card) ? card.grad : isFlash(card) ? FLASH_GRAD : null;
   const a = useAnimatedStyle(() => {
     const ox = ci * W + colX.value;
     const o = k * H + y.value; // position de la carte à l'écran
@@ -279,6 +280,27 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
   // le texte bouge très peu, à l'opposé de la photo : effet de profondeur
   const depth = useAnimatedStyle(() => ({ transform: [{ translateX: -tiltX.value * 0.18 }, { translateY: -tiltY.value * 0.18 }] }));
   const pad = { paddingBottom: Math.max(28, bottom + 14) };
+  if (isFlash(card)) {
+    return (
+      <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
+        <Animated.View style={[styles.content, pad, depth]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={styles.liveDot} />
+            <Text style={[styles.kicker, { marginBottom: 0 }]}>DERNIÈRE MINUTE · {flashTime(card.at).toUpperCase()}</Text>
+          </View>
+          <Text style={[styles.title, { marginTop: 14 }]}>{card.title}</Text>
+          <Text style={styles.key}>{card.sentence}</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 6 }}>
+            {card.sources.map((s) => (
+              <Pressable key={s.url} onPress={() => (s.url.startsWith('http') ? Linking.openURL(s.url) : api.onToast(`Ouvre l'article : ${s.source}`))} hitSlop={8}>
+                <Text style={styles.flashSrc}>{s.source} ↗</Text>
+              </Pressable>
+            ))}
+          </View>
+        </Animated.View>
+      </View>
+    );
+  }
   if (isAd(card)) {
     return (
       <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
@@ -433,15 +455,25 @@ function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; 
           </Animated.View>
         </View>
         <Text style={styles.progTxt}>
-          {api.cols[api.ri]?.id === 'edition' ? 'Sélection selon vos choix · ' : ''}
-          <Text style={{ color: '#fff' }}>{api.seenN}</Text> / {api.limit}
+          {api.cols[api.ri]?.id === 'flash' ? (
+            'Mise à jour en continu'
+          ) : (
+            <>
+              {api.cols[api.ri]?.id === 'edition' ? 'Sélection selon vos choix · ' : ''}
+              <Text style={{ color: '#fff' }}>{api.seenN}</Text> / {api.limit}
+            </>
+          )}
         </Text>
       </View>
     </View>
   );
 }
 
+const FLASH_GRAD = ['#FF6B8A', '#7B5CFF', '#3a1d5c', '#0E0B1F'];
+
 const styles = StyleSheet.create({
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.coral },
+  flashSrc: { color: C.text2, fontFamily: F.semi, fontSize: 14 },
   blob: { position: 'absolute', width: '70%', aspectRatio: 1, borderRadius: 999, opacity: 0.55 },
   card: { position: 'absolute', left: 0 },
   content: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 28, gap: 18 },

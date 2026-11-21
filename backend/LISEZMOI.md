@@ -7,11 +7,18 @@ Chaque matin à 5 h 30, le moteur :
 4. vérifie chaque carte (longueurs, sources, pas de phrase recopiée d'un média) ;
 5. enregistre les cartes en **brouillon**. La rédaction les valide dans le back office, puis l'app les affiche.
 
+## Dernière minute
+Toutes les 20 minutes de 6 h à 23 h (workflow « Dernière minute »), le moteur relit les deux dernières heures de dépêches.
+L'IA ne retient que les faits majeurs, nouveaux et annoncés par au moins deux médias. Le code vérifie ensuite ces règles avant de publier
+(table `flashes`). La rédaction peut retirer, corriger ou ajouter une info depuis le back office.
+`FLASH_AUTO_PUBLISH=0` (variable GitHub) : les infos arrivent masquées et attendent la validation.
+Coût estimé : environ 1 € par jour.
+
 ## À brancher (une fois)
 
 ### 1. Supabase (base de données, gratuit pour commencer)
 1. Créez un projet sur https://supabase.com (région Europe, Paris ou Francfort).
-2. Menu **SQL Editor** : collez et exécutez `supabase/migrations/0001_init.sql`, puis `supabase/seed.sql` (les sources de départ).
+2. Menu **SQL Editor** : collez et exécutez dans l'ordre `supabase/migrations/0001_init.sql`, `0002_roles.sql`, `0003_flashes.sql`, puis `supabase/seed.sql` (les sources de départ).
 3. Notez dans **Project Settings** :
    - *Database > Connection string > Session pooler* : c'est `DATABASE_URL` (secret, pour le moteur) ;
    - *API > Project URL* et clé *anon public* : pour l'app (fichier `app/.env`, voir `app/.env.example`).

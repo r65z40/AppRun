@@ -1,5 +1,5 @@
 // Données fictives : le back office fonctionne sans Supabase pour qu'on puisse l'essayer.
-import type { Api, Article, Comment, Edition, Profile, Report, Source } from './data';
+import type { Api, Article, Comment, Edition, Flash, Profile, Report, Source } from './data';
 
 const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 const yday = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date(Date.now() - 86400e3));
@@ -53,6 +53,18 @@ let team: Profile[] = [
   { id: 'u-admin', pseudo: 'fen', role: 'admin', premium: true, created_at: iso(200) },
   { id: 'u-ed', pseudo: 'redaction_matin', role: 'editor', premium: false, created_at: iso(100) },
 ];
+const fl = (min: number, title: string, sentence: string, srcs: string[], extra: Partial<Flash> = {}): Flash => ({
+  id: `f${min}`, status: 'published', rubric_id: 'monde', importance: 8, title, sentence, manual: false, model: 'claude-opus-5-5',
+  sources: srcs.map((s) => ({ source: s, url: `https://exemple.test/${s.toLowerCase().replace(/\W+/g, '-')}` })),
+  published_at: new Date(Date.now() - min * 60000).toISOString(), created_at: new Date(Date.now() - min * 60000).toISOString(), ...extra,
+});
+let flashes: Flash[] = [
+  fl(12, 'Séisme de magnitude 6,1 au large de la Grèce', 'La secousse a été ressentie jusqu’à Athènes. Aucune victime signalée pour l’instant selon les autorités grecques.', ['franceinfo', 'RFI']),
+  fl(74, 'La BCE baisse ses taux de 0,25 point', 'Le principal taux directeur passe à 1,75 %. C’est la troisième baisse depuis l’été.', ['Les Echos', 'Le Monde'], { rubric_id: 'eco', importance: 9 }),
+  fl(185, 'Accord trouvé sur le budget au Sénat', 'Sénateurs et députés se sont entendus sur une version commune du texte, votée définitivement mardi.', ['Le Monde', '20 Minutes'], { rubric_id: 'france' }),
+  fl(260, 'Un joueur du PSG transféré pour 90 M€', 'Information non confirmée par le club à cette heure.', ['L’Équipe', 'RMC Sport'], { rubric_id: 'sport', status: 'hidden' }),
+  fl(320, 'Tempête : 80 000 foyers privés d’électricité', 'Les rafales ont dépassé 130 km/h en Bretagne. Enedis prévoit un retour à la normale d’ici demain soir.', ['Ouest-France', 'franceinfo'], { rubric_id: 'france', manual: true, model: null }),
+];
 const readers: Profile[] = [{ id: 'u0', pseudo: 'Camille_R', role: 'reader', premium: false, created_at: iso(50) }];
 
 const wait = <T>(v: T) => new Promise<T>((r) => setTimeout(() => r(structuredClone(v)), 120));
@@ -69,6 +81,11 @@ export function demoApi(): Api {
     async saveArticle(id, patch) { articles = articles.map((a) => (a.id === id ? { ...a, ...patch } : a)); },
     async saveArticles(ps) { ps.forEach((p) => (articles = articles.map((a) => (a.id === p.id ? { ...a, ...p.patch } : a)))); },
     async setEdition(date, status) { const e = editions.find((x) => x.date === date); if (e) { e.status = status; e.published_at = status === 'published' ? new Date().toISOString() : null; } },
+    flashes: () => wait(flashes),
+    async saveFlash(f) {
+      if (f.id) flashes = flashes.map((x) => (x.id === f.id ? { ...x, ...f } : x));
+      else flashes = [fl(0, '', '', [], { manual: true, model: null, id: `f${Date.now()}`, ...f }), ...flashes];
+    },
     sources: () => wait(sources),
     async saveSource(s) { sources = s.id ? sources.map((x) => (x.id === s.id ? { ...x, ...s } : x)) : [...sources, { id: `s${Date.now()}`, name: '', url: '', rubric_hint: null, active: true, last_fetch_at: null, last_error: null, ...s }]; },
     reports: () => wait(reports.filter((r) => !r.resolved).map((r) => ({ ...r, comment: comments.find((c) => c.id === r.comment_id) }))),
