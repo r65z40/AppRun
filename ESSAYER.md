@@ -18,7 +18,9 @@ Pour voir le back office **sans rien installer**, ouvrez-le simplement : sans Su
    ```
 5. Notez trois valeurs :
    - **Project Settings > API** : la *Project URL* et la clé *anon public* ;
-   - **Connect** (en haut), onglet *Session pooler* : l'adresse `postgresql://…`, avec votre mot de passe à la place de `[YOUR-PASSWORD]`.
+   - l'adresse de la base. Cliquez sur le bouton **Connect**, tout en haut de la page du projet. Restez sur l'onglet *Connection String* (type *URI*) et copiez l'adresse du **Session pooler**, la seule qui fonctionne depuis GitHub. Elle ressemble à :
+     `postgresql://postgres.abcdefgh:[YOUR-PASSWORD]@aws-0-eu-west-3.pooler.supabase.com:5432/postgres`
+     Remplacez `[YOUR-PASSWORD]`, **crochets compris**, par le mot de passe de la base choisi à la création du projet. Ce n'est pas celui de votre compte Supabase. Si vous l'avez oublié, allez dans *Project Settings > Database > Reset database password*, et choisissez des lettres et des chiffres seulement : `@`, `#` ou `/` cassent l'adresse.
 
 ## 2. La clé Claude (2 min)
 
