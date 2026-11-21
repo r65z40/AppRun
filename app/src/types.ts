@@ -20,7 +20,7 @@ export type Article = {
 
 export type Rubric = { id: string; name: string; items: Article[] };
 
-export type Ad = { ad: true; id: 'ad' };
+export type Ad = { ad: true; id: string };
 export type Card = Article | Ad;
 export const isAd = (c: Card): c is Ad => 'ad' in c;
 

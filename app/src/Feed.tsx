@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, GRAD3, SPRING, SPRING_FLICK } from './theme';
 import { isAd, type Article, type Card, type Column, type Tag } from './types';
-import { AD, MEDIA, TAGS, rubricOf } from './edition';
+import { rubricOf } from './edition';
 import { PHOTOS } from './content';
 import { Icon, Press, Rich } from './ui';
 import { feel } from './feel';
@@ -214,7 +214,6 @@ export function Feed(p: FeedApi & { W: number; H: number }) {
         </Animated.View>
       </GestureDetector>
       <Header api={p} top={insets.top} W={W} goRub={(n) => goRub(n)} />
-      <Ticks col={cols[p.ri]} idx={p.idx[cols[p.ri]?.id] ?? 0} />
     </View>
   );
 }
@@ -284,16 +283,12 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
     return (
       <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
         <Animated.View style={[styles.content, pad, depth]}>
-          <View style={styles.meta}>
-            <View style={[styles.pill, { borderColor: 'rgba(255,255,255,0.2)' }]}><Text style={[styles.pillTxt, { color: C.text2 }]}>SPONSORISÉ</Text></View>
-            <Text style={styles.metaTxt}>Maison Lumen</Text>
-          </View>
+          <Text style={styles.kicker}>SPONSORISÉ · MAISON LUMEN</Text>
           <Text style={styles.title}>LIRE LE SOIR, SANS FATIGUER VOS YEUX</Text>
           <Text style={styles.key}>Une lampe de lecture rechargeable à lumière chaude, pensée pour les liseuses et les livres papier.</Text>
           <Press onPress={() => api.onToast("Ouvre le site de l'annonceur")} style={styles.adCta}>
             <Text style={{ color: '#fff', fontFamily: F.semi, fontSize: 15 }}>Découvrir l'offre</Text>
           </Press>
-          <Text style={styles.sources}>Les pubs financent l'accès gratuit. Premium les retire.</Text>
         </Animated.View>
       </View>
     );
@@ -303,15 +298,7 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
   return (
     <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
       <Animated.View style={[styles.content, pad, depth]}>
-        <View style={styles.meta}>
-          <View style={styles.pill}><Text style={styles.pillTxt}>{rubricOf(a).name.toUpperCase()}</Text></View>
-          <Text style={styles.metaTxt}>Aujourd'hui · {a.hour}</Text>
-          {tag ? (
-            <Press onPress={() => { api.onToast(TAGS[tag].why(a)); feel('light'); }} style={styles.why} accessibilityLabel={`Pourquoi cette info ? ${TAGS[tag].label}`}>
-              <Text style={styles.whyTxt}>{TAGS[tag].label} <Text style={{ opacity: 0.6 }}>?</Text></Text>
-            </Press>
-          ) : null}
-        </View>
+        <Text style={styles.kicker}>{rubricOf(a).name.toUpperCase()}</Text>
         <Text style={styles.title}>{a.title.toUpperCase()}</Text>
         <Text style={styles.key}>{a.key}</Text>
         <View>
@@ -320,14 +307,10 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
           ))}
         </View>
         <View style={styles.actions}>
-          <Press onPress={() => api.onRead(a)} accessibilityLabel="Lire le résumé, 1 minute" style={{ marginRight: 'auto' }}>
-            <LinearGradient colors={[C.violet, C.blue]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.read}>
-              <Icon name="book" size={18} />
-              <Text style={styles.readTxt}>Lire · 1 min</Text>
-            </LinearGradient>
+          <Press onPress={() => api.onRead(a)} accessibilityLabel="Lire le résumé, 1 minute" style={[styles.read, { marginRight: 'auto' }]}>
+            <Text style={styles.readTxt}>Lire · 1 min</Text>
           </Press>
           <ReactBtn icon="up" n={a.likes + (r === 1 ? 1 : 0)} on={r === 1} color={C.violet} onPress={() => api.onReact(a, 1)} label="J'aime" />
-          <ReactBtn icon="down" on={r === -1} color={C.coral} onPress={() => api.onReact(a, -1)} label="Je n'aime pas" />
           <Press onPress={() => api.onComments(a)} style={styles.ic} accessibilityLabel="Commentaires">
             <Icon name="cmt" size={20} />
             <Text style={styles.icTxt}>{api.commentCount(a)}</Text>
@@ -336,7 +319,6 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
             <Icon name="share" size={20} />
           </Press>
         </View>
-        <Text style={styles.sources}>{a.media ?? MEDIA}</Text>
       </Animated.View>
     </View>
   );
@@ -419,7 +401,7 @@ function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; 
   return (
     <View style={[styles.head, { paddingTop: top + 8 }]} pointerEvents="box-none">
       <View style={styles.headRow}>
-        <Text style={styles.logo}>TITRE</Text>
+        <View style={{ width: 44 }} />
         <View style={styles.rubs} onLayout={(e: LayoutChangeEvent) => setBoxW(e.nativeEvent.layout.width)}>
           <Animated.View style={[{ flexDirection: 'row', position: 'absolute', left: 0, top: 0 }, a]}>
             {api.cols.map((c, i) => (
@@ -451,20 +433,10 @@ function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; 
           </Animated.View>
         </View>
         <Text style={styles.progTxt}>
+          {api.cols[api.ri]?.id === 'edition' ? 'Sélection selon vos choix · ' : ''}
           <Text style={{ color: '#fff' }}>{api.seenN}</Text> / {api.limit}
         </Text>
       </View>
-    </View>
-  );
-}
-
-function Ticks({ col, idx }: { col?: Column; idx: number }) {
-  if (!col) return null;
-  return (
-    <View style={styles.ticks} pointerEvents="none">
-      {col.cards.map((c, k) => (
-        <View key={c.id} style={[styles.tick, k === idx && styles.tickOn, isAd(c) && k !== idx && { opacity: 0.4 }]} />
-      ))}
     </View>
   );
 }
@@ -479,6 +451,7 @@ const styles = StyleSheet.create({
   metaTxt: { color: C.text2, fontFamily: F.regular, fontSize: 12 },
   why: { marginLeft: 'auto', backgroundColor: 'rgba(123,92,255,0.25)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   whyTxt: { color: '#d6ccff', fontFamily: F.semi, fontSize: 11 },
+  kicker: { color: C.text2, fontFamily: F.semi, fontSize: 11, letterSpacing: 2 },
   title: { color: '#fff', fontFamily: F.black, fontSize: 33, lineHeight: 33, letterSpacing: -0.4 },
   key: { color: 'rgba(255,255,255,0.82)', fontFamily: F.regular, fontSize: 16.5, lineHeight: 24, marginTop: -4 },
   fact: { borderTopWidth: StyleSheet.hairlineWidth * 2, borderColor: C.line, paddingVertical: 12, minHeight: 46, justifyContent: 'center' },
@@ -488,7 +461,7 @@ const styles = StyleSheet.create({
   backTxt: { flex: 1, color: '#fff', fontFamily: F.regular, fontSize: 13 },
   backLink: { color: '#cfe0ff', fontFamily: F.semi, fontSize: 12 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
-  read: { height: 48, paddingHorizontal: 20, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  read: { height: 46, paddingHorizontal: 22, borderRadius: 999, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
   readTxt: { color: '#fff', fontFamily: F.semi, fontSize: 15 },
   ic: { width: 46, height: 48, alignItems: 'center', justifyContent: 'center', gap: 1 },
   icTxt: { color: C.text2, fontFamily: F.semi, fontSize: 10 },
@@ -511,4 +484,3 @@ const styles = StyleSheet.create({
   tickOn: { height: 26, backgroundColor: '#fff' },
 });
 
-export { AD };

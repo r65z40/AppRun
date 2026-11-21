@@ -22,39 +22,27 @@ export const TAGS: Record<Tag, { label: string; why: (a: Article) => string }> =
   dec: { label: 'Découverte', why: () => 'Pour sortir un peu de vos habitudes.' },
 };
 
-/** « Mon édition » (§16) : sujets majeurs pour tous, puis vos rubriques, puis une découverte. */
 export function buildColumns(active: string[], quota: number, premium: boolean): Column[] {
-  const filled = RUBRICS.filter((r) => r.items.length > 0);
-  const act = filled.filter((r) => active.includes(r.id));
-  const other = filled.filter((r) => !active.includes(r.id));
-  const total = act.reduce((n, r) => n + r.items.length, 0);
-  const disc = other.length ? other[0].items[0] : null;
-  const size = Math.min(quota, total + (disc ? 1 : 0));
-  const room = () => size - (disc ? 1 : 0);
+  // « Mon édition » : uniquement les rubriques choisies, sujets majeurs en tête, puis chaque rubrique à tour de rôle.
+  const act = RUBRICS.filter((r) => active.includes(r.id) && r.items.length > 0);
   const picked: { a: Article; tag: Tag }[] = [];
-  // Les sujets majeurs du jour (choisis par la rédaction) passent en premier, pour tout le monde.
-  const ess = filled.flatMap((r) => r.items.filter((a) => a.essential)).slice(0, 4);
-  ess.forEach((a) => picked.length < room() && picked.push({ a, tag: 'ess' }));
-  const has = (a: Article) => picked.some((p) => p.a === a) || a === disc;
-  for (let k = 0; picked.length < room(); k++) {
-    let added = false;
+  const all = act.flatMap((r) => r.items);
+  all.filter((a) => a.essential).slice(0, 4).forEach((a) => picked.length < quota && picked.push({ a, tag: 'pv' }));
+  for (let k = 0; picked.length < quota; k++) {
+    let more = false;
     for (const r of act) {
       const a = r.items[k];
-      if (a && picked.length < room() && !has(a)) {
-        picked.push({ a, tag: !ess.length && picked.length < 2 ? 'ess' : 'pv' });
-        added = true;
-      } else if (a) added = true;
+      if (!a) continue;
+      more = true;
+      if (picked.length < quota && !picked.some((p) => p.a === a)) picked.push({ a, tag: 'pv' });
     }
-    if (!added) break;
+    if (!more) break;
   }
-  if (disc) picked.push({ a: disc, tag: 'dec' });
-  else if (picked.length > 2) picked[picked.length - 1].tag = 'dec';
 
   const edCards: Column['cards'] = picked.map((p) => p.a);
-  // Pub : jamais avant la 3e carte, au plus une toutes les six (§4.6).
-  if (!premium && edCards.length > 3) edCards.splice(3, 0, AD);
+  // Version gratuite : une pub après la 3e info, puis une toutes les six (§4.6). Premium les retire.
+  if (!premium) for (let i = 3, n = 0; i < edCards.length; i += 7, n++) edCards.splice(i, 0, { ...AD, id: `ad-${n}` });
   const tags: Record<string, Tag> = {};
-  picked.forEach((p) => (tags[p.a.id] = p.tag));
 
   return [
     { id: 'edition', name: 'Mon édition', cards: edCards, tags },

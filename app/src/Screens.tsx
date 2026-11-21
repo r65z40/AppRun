@@ -38,13 +38,14 @@ export function Splash({ onDone }: { onDone: () => void }) {
 }
 
 /* ---------- Première ouverture (§4.1) ---------- */
-export type OnbResult = { active: string[]; quota: number; time: string; adsPersonalized: boolean };
+export type OnbResult = { active: string[]; quota: number; time: string; adsPersonalized: boolean; premium?: boolean };
 export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) => void }) {
   const insets = useSafeAreaInsets();
   const [i, setI] = useState(0);
   const [active, setActive] = useState<string[]>(['france', 'monde', 'eco', 'tech']);
   const [quota, setQuota] = useState(8);
   const [time, setTime] = useState('7 h 30');
+  const [adsP, setAdsP] = useState(false);
   const x = useSharedValue(0);
   useEffect(() => {
     x.value = withTiming(-i * W, { duration: DRAWER_MS, easing: DRAWER });
@@ -111,11 +112,15 @@ export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) =>
           </>)}
           {step(<>
             <View style={{ flex: 1 }} />
-            <Text style={styles.h}>Des pubs discrètes, à votre choix.</Text>
-            <Text style={styles.p}>TITRE est gratuit grâce à quelques cartes sponsorisées, jamais plus d'une toutes les six infos. Vous choisissez si elles peuvent tenir compte de vos centres d'intérêt.</Text>
-            <GradButton label="Accepter" onPress={() => finish(true)} />
-            <SoftButton label="Refuser" onPress={() => finish(false)} />
-            <Text style={[styles.p, { fontSize: 13, textAlign: 'center', color: C.text3 }]}>Premium retire toutes les pubs : 2,99 €/mois.</Text>
+            <Text style={styles.h}>Gratuit, grâce à quelques pubs.</Text>
+            <Text style={styles.p}>Une carte sponsorisée de temps en temps, jamais plus d'une toutes les six infos. Premium les retire toutes.</Text>
+            <View style={styles.rows}>
+              <Row label="Pubs selon mes centres d'intérêt" hint="Sinon, des pubs sans ciblage" last>
+                <Toggle label="Pubs selon mes centres d'intérêt" on={adsP} onPress={() => setAdsP(!adsP)} />
+              </Row>
+            </View>
+            <GradButton label="Continuer" onPress={() => finish(adsP)} />
+            <SoftButton label="Premium sans pub · 2,99 €/mois" onPress={() => { feel('success', 'ding'); onDone({ active, quota, time, adsPersonalized: false, premium: true }); }} />
           </>)}
         </Animated.View>
       </View>
@@ -130,7 +135,7 @@ function Dot({ on }: { on: boolean }) {
 }
 
 /* ---------- Réglages (§4.9) ---------- */
-export type Prefs = { active: string[]; quota: number; sound: boolean; haptic: boolean; parallax: boolean; premium: boolean; time: string };
+export type Prefs = { active: string[]; quota: number; sound: boolean; haptic: boolean; parallax: boolean; premium: boolean; time: string; adsPersonalized: boolean };
 export function Settings({ W, prefs, onSave, onClose }: { W: number; prefs: Prefs; onSave: (p: Prefs) => void; onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const [d, setD] = useState(prefs);
@@ -191,7 +196,12 @@ export function Settings({ W, prefs, onSave, onClose }: { W: number; prefs: Pref
           <Text style={st.label}>Compte</Text>
           <View style={styles.rows}>
             <Row label="Pseudo"><Text style={styles.v}>lecteur_matinal</Text></Row>
-            <Row label="Connexion" last><Text style={styles.v}>Apple</Text></Row>
+            <Row label="Connexion" last={d.premium}><Text style={styles.v}>Apple</Text></Row>
+            {!d.premium ? (
+              <Row label="Pubs selon mes centres d'intérêt" hint="Les pubs restent en gratuit ; ceci règle seulement le ciblage" last>
+                <Toggle label="Pubs selon mes centres d'intérêt" on={d.adsPersonalized} onPress={() => set('adsPersonalized', !d.adsPersonalized)} />
+              </Row>
+            ) : null}
           </View>
           <LinearGradient colors={['rgba(200,107,250,0.28)', 'rgba(61,123,255,0.25)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.prem}>
             <View style={{ flex: 1 }}>
