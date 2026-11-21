@@ -95,6 +95,7 @@ const CardSchema = z.object({
     next: z.string().describe('Et après : prochaines étapes ou dates, 280 caractères maximum'),
   }),
   photo_tag: z.enum(PHOTO_TAG_LIST).describe('La photo d’ambiance la plus proche du sujet'),
+  photo_query: z.string().describe('2 à 4 mots-clés EN ANGLAIS pour chercher une photo d’illustration sur une banque d’images : un lieu, un objet ou un paysage lié au sujet. Jamais le nom d’une personne, d’une marque ou d’un logo, rien de violent'),
 });
 export type CardOut = z.infer<typeof CardSchema>;
 
@@ -191,6 +192,7 @@ function mockCard(story: Story, items: Item[]): CardOut {
     facts: [0, 1, 2].map((k) => ({ text: `Fait <b>${k + 1}</b> selon ${i.source}`, item_number: (items[k] ?? i).n })),
     summary: { context: 'Contexte (mode test).', change: 'Ce qui change (mode test).', next: 'Et après (mode test).' },
     photo_tag: PHOTO_TAG_LIST[(story.label.length + i.n) % PHOTO_TAG_LIST.length],
+    photo_query: 'city street',
   };
 }
 

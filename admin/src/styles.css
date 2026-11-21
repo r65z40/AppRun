@@ -131,3 +131,17 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--violet); ou
 .engine li.done { color: var(--text2); }
 .engine li.running::after { content: ' ●'; color: #FF6B8A; animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .2; } }
+
+/* Moteur */
+.runs { display: flex; flex-direction: column; gap: 10px; }
+.run { padding: 0; }
+.run-head { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.run-sum { flex: 1; }
+.run.error { border-color: rgba(255,107,138,.5); }
+.run-body { padding: 0 18px 16px; display: grid; gap: 14px; }
+.run-body h3 { margin: 4px 0 8px; font-size: 14px; }
+.run-body ul { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+.story { margin-bottom: 10px; }
+.log { white-space: pre-wrap; font-size: 12px; line-height: 1.5; background: rgba(0,0,0,.25); padding: 12px; border-radius: 10px; max-height: 420px; overflow: auto; }
+@media (max-width: 700px) { .run-head { flex-wrap: wrap; } .run-sum { flex-basis: 100%; } }
+a.btn { text-decoration: none; color: inherit; display: inline-flex; align-items: center; }

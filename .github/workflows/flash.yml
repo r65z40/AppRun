@@ -2,7 +2,9 @@ name: Dernière minute
 
 on:
   schedule:
-    - cron: '*/20 5-22 * * *' # toutes les 20 min, 6 h – 23 h 40 à Paris en hiver
+    # Toutes les 20 min, de 6 h à 23 h 50 à Paris en hiver. Minutes décalées : GitHub saute souvent
+    # les tâches prévues pile à :00, :20 ou :40, les moments les plus chargés.
+    - cron: '7,27,47 5-22 * * *'
   workflow_dispatch:
 
 concurrency: flash

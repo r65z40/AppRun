@@ -17,6 +17,7 @@ export type Article = {
   summary: string[];
   photo_tag: string | null;
   photo_url: string | null;
+  photo_credit?: string | null;
   review_notes: string[];
   model: string | null;
   published_at: string | null;
@@ -29,6 +30,16 @@ export type Profile = { id: string; pseudo: string | null; role: Role; premium: 
 export type Comment = { id: string; article_id: string; user_id: string; text: string; status: 'visible' | 'hidden'; created_at: string; article_title?: string; pseudo?: string | null };
 export type Report = { id: string; comment_id: string; reason: string | null; resolved: boolean; created_at: string; comment?: Comment };
 export type Flash = { id: string; status: 'published' | 'hidden'; rubric_id: string | null; importance: number; title: string; sentence: string; sources: { source: string; url: string }[]; manual: boolean; model: string | null; published_at: string; created_at: string };
+export type EngineRun = {
+  id: string; kind: 'edition' | 'flash'; status: 'running' | 'ok' | 'error'; started_at: string; finished_at: string | null;
+  summary: string | null; stats: Record<string, unknown>; log: string[];
+  details: {
+    stories?: { label: string; rubric: string; importance: number; essential: boolean; items: { source: string; title: string }[] }[];
+    left?: { source: string; title: string }[];
+    cards?: { rubric: string; title: string; issues: string[]; error?: string; photo?: string }[];
+    flashes?: { title: string; sources: string[]; rejected?: string }[];
+  };
+};
 export type Me = { id: string; email: string; role: Role };
 
 export const RUBRICS: Record<string, string> = { france: 'France', monde: 'Monde', eco: 'Éco', tech: 'Tech', sport: 'Sport', culture: 'Culture' };
@@ -56,6 +67,7 @@ export interface Api {
   createArticle(a: Partial<Article> & { edition_date: string; rubric_id: string }): Promise<void>;
   /** Démo : simule le moteur pas à pas. Vraie base : null (le moteur tourne sur GitHub). */
   runEngine?(onStep: (s: string) => void): Promise<void>;
+  runs(): Promise<EngineRun[]>;
   flashes(): Promise<Flash[]>;
   saveFlash(f: Partial<Flash> & { id?: string }): Promise<void>;
 }
@@ -63,6 +75,7 @@ export interface Api {
 // Page GitHub où lancer le moteur à la main (bouton « Run workflow »).
 const REPO = (import.meta.env.VITE_GITHUB_REPO as string | undefined) || 'r65z40/AppRun';
 export const ENGINE_URL = `https://github.com/${REPO}/actions/workflows/edition.yml`;
+export const FLASH_URL = `https://github.com/${REPO}/actions/workflows/flash.yml`;
 
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -140,6 +153,7 @@ function supabaseApi(sb: SupabaseClient): Api {
       const last = ok(await sb.from('articles').select('rank').eq('edition_date', a.edition_date).eq('rubric_id', a.rubric_id).order('rank', { ascending: false }).limit(1)) as { rank: number }[];
       ok(await sb.from('articles').insert({ ...a, rank: (last[0]?.rank ?? -1) + 1, edited_by: data.user?.id }));
     },
+    runs: async () => sb.from('engine_runs').select('*').order('started_at', { ascending: false }).limit(40).then(ok<EngineRun[]>),
     // Les dernières 48 heures, la plus récente en haut.
     flashes: async () => sb.from('flashes').select('*').gt('published_at', new Date(Date.now() - 48 * 3600e3).toISOString()).order('published_at', { ascending: false }).then(ok<Flash[]>),
     async saveFlash(f) {

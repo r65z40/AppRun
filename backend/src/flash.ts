@@ -7,18 +7,31 @@
  */
 import { pool, q } from './db.js';
 import { collect } from './collect.js';
+import { startJournal, type Journal } from './journal.js';
 import { MODEL, checkFlash, selectFlashes, type Item } from './ai.js';
 
 const args = process.argv.slice(2);
 const fx = args.indexOf('--fixtures');
 const FIXTURES = fx >= 0 ? args[fx + 1] : undefined;
 const AUTO = process.env.FLASH_AUTO_PUBLISH !== '0';
-const log = (...a: unknown[]) => console.log(new Date().toISOString().slice(11, 19), ...a);
+let J: Journal;
+const log = (...a: unknown[]) => J.log(...a);
 
 type Raw = { id: string; title: string; description: string; link: string; published_at: Date | null; source: string };
 
 async function main() {
-  await collect(FIXTURES, () => {});
+  J = await startJournal('flash');
+  try {
+    await flash();
+  } catch (e) {
+    log(`Erreur : ${e instanceof Error ? e.message : e}`);
+    await J.finish('error', `Échec : ${e instanceof Error ? e.message : e}`);
+    throw e;
+  }
+}
+
+async function flash() {
+  const fetched = await collect(FIXTURES, log);
   const used = new Set((await q<{ id: string }>("select unnest(raw_item_ids)::text as id from flashes where created_at > now() - interval '24 hours'")).map((r) => r.id));
   const raws = (await q<Raw>(
     `select r.id, r.title, r.description, r.link, r.published_at, s.name as source
@@ -26,15 +39,22 @@ async function main() {
       where coalesce(r.published_at, r.fetched_at) > now() - interval '2 hours' ${FIXTURES ? "or true" : ''}
       order by coalesce(r.published_at, r.fetched_at) desc limit 250`,
   )).filter((r) => !used.has(r.id));
-  if (raws.length < 2) return log('Rien de neuf.');
+  log(`${fetched} titres lus, ${raws.length} dépêches des 2 dernières heures pas encore utilisées.`);
+  if (raws.length < 2) return J.finish('ok', `${fetched} titres lus, rien de neuf depuis 2 heures.`, { fetched, items: raws.length, published: 0 });
   const items: Item[] = raws.map((r, k) => ({ n: k + 1, source: r.source, title: r.title, description: r.description, publishedAt: r.published_at?.toISOString() ?? null }));
   const today = (await q<{ title: string }>("select title from flashes where published_at > now() - interval '18 hours' order by published_at")).map((r) => r.title);
 
   const found = await selectFlashes(items, today);
+  log(`L'IA propose ${found.length} info(s) majeure(s).`);
+  const kept: { title: string; sources: string[]; rejected?: string }[] = (J.details.flashes = []) as never;
   let n = 0;
   for (const f of found) {
     const issues = checkFlash(f, items);
-    if (issues.length) { log(`  écartée : ${f.title} (${issues.join(', ')})`); continue; }
+    if (issues.length) {
+      log(`  écartée : ${f.title} (${issues.join(', ')})`);
+      kept.push({ title: f.title, sources: f.item_numbers.map((k) => items[k - 1]?.source).filter(Boolean), rejected: issues.join(', ') });
+      continue;
+    }
     const its = f.item_numbers.map((k) => raws[k - 1]).filter(Boolean);
     const sources = [...new Map(its.map((r) => [r.source, { source: r.source, url: r.link }])).values()];
     await q(
@@ -44,8 +64,11 @@ async function main() {
     );
     n++;
     log(`  ⚡ ${f.title}`);
+    kept.push({ title: f.title, sources: sources.map((x) => x.source) });
   }
-  log(`Dernière minute : ${n} nouvelle(s) info(s) sur ${items.length} dépêches.`);
+  const summary = `${fetched} titres lus, ${items.length} dépêches récentes, ${n} info(s) publiée(s).`;
+  log(`Dernière minute : ${summary}`);
+  await J.finish('ok', summary, { fetched, items: items.length, proposed: found.length, published: n });
 }
 
 main().catch((e) => { console.error(e); process.exitCode = 1; }).finally(() => pool.end());
