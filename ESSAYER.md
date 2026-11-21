@@ -28,17 +28,25 @@ Sur [console.anthropic.com](https://console.anthropic.com), ouvrez **API Keys > 
 
 ## 3. GitHub (5 min)
 
-Dans le dépôt, ouvrez **Settings > Secrets and variables > Actions**.
+On range 4 informations dans GitHub. Chaque lien ouvre directement le bon formulaire. Recopiez les noms exactement, en majuscules avec les tirets bas.
 
-- Onglet **Secrets** :
-  - `DATABASE_URL` : l'adresse `postgresql://…` de l'étape 1 ;
-  - `ANTHROPIC_API_KEY` : la clé de l'étape 2.
-- Onglet **Variables** :
-  - `SUPABASE_URL` : l'adresse du projet (`https://xxxx.supabase.co`) ;
-  - `SUPABASE_ANON_KEY` : la clé publique (`sb_publishable_…`) ;
-  - `AUTO_PUBLISH` (facultatif) : `1` pour publier les cartes sans relecture. Laissez cette variable vide pendant les essais.
+**Les 2 secrets (privés)** : ouvrez [Nouveau secret](https://github.com/r65z40/AppRun/settings/secrets/actions/new), remplissez *Name* et *Secret*, puis cliquez sur **Add secret**. Faites-le deux fois :
 
-Ouvrez ensuite **Settings > Pages**. Dans *Source*, choisissez **GitHub Actions**.
+| Name | Secret |
+|---|---|
+| `DATABASE_URL` | l'adresse `postgresql://…` de l'étape 1, avec votre mot de passe |
+| `ANTHROPIC_API_KEY` | la clé Claude de l'étape 2 (`sk-ant-…`) |
+
+**Les variables (publiques)** : ouvrez [Nouvelle variable](https://github.com/r65z40/AppRun/settings/variables/actions/new), remplissez *Name* et *Value*, puis cliquez sur **Add variable**. Faites-le deux fois :
+
+| Name | Value |
+|---|---|
+| `SUPABASE_URL` | l'adresse du projet (`https://xxxx.supabase.co`) |
+| `SUPABASE_ANON_KEY` | la clé publique (`sb_publishable_…`) |
+
+Facultatif : une variable `AUTO_PUBLISH` réglée sur `1` publie les cartes sans relecture. Laissez-la de côté pendant les essais.
+
+**Pages** : ouvrez [Settings > Pages](https://github.com/r65z40/AppRun/settings/pages). Si la page propose « Use a suggested workflow », c'est déjà bon, ne cliquez sur rien. Sinon, dans *Source*, choisissez **GitHub Actions**.
 
 ## 4. Mettre l'app web et le back office en ligne
 
