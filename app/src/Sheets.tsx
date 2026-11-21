@@ -116,34 +116,39 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
   );
 }
 
-export function CommentsSheet({ a, open, onClose, H, comments, setComments, onToast }: {
-  a: Article | null; open: boolean; onClose: () => void; H: number; comments: Comment[]; setComments: (c: Comment[]) => void; onToast: (m: string) => void;
+export function CommentsSheet({ a, open, onClose, H, comments, total, loading, onSend, onVote, onFlag, onDelete }: {
+  a: Article | null; open: boolean; onClose: () => void; H: number; comments: Comment[]; total: number; loading?: boolean;
+  /** Envoie le commentaire ; renvoie son id (pour l'animer) ou null si l'envoi n'a pas eu lieu. */
+  onSend: (text: string) => Promise<string | null>;
+  onVote: (c: Comment, v: -1 | 0 | 1) => void; onFlag: (c: Comment) => void; onDelete: (c: Comment) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [sort, setSort] = useState<'pert' | 'rec'>('pert');
   const [txt, setTxt] = useState('');
+  const [sending, setSending] = useState(false);
   const [fresh, setFresh] = useState<string | null>(null);
   const list = [...comments].sort((x, y) =>
     sort === 'pert' ? y.likes - y.dislikes + y.mine - (x.likes - x.dislikes + x.mine) || x.order - y.order : x.order - y.order,
   );
   const vote = (c: Comment, v: 1 | -1) => {
-    setComments(comments.map((k) => (k.id === c.id ? { ...k, mine: k.mine === v ? 0 : v } : k)));
+    onVote(c, c.mine === v ? 0 : v);
     if (c.mine !== v) feel(v === 1 ? 'medium' : 'light', v === 1 ? 'pop' : 'thud');
   };
-  const send = () => {
+  const send = async () => {
     const v = txt.trim();
-    if (!v) return;
-    const c: Comment = { id: 'm' + Date.now(), who: 'lecteur_matinal', color: C.violet, text: v, likes: 0, dislikes: 0, ago: "à l'instant", mine: 0, order: -1 - comments.length };
-    setComments([...comments, c]);
+    if (!v || sending) return;
+    setSending(true);
+    const id = await onSend(v).finally(() => setSending(false));
+    if (!id) return;
     setSort('rec');
-    setFresh(c.id);
+    setFresh(id);
     setTxt('');
     feel('success', 'ding');
   };
   return (
     <Sheet open={open} onClose={onClose} H={H} bg={a} header={
       <View style={styles.sheetHead}>
-        <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 17 }}>{comments.length + (a?.comments ?? 0) - 5} commentaires</Text>
+        <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 17 }}>{total} commentaire{total > 1 ? 's' : ''}</Text>
         <View style={styles.sort}>
           {(['pert', 'rec'] as const).map((k) => (
             <Pressable key={k} onPress={() => setSort(k)} style={[styles.sortBtn, sort === k && styles.sortOn]}>
@@ -155,8 +160,10 @@ export function CommentsSheet({ a, open, onClose, H, comments, setComments, onTo
     }>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={H * 0.1}>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24 }}>
+          {loading && !comments.length ? <Text style={[styles.voteTxt, { textAlign: 'center', paddingVertical: 30 }]}>Chargement…</Text> : null}
+          {!loading && !comments.length ? <Text style={[styles.voteTxt, { textAlign: 'center', paddingVertical: 30, fontSize: 14 }]}>Aucun commentaire pour l’instant. Donnez le premier avis.</Text> : null}
           {list.map((c) => (
-            <CommentRow key={c.id} c={c} fresh={c.id === fresh} onVote={(v) => vote(c, v)} onFlag={() => onToast("Merci, l'équipe va vérifier ce commentaire")} />
+            <CommentRow key={c.id} c={c} fresh={c.id === fresh} onVote={(v) => vote(c, v)} onFlag={() => (c.own ? onDelete(c) : onFlag(c))} />
           ))}
         </ScrollView>
         <View style={[styles.compose, { paddingBottom: Math.max(16, insets.bottom + 4) }]}>
@@ -174,7 +181,7 @@ export function CommentsSheet({ a, open, onClose, H, comments, setComments, onTo
             />
             <Text style={[styles.count, 70 - txt.length <= 10 && { color: C.coral }]}>{70 - txt.length}</Text>
           </View>
-          <Press onPress={send} disabled={!txt.trim()} style={{ opacity: txt.trim() ? 1 : 0.35 }} accessibilityLabel="Envoyer">
+          <Press onPress={send} disabled={!txt.trim() || sending} style={{ opacity: txt.trim() && !sending ? 1 : 0.35 }} accessibilityLabel="Envoyer">
             <LinearGradient colors={[C.violet, C.blue]} style={styles.send}>
               <Icon name="send" size={20} />
             </LinearGradient>
@@ -209,8 +216,8 @@ function CommentRow({ c, fresh, onVote, onFlag }: { c: Comment; fresh: boolean; 
           <Text style={styles.voteTxt}>{c.dislikes + (c.mine === -1 ? 1 : 0)}</Text>
         </Pressable>
         <Pressable onPress={onFlag} style={[styles.vote, { marginLeft: 'auto' }]} hitSlop={8}>
-          <Icon name="flag" size={15} color={C.text2} />
-          <Text style={styles.voteTxt}>Signaler</Text>
+          {c.own ? null : <Icon name="flag" size={15} color={C.text2} />}
+          <Text style={styles.voteTxt}>{c.own ? 'Supprimer' : 'Signaler'}</Text>
         </Pressable>
       </View>
     </Animated.View>

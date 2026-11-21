@@ -136,7 +136,11 @@ function Dot({ on }: { on: boolean }) {
 
 /* ---------- Réglages (§4.9) ---------- */
 export type Prefs = { active: string[]; quota: number; sound: boolean; haptic: boolean; parallax: boolean; premium: boolean; time: string; adsPersonalized: boolean };
-export function Settings({ W, prefs, onSave, onClose }: { W: number; prefs: Prefs; onSave: (p: Prefs) => void; onClose: () => void }) {
+export function Settings({ W, prefs, onSave, onClose, account, onAccount }: {
+  W: number; prefs: Prefs; onSave: (p: Prefs) => void; onClose: () => void;
+  /** Pseudo du lecteur connecté, '' sans pseudo, null s'il n'est pas connecté. */
+  account: string | null; onAccount: () => void;
+}) {
   const insets = useSafeAreaInsets();
   const [d, setD] = useState(prefs);
   const x = useSharedValue(W);
@@ -195,8 +199,13 @@ export function Settings({ W, prefs, onSave, onClose }: { W: number; prefs: Pref
         <View style={{ gap: 12 }}>
           <Text style={st.label}>Compte</Text>
           <View style={styles.rows}>
-            <Row label="Pseudo"><Text style={styles.v}>lecteur_matinal</Text></Row>
-            <Row label="Connexion" last={d.premium}><Text style={styles.v}>Apple</Text></Row>
+            <Pressable onPress={onAccount} accessibilityRole="button">
+              {account === null ? (
+                <Row label="Se connecter ou créer un compte" hint="Pour aimer les infos et commenter" last={d.premium}><Text style={styles.v}>›</Text></Row>
+              ) : (
+                <Row label="Mon compte" last={d.premium}><Text style={styles.v}>{account || 'Choisir un pseudo'} ›</Text></Row>
+              )}
+            </Pressable>
             {!d.premium ? (
               <Row label="Pubs selon mes centres d'intérêt" hint="Les pubs restent en gratuit ; ceci règle seulement le ciblage" last>
                 <Toggle label="Pubs selon mes centres d'intérêt" on={d.adsPersonalized} onPress={() => set('adsPersonalized', !d.adsPersonalized)} />

@@ -118,7 +118,7 @@ Style :
 Photos d'ambiance disponibles :
 ${Object.entries(PHOTO_TAGS).map(([k, v]) => `- ${k} : ${v}`).join('\n')}`;
 
-export async function writeCard(story: Story, items: Item[]): Promise<CardOut> {
+export async function writeCard(story: Story, items: Item[], fix?: string[]): Promise<CardOut> {
   if (MOCK) return mockCard(story, items);
   const docs = items.map((i) => `[${i.n}] ${i.source}${i.publishedAt ? ` (${i.publishedAt})` : ''}\nTitre : ${i.title}\nChapô : ${i.description || '—'}`).join('\n\n');
   const res = await api().beta.messages.parse({
@@ -128,7 +128,7 @@ export async function writeCard(story: Story, items: Item[]): Promise<CardOut> {
     fallbacks: 'default',
     system: WRITE_SYSTEM,
     output_config: { effort: EFFORT, format: betaZodOutputFormat(CardSchema) },
-    messages: [{ role: 'user', content: `Rubrique : ${story.rubric}\n\n${docs}` }],
+    messages: [{ role: 'user', content: `Rubrique : ${story.rubric}\n\n${docs}${fix?.length ? `\n\nUne première version a été refusée par les contrôles automatiques : ${fix.join(' ; ')}. Réécris la carte en corrigeant ces points, sans reprendre les formulations des médias.` : ''}` }],
   });
   if (res.stop_reason === 'refusal') throw new Error('Carte refusée par le modèle');
   const out = res.parsed_output;
