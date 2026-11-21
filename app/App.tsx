@@ -11,7 +11,7 @@ import { RUBRICS } from './src/content';
 import { buildColumns, seedComments } from './src/edition';
 import { Feed } from './src/Feed';
 import { SummarySheet, CommentsSheet } from './src/Sheets';
-import { Bravo, End, Onboarding, Settings, Splash, Toast, type Prefs } from './src/Screens';
+import { Bravo, End, Onboarding, Settings, Splash, Toast, type OnbResult, type Prefs } from './src/Screens';
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
 import { loadEdition } from './src/remote';
 import { isAd, type Article, type Card, type Comment } from './src/types';
@@ -45,7 +45,7 @@ function Main() {
   useEffect(() => { if (loaded && splashDone && phase === 'splash') setPhase('onb'); }, [loaded, splashDone]);
   const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded]);
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 8, sound: true, haptic: true, parallax: true, premium: false, time: '7 h 30' });
+  const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 8, sound: true, haptic: true, parallax: true, premium: false, time: '7 h 30', adsPersonalized: false });
 
   // Fil
   const cols = useMemo(() => buildColumns(p.active, p.quota, p.premium), [p.active, p.quota, p.premium]);
@@ -74,8 +74,14 @@ function Main() {
       return;
     }
     let base: { b: number; g: number } | null = null;
+    let sub: { remove: () => void } | null = null;
+    let alive = true;
+    // Le capteur peut manquer (simulateur, web) : l'app marche alors sans effet de profondeur.
+    DeviceMotion.isAvailableAsync().then((ok) => {
+      if (!ok || !alive) return;
+      try {
     DeviceMotion.setUpdateInterval(33);
-    const sub = DeviceMotion.addListener((m) => {
+    sub = DeviceMotion.addListener((m) => {
       const r = m.rotation;
       if (!r) return;
       if (!base) base = { b: r.beta, g: r.gamma };
@@ -86,7 +92,9 @@ function Main() {
       tiltX.value = withSpring(clamp((r.gamma - base.g) / 0.35) * 18, { duration: 300, dampingRatio: 1 });
       tiltY.value = withSpring(clamp((r.beta - base.b) / 0.35) * 18, { duration: 300, dampingRatio: 1 });
     });
-    return () => sub.remove();
+      } catch {}
+    }).catch(() => {});
+    return () => { alive = false; sub?.remove(); };
   }, [phase, p.parallax]);
 
   // Toast
@@ -162,8 +170,8 @@ function Main() {
     setCmts(a);
   };
 
-  const onOnb = (r: { active: string[]; quota: number; time: string }) => {
-    setP((x) => ({ ...x, active: r.active.length ? r.active : x.active, quota: r.quota, time: r.time }));
+  const onOnb = (r: OnbResult) => {
+    setP((x) => ({ ...x, active: r.active.length ? r.active : x.active, quota: r.quota, time: r.time, adsPersonalized: r.adsPersonalized, premium: !!r.premium }));
     setLimit(r.quota);
     setPhase('feed');
   };
