@@ -1,7 +1,7 @@
 // Lecture de la vraie édition du jour dans Supabase (API REST publique, lecture seule).
 // Sans configuration ou sans réseau, l'app garde le contenu de démonstration.
-import { PHOTOS, RUBRICS } from './content';
-import type { Article, Rubric } from './types';
+import { FLASHES, PHOTOS, RUBRICS } from './content';
+import type { Article, Flash, Rubric } from './types';
 
 const URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -86,3 +86,27 @@ export async function loadEdition(timeoutMs = 4000): Promise<string | null> {
     clearTimeout(t);
   }
 }
+
+type FlashRow = { id: string; title: string; sentence: string; sources: { source: string; url: string }[]; published_at: string };
+
+/** Dernière minute : remplace les flashs de démo par les vrais. Renvoie true si la liste a changé. */
+export async function loadFlashes(timeoutMs = 4000): Promise<boolean> {
+  if (!remoteConfigured) return false;
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const rows = await get<FlashRow[]>('flashes?select=id,title,sentence,sources,published_at&status=eq.published&order=published_at.desc&limit=30', ctl.signal);
+    const next: Flash[] = rows.map((r) => ({ flash: true, id: `flash-${r.id}`, title: r.title, sentence: r.sentence, at: r.published_at, sources: r.sources ?? [] }));
+    const same = next.length === FLASHES.length && next.every((f, i) => f.id === FLASHES[i].id && f.title === FLASHES[i].title && f.sentence === FLASHES[i].sentence);
+    if (same) return false;
+    FLASHES.splice(0, FLASHES.length, ...next);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Avec une vraie base, on n'affiche jamais les flashs de démonstration.
+if (remoteConfigured) FLASHES.splice(0, FLASHES.length);

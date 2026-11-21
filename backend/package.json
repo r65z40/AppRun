@@ -5,7 +5,8 @@
   "scripts": {
     "engine": "tsx src/run.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bash test/run-local.sh"
+    "test": "bash test/run-local.sh",
+    "flash": "tsx src/flash.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

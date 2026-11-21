@@ -21,8 +21,12 @@ export type Article = {
 export type Rubric = { id: string; name: string; items: Article[] };
 
 export type Ad = { ad: true; id: string };
-export type Card = Article | Ad;
+/** Dernière minute : une info majeure, datée à la minute. */
+export type Flash = { flash: true; id: string; title: string; sentence: string; at: string; sources: { source: string; url: string }[] };
+export type Card = Article | Ad | Flash;
 export const isAd = (c: Card): c is Ad => 'ad' in c;
+export const isFlash = (c: Card): c is Flash => 'flash' in c;
+export const isArticle = (c: Card): c is Article => !('ad' in c) && !('flash' in c);
 
 export type Tag = 'ess' | 'pv' | 'dec';
 

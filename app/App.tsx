@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, useWindowDimensions } from 'react-native';
+import { AppState, View, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,8 +13,8 @@ import { Feed } from './src/Feed';
 import { SummarySheet, CommentsSheet } from './src/Sheets';
 import { Bravo, End, Onboarding, Settings, Splash, Toast, type OnbResult, type Prefs } from './src/Screens';
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
-import { loadEdition } from './src/remote';
-import { isAd, type Article, type Card, type Comment } from './src/types';
+import { loadEdition, loadFlashes } from './src/remote';
+import { isArticle, type Article, type Card, type Comment } from './src/types';
 
 type Phase = 'splash' | 'onb' | 'feed';
 type Overlay = null | 'bravo' | 'end' | 'settings';
@@ -48,7 +48,16 @@ function Main() {
   const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 8, sound: true, haptic: true, parallax: true, premium: false, time: '7 h 30', adsPersonalized: false });
 
   // Fil
-  const cols = useMemo(() => buildColumns(p.active, p.quota, p.premium), [p.active, p.quota, p.premium]);
+  // Dernière minute : rechargée toutes les 3 minutes et au retour dans l'app.
+  const [flashVer, setFlashVer] = useState(0);
+  useEffect(() => {
+    const refresh = () => loadFlashes().then((changed) => changed && setFlashVer((v) => v + 1));
+    refresh();
+    const t = setInterval(refresh, 180000);
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && refresh());
+    return () => { clearInterval(t); sub.remove(); };
+  }, []);
+  const cols = useMemo(() => buildColumns(p.active, p.quota, p.premium), [p.active, p.quota, p.premium, flashVer]);
   const [ri, setRi] = useState(0);
   const [idx, setIdx] = useState<Record<string, number>>({});
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
@@ -108,7 +117,7 @@ function Main() {
   // Carte affichée → marquée comme lue après un court instant.
   const current: Card | undefined = cols[ri]?.cards[idx[cols[ri]?.id] ?? 0];
   useEffect(() => {
-    if (phase !== 'feed' || overlay || !current || isAd(current)) return;
+    if (phase !== 'feed' || overlay || !current || !isArticle(current)) return;
     shownAt.current = Date.now();
     const id = current.id;
     const t = setTimeout(() => markSeen(id), DWELL_MS);
@@ -130,7 +139,7 @@ function Main() {
   const remaining = ALL_IDS.size - seen.size;
 
   const canEnter = (c: Card) => {
-    if (isAd(c) || seen.has(c.id)) return true;
+    if (!isArticle(c) || seen.has(c.id)) return true;
     if (seen.size >= limit) {
       openBravo();
       return false;
@@ -142,7 +151,8 @@ function Main() {
     setOverlay('bravo');
   };
   const onEndOfColumn = () => {
-    if (cols[ri].id === 'edition' || seen.size >= limit) openBravo();
+    if (cols[ri].id === 'flash') showToast('Vous êtes à jour. Les nouvelles infos arrivent ici dès qu’elles tombent.');
+    else if (cols[ri].id === 'edition' || seen.size >= limit) openBravo();
     else showToast('Fin de la rubrique. Glissez vers la droite pour en voir une autre.');
   };
 
@@ -205,9 +215,9 @@ function Main() {
     setLimit((l) => l + moreCount);
     bravoShown.current = false;
     // On enchaîne sur la première rubrique qui a encore des infos non lues.
-    const ci = cols.findIndex((c, k) => k > 0 && c.cards.some((x) => !isAd(x) && !seen.has(x.id)));
+    const ci = cols.findIndex((c, k) => k > 0 && c.cards.some((x) => isArticle(x) && !seen.has(x.id)));
     if (ci > 0) {
-      const k = cols[ci].cards.findIndex((x) => !isAd(x) && !seen.has(x.id));
+      const k = cols[ci].cards.findIndex((x) => isArticle(x) && !seen.has(x.id));
       setRi(ci);
       setIdx((m) => ({ ...m, [cols[ci].id]: k }));
     }

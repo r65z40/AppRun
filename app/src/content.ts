@@ -1,5 +1,5 @@
 // Contenu de démonstration entièrement fictif (repris de la maquette).
-import type { Rubric } from './types';
+import type { Flash, Rubric } from './types';
 
 export const PHOTOS = {
   train: require('../assets/photos/train.jpg'),
@@ -537,4 +537,13 @@ export const RUBRICS: Rubric[] = [
    }
   ]
  }
+];
+
+// Dernière minute (démo) : horodatée par rapport à l'ouverture de l'app.
+const ago = (min: number) => new Date(Date.now() - min * 60000).toISOString();
+export const FLASHES: Flash[] = [
+  { flash: true, id: 'f1', at: ago(12), title: 'Séisme de magnitude 6,1 au large de la Grèce', sentence: 'La secousse a été ressentie jusqu’à Athènes. Aucune victime signalée pour l’instant selon les autorités grecques.', sources: [{ source: 'franceinfo', url: 'https://exemple.test/f1' }, { source: 'RFI', url: 'https://exemple.test/f1b' }] },
+  { flash: true, id: 'f2', at: ago(74), title: 'La BCE baisse ses taux de 0,25 point', sentence: 'Le principal taux directeur passe à 1,75 %. C’est la troisième baisse depuis l’été.', sources: [{ source: 'Les Echos', url: 'https://exemple.test/f2' }, { source: 'Le Monde', url: 'https://exemple.test/f2b' }] },
+  { flash: true, id: 'f3', at: ago(185), title: 'Accord trouvé sur le budget au Sénat', sentence: 'Sénateurs et députés se sont entendus sur une version commune du texte, votée définitivement mardi.', sources: [{ source: 'Le Monde', url: 'https://exemple.test/f3' }, { source: '20 Minutes', url: 'https://exemple.test/f3b' }] },
+  { flash: true, id: 'f4', at: ago(320), title: 'Tempête : 80 000 foyers privés d’électricité', sentence: 'Les rafales ont dépassé 130 km/h en Bretagne. Enedis prévoit un retour à la normale d’ici demain soir.', sources: [{ source: 'Ouest-France', url: 'https://exemple.test/f4' }, { source: 'franceinfo', url: 'https://exemple.test/f4b' }] },
 ];

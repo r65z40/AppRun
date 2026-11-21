@@ -28,6 +28,7 @@ export type Role = 'reader' | 'editor' | 'admin';
 export type Profile = { id: string; pseudo: string | null; role: Role; premium: boolean; created_at: string };
 export type Comment = { id: string; article_id: string; user_id: string; text: string; status: 'visible' | 'hidden'; created_at: string; article_title?: string; pseudo?: string | null };
 export type Report = { id: string; comment_id: string; reason: string | null; resolved: boolean; created_at: string; comment?: Comment };
+export type Flash = { id: string; status: 'published' | 'hidden'; rubric_id: string | null; importance: number; title: string; sentence: string; sources: { source: string; url: string }[]; manual: boolean; model: string | null; published_at: string; created_at: string };
 export type Me = { id: string; email: string; role: Role };
 
 export const RUBRICS: Record<string, string> = { france: 'France', monde: 'Monde', eco: 'Éco', tech: 'Tech', sport: 'Sport', culture: 'Culture' };
@@ -52,6 +53,8 @@ export interface Api {
   team(): Promise<Profile[]>;
   setRole(id: string, role: Role): Promise<void>;
   findProfile(pseudo: string): Promise<Profile | null>;
+  flashes(): Promise<Flash[]>;
+  saveFlash(f: Partial<Flash> & { id?: string }): Promise<void>;
 }
 
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -123,6 +126,13 @@ function supabaseApi(sb: SupabaseClient): Api {
     },
     async findProfile(pseudo) {
       return (ok(await sb.from('profiles').select('*').ilike('pseudo', pseudo).limit(1)) as Profile[])[0] ?? null;
+    },
+    // Les dernières 48 heures, la plus récente en haut.
+    flashes: async () => sb.from('flashes').select('*').gt('published_at', new Date(Date.now() - 48 * 3600e3).toISOString()).order('published_at', { ascending: false }).then(ok<Flash[]>),
+    async saveFlash(f) {
+      const { data } = await sb.auth.getUser();
+      if (f.id) ok(await sb.from('flashes').update({ ...f, edited_by: data.user?.id }).eq('id', f.id));
+      else ok(await sb.from('flashes').insert({ ...f, manual: true, edited_by: data.user?.id }));
     },
   };
 }

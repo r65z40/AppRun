@@ -70,4 +70,19 @@ select (select role = 'editor' from profiles where id = '00000000-0000-0000-0000
 \else
 \echo ÉCHEC  élévation de rôle possible
 \endif
+-- 6. Dernière minute : publiée, visible du public, sans doublon au second passage
+select count(*) as nf, count(*) between 1 and 2 as ok from flashes \gset
+\if :ok
+\echo OK  dernière minute : :nf info(s), pas de doublon au second passage
+\else
+\echo ÉCHEC  dernière minute : :nf info(s)
+\endif
+set role anon;
+select count(*) > 0 as ok from flashes \gset
+reset role;
+\if :ok
+\echo OK  dernière minute visible du public
+\else
+\echo ÉCHEC  dernière minute invisible
+\endif
 select a.title, s.likes, s.comments from articles a join article_stats s on s.article_id = a.id order by a.rubric_id, a.rank limit 3;

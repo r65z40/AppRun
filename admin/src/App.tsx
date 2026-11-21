@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type Flash, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'edition' | 'sources' | 'moderation' | 'team';
-const PAGES: [Page, string][] = [['edition', 'Édition'], ['sources', 'Sources'], ['moderation', 'Modération'], ['team', 'Équipe']];
+type Page = 'edition' | 'flash' | 'sources' | 'moderation' | 'team';
+const PAGES: [Page, string][] = [['edition', 'Édition'], ['flash', 'Dernière minute'], ['sources', 'Sources'], ['moderation', 'Modération'], ['team', 'Équipe']];
 const LIMITS = { title: 60, key: 140, fact: 90, summary: 280 };
 const SUMMARY_HEADS = ['Contexte', 'Ce qui change', 'Et après'];
 
@@ -52,6 +52,7 @@ export default function App() {
       </aside>
       <main className="main">
         {page === 'edition' && <EditionPage say={say} />}
+        {page === 'flash' && <FlashPage say={say} />}
         {page === 'sources' && <SourcesPage say={say} />}
         {page === 'moderation' && <ModerationPage say={say} />}
         {page === 'team' && me.role === 'admin' && <TeamPage say={say} me={me} />}
@@ -295,6 +296,81 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
 const safeBold = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>');
 
 /* ---------------- Sources ---------------- */
+/* ---------------- Dernière minute ---------------- */
+const emptyFlash = { id: '', title: '', sentence: '', rubric_id: '', src1: '', url1: '', src2: '', url2: '' };
+function FlashPage({ say }: { say: (m: string) => void }) {
+  const [list, setList] = useState<Flash[]>([]);
+  const [form, setForm] = useState(emptyFlash);
+  const load = () => api.flashes().then(setList);
+  useEffect(() => { load(); }, []);
+  const time = (iso: string) => new Date(iso).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).replace(':', ' h ');
+  const edit = (f: Flash) => {
+    setForm({ id: f.id, title: f.title, sentence: f.sentence, rubric_id: f.rubric_id ?? '', src1: f.sources[0]?.source ?? '', url1: f.sources[0]?.url ?? '', src2: f.sources[1]?.source ?? '', url2: f.sources[1]?.url ?? '' });
+    setTimeout(() => document.querySelector('.addform')?.scrollIntoView({ behavior: 'smooth' }), 0);
+  };
+  const set = (k: keyof typeof emptyFlash) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
+  return (
+    <>
+      <header className="head">
+        <div>
+          <div className="eyebrow">Dernière minute</div>
+          <h1>Infos de la journée</h1>
+          <p className="muted">Le moteur passe toutes les 20 minutes, de 6 h à 23 h, et publie seul les infos majeures confirmées par au moins deux médias. Elles restent 24 heures dans l'app. Masquez, corrigez ou ajoutez une info ici.</p>
+        </div>
+      </header>
+      {!list.length && <p className="muted">Aucune info pour l'instant.</p>}
+      <div className="flashes">
+        {list.map((f) => (
+          <div key={f.id} className={`flash panel ${f.status === 'hidden' ? 'off' : ''}`}>
+            <div className="flash-time">{time(f.published_at)}</div>
+            <div className="flash-body">
+              <div className="muted small">
+                {f.rubric_id ? RUBRICS[f.rubric_id] : 'Sans rubrique'} · {f.manual ? 'ajoutée à la main' : 'moteur'}
+                {f.status === 'hidden' && <span className="pill rejected" style={{ marginLeft: 8 }}>Masquée</span>}
+              </div>
+              <b>{f.title}</b>
+              <p>{f.sentence}</p>
+              <div className="muted small">{f.sources.map((s) => <a key={s.url} href={s.url} target="_blank" rel="noreferrer" style={{ marginRight: 12 }}>{s.source} ↗</a>)}</div>
+            </div>
+            <div className="flash-actions">
+              <button className="btn sm" onClick={() => edit(f)}>Modifier</button>
+              <button className="btn sm" onClick={async () => { await api.saveFlash({ id: f.id, status: f.status === 'hidden' ? 'published' : 'hidden' }); load(); say(f.status === 'hidden' ? 'Info remise en ligne' : 'Info masquée dans l’app'); }}>{f.status === 'hidden' ? 'Remettre' : 'Masquer'}</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <form className="panel addform" onSubmit={async (e) => {
+        e.preventDefault();
+        const sources = [[form.src1, form.url1], [form.src2, form.url2]].filter(([s]) => s.trim()).map(([source, url]) => ({ source: source.trim(), url: url.trim() }));
+        if (sources.some((s) => s.url && !/^https?:\/\//.test(s.url))) return say('Les liens doivent commencer par https://');
+        const patch = { title: form.title.trim(), sentence: form.sentence.trim(), rubric_id: form.rubric_id || null, sources };
+        await api.saveFlash(form.id ? { id: form.id, ...patch } : patch);
+        say(form.id ? 'Info corrigée' : 'Info publiée dans l’app');
+        setForm(emptyFlash);
+        load();
+      }}>
+        <h2>{form.id ? 'Corriger l’info' : 'Ajouter une info'}</h2>
+        <label>Titre <Count v={form.title} max={90} /><input value={form.title} maxLength={90} onChange={set('title')} required /></label>
+        <label>Phrase <Count v={form.sentence} max={220} /><textarea value={form.sentence} maxLength={220} rows={3} onChange={set('sentence')} required /></label>
+        <div className="row3">
+          <label>Rubrique<select value={form.rubric_id} onChange={set('rubric_id')}><option value="">Aucune</option>{Object.entries(RUBRICS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+          <label>Source 1<input value={form.src1} onChange={set('src1')} placeholder="franceinfo" required /></label>
+          <label>Lien 1<input value={form.url1} onChange={set('url1')} placeholder="https://…" /></label>
+        </div>
+        <div className="row3">
+          <span />
+          <label>Source 2<input value={form.src2} onChange={set('src2')} /></label>
+          <label>Lien 2<input value={form.url2} onChange={set('url2')} placeholder="https://…" /></label>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn primary">{form.id ? 'Enregistrer' : 'Publier maintenant'}</button>
+          {form.id && <button type="button" className="btn" onClick={() => setForm(emptyFlash)}>Annuler</button>}
+        </div>
+      </form>
+    </>
+  );
+}
+
 function SourcesPage({ say }: { say: (m: string) => void }) {
   const [list, setList] = useState<Source[]>([]);
   const [form, setForm] = useState({ name: '', url: '', rubric_hint: '' });

@@ -1,4 +1,4 @@
-import { RUBRICS } from './content';
+import { FLASHES, RUBRICS } from './content';
 import type { Article, Column, Comment, Tag } from './types';
 
 export const AD = { ad: true as const, id: 'ad' as const };
@@ -46,6 +46,8 @@ export function buildColumns(active: string[], quota: number, premium: boolean):
 
   return [
     { id: 'edition', name: 'Mon édition', cards: edCards, tags },
+    // Dernière minute : juste après l'édition, la plus récente en haut.
+    ...(FLASHES.length ? [{ id: 'flash', name: 'Dernière minute', cards: [...FLASHES].sort((a, b) => b.at.localeCompare(a.at)), tags: {} }] : []),
     ...act.map((r) => ({ id: r.id, name: r.name, cards: r.items, tags: {} })),
   ];
 }

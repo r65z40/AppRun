@@ -193,3 +193,76 @@ function mockCard(story: Story, items: Item[]): CardOut {
     photo_tag: PHOTO_TAG_LIST[(story.label.length + i.n) % PHOTO_TAG_LIST.length],
   };
 }
+
+/* ---------- Dernière minute : infos majeures, au fil de la journée ---------- */
+
+const Flashes = z.object({
+  flashes: z.array(
+    z.object({
+      item_numbers: z.array(z.number().int()).describe('Numéros des dépêches qui annoncent ce même fait'),
+      rubric: z.enum(RUBRIC_IDS),
+      importance: z.number().int().describe('8 (important) à 10 (événement majeur)'),
+      title: z.string().describe('Titre factuel, 60 caractères maximum'),
+      sentence: z.string().describe('Le fait en une phrase : quoi, qui, où, 160 caractères maximum'),
+    }),
+  ),
+});
+export type FlashOut = z.infer<typeof Flashes>['flashes'][number];
+
+const FLASH_SYSTEM = `Tu tiens la rubrique « Dernière minute » de TITRE, une app d'actu ultra résumée.
+On te donne les dépêches publiées par plusieurs médias ces deux dernières heures, et les infos déjà publiées aujourd'hui dans la rubrique.
+Retiens UNIQUEMENT les faits nouveaux et vraiment importants pour toute la France : catastrophe, attentat, décision politique majeure, résultat d'élection, décès d'une personnalité de premier plan, événement international grave, annonce économique de grande ampleur, résultat sportif historique.
+
+Règles :
+- Le fait doit être annoncé par au moins deux médias différents dans la liste.
+- Rien qui soit déjà dans les infos publiées aujourd'hui, sauf un développement nouveau et majeur (bilan qui change fortement, décision finale…).
+- Pas d'analyse, pas d'opinion, pas de direct sans fait nouveau, pas de faits divers locaux.
+- Écris avec tes propres mots, ton neutre, phrases courtes. Ne recopie jamais une phrase d'un média.
+- Si rien ne mérite la dernière minute, renvoie une liste vide. C'est le cas le plus fréquent.`;
+
+export async function selectFlashes(items: Item[], published: string[]): Promise<FlashOut[]> {
+  if (MOCK) return mockFlashes(items, published);
+  const list = items.map((i) => `[${i.n}] (${i.source}) ${i.title}${i.description ? ' — ' + i.description.slice(0, 240) : ''}`).join('\n');
+  const res = await api().beta.messages.parse({
+    model: MODEL,
+    max_tokens: 8000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    system: FLASH_SYSTEM,
+    output_config: { effort: 'low', format: betaZodOutputFormat(Flashes) },
+    messages: [{
+      role: 'user',
+      content: `Déjà publié aujourd'hui :\n${published.length ? published.map((t) => '- ' + t).join('\n') : '(rien)'}\n\nDépêches des deux dernières heures :\n\n${list}`,
+    }],
+  });
+  if (res.stop_reason === 'refusal') throw new Error('Dernière minute refusée par le modèle');
+  if (!res.parsed_output) throw new Error(`Réponse illisible (stop_reason=${res.stop_reason})`);
+  return res.parsed_output.flashes;
+}
+
+/** Contrôles : deux médias différents, importance suffisante, longueurs, pas de reprise mot pour mot. */
+export function checkFlash(f: FlashOut, items: Item[]): string[] {
+  const issues: string[] = [];
+  const its = f.item_numbers.map((n) => items.find((i) => i.n === n)).filter(Boolean) as Item[];
+  if (new Set(its.map((i) => i.source)).size < 2) issues.push('un seul média');
+  if (f.importance < 8) issues.push('importance insuffisante');
+  if (f.title.length > 70 || f.sentence.length > 200) issues.push('trop long');
+  const src = its.map((i) => norm(i.title + ' ' + i.description)).join(' | ');
+  const w = norm(f.sentence).split(' ');
+  for (let k = 0; k + 8 <= w.length; k++) if (src.includes(w.slice(k, k + 8).join(' '))) { issues.push('reprise mot pour mot'); break; }
+  return issues;
+}
+
+function mockFlashes(items: Item[], published: string[]): FlashOut[] {
+  // Mode test : deux dépêches de médias différents dont les titres partagent un mot rare = un « fait » confirmé.
+  const out: FlashOut[] = [];
+  for (const a of items) for (const b of items) {
+    if (a.n >= b.n || a.source === b.source) continue;
+    const wa = new Set(norm(a.title).split(' ').filter((x) => x.length > 4));
+    const common = norm(b.title).split(' ').filter((x) => wa.has(x));
+    if (common.length && !published.some((t) => norm(t).includes(common[0])) && !out.some((o) => o.item_numbers.includes(a.n))) {
+      out.push({ item_numbers: [a.n, b.n], rubric: guessRubric(a.title), importance: 9, title: `Flash : ${common[0]}`, sentence: `Deux médias confirment (mode test) : ${common.join(', ')}.` });
+    }
+  }
+  return out.slice(0, 2);
+}
