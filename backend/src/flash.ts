@@ -76,7 +76,7 @@ async function flash() {
   }
   const summary = `${fetched} titres lus, ${items.length} dépêches récentes, ${n} info(s) publiée(s).`;
   log(`Dernière minute : ${summary}`);
-  await J.finish('ok', summary, { fetched, items: items.length, proposed: found.length, published: n, ai: { ...usage } });
+  await J.finish('ok', summary, { fetched, items: items.length, proposed: found.length, published: n, model: model(), ai: { ...usage } });
 }
 
 main().catch((e) => { console.error(e); process.exitCode = 1; }).finally(() => pool.end());

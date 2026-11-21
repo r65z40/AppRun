@@ -1,8 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { api, ENGINE_URL, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, ENGINE_URL, type Dashboard, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'edition' | 'flash' | 'engine' | 'sources' | 'moderation' | 'team' | 'settings';
-const PAGES: [Page, string][] = [['edition', 'Édition'], ['flash', 'Dernière minute'], ['engine', 'Moteur'], ['sources', 'Sources'], ['moderation', 'Modération'], ['team', 'Équipe'], ['settings', 'Réglages']];
+type Page = 'dashboard' | 'edition' | 'flash' | 'engine' | 'sources' | 'moderation' | 'team' | 'settings';
+const PAGES: [Page, string][] = [['dashboard', 'Tableau de bord'], ['edition', 'Édition'], ['flash', 'Dernière minute'], ['engine', 'Moteur'], ['sources', 'Sources'], ['moderation', 'Modération'], ['team', 'Équipe'], ['settings', 'Réglages']];
 const LIMITS = { title: 60, key: 140, fact: 90, summary: 280 };
 const SUMMARY_HEADS = ['Contexte', 'Ce qui change', 'Et après'];
 
@@ -12,11 +12,13 @@ const ago = (iso: string | null) => {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   return m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`;
 };
+// Modération : seulement les commentaires. Rédaction : tout sauf l'équipe et les réglages.
+const allowed = (role: Role, p: Page) => role === 'admin' || (role === 'editor' ? p !== 'team' && p !== 'settings' : p === 'moderation');
 const plain = (s: string) => s.replace(/<\/?b>/g, '');
 
 export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
-  const [page, setPage] = useState<Page>(() => (location.hash.slice(1) as Page) || 'edition');
+  const [page, setPage] = useState<Page>(() => (location.hash.slice(1) as Page) || 'dashboard');
   const [toast, setToast] = useState<string | null>(null);
   useEffect(() => { api.me().then(setMe); }, []);
   useEffect(() => { location.hash = page; }, [page]);
@@ -40,7 +42,7 @@ export default function App() {
       <aside className="side">
         <div className="logo"><Glyph /> TITRE <span>back office</span></div>
         <nav>
-          {PAGES.filter(([p]) => (p !== 'team' && p !== 'settings') || me.role === 'admin').map(([p, l]) => (
+          {PAGES.filter(([p]) => allowed(me.role, p)).map(([p, l]) => (
             <button key={p} className={page === p ? 'on' : ''} onClick={() => setPage(p)}>{l}</button>
           ))}
         </nav>
@@ -51,13 +53,15 @@ export default function App() {
         </div>
       </aside>
       <main className="main">
-        {page === 'edition' && <EditionPage say={say} />}
-        {page === 'flash' && <FlashPage say={say} />}
-        {page === 'engine' && <EnginePage />}
-        {page === 'sources' && <SourcesPage say={say} />}
+        {!allowed(me.role, page) ? <ModerationPage say={say} /> : null}
+        {page === 'dashboard' && allowed(me.role, page) && <DashboardPage go={setPage} />}
+        {page === 'edition' && allowed(me.role, page) && <EditionPage say={say} />}
+        {page === 'flash' && allowed(me.role, page) && <FlashPage say={say} />}
+        {page === 'engine' && allowed(me.role, page) && <EnginePage />}
+        {page === 'sources' && allowed(me.role, page) && <SourcesPage say={say} />}
         {page === 'moderation' && <ModerationPage say={say} />}
-        {page === 'team' && me.role === 'admin' && <TeamPage say={say} me={me} />}
-        {page === 'settings' && me.role === 'admin' && <SettingsPage say={say} />}
+        {page === 'team' && allowed(me.role, page) && <TeamPage say={say} me={me} />}
+        {page === 'settings' && allowed(me.role, page) && <SettingsPage say={say} />}
       </main>
       {toast ? <div className="toast">{toast}</div> : null}
     </div>
@@ -116,6 +120,68 @@ function Login({ onIn }: { onIn: () => void }) {
 
 /* ---------------- Édition du jour ---------------- */
 type Filter = 'all' | 'review' | 'draft' | 'published' | 'rejected';
+/* ---------------- Tableau de bord ---------------- */
+const usd = (n: number) => `${n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+const int = (n: number) => n.toLocaleString('fr-FR');
+// Un passage en panne, bloqué, ou trop ancien (édition : 1 par jour ; Dernière minute : toutes les 20 min de 6 h à 23 h).
+function engineAlert(r: Dashboard['last_runs'][number] | undefined, kind: 'edition' | 'flash'): string | null {
+  if (!r) return 'Aucun passage enregistré pour l’instant.';
+  const h = (Date.now() - new Date(r.started_at).getTime()) / 3600e3;
+  if (r.status === 'error') return `Le dernier passage a planté : ${r.summary ?? 'voir la page Moteur'}`;
+  if (r.status === 'running' && h > 0.75) return 'Le passage semble bloqué depuis plus de 45 minutes.';
+  const parisHour = Number(new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric' }).format(new Date()));
+  if (kind === 'edition' && h > 26) return `Aucune édition depuis ${Math.round(h)} heures.`;
+  if (kind === 'flash' && h > 2 && parisHour >= 7 && parisHour < 23) return `Aucun passage depuis ${Math.round(h)} heures.`;
+  return null;
+}
+function DashboardPage({ go }: { go: (p: Page) => void }) {
+  const [d, setD] = useState<Dashboard | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () => api.dashboard().then(setD).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, []);
+  if (err) return <p className="warn">Tableau de bord indisponible : {err}. La mise à jour de la base (workflow « Installer la base ») est peut-être encore en cours.</p>;
+  if (!d) return <p className="muted">Chargement…</p>;
+  const runs = (['edition', 'flash'] as const).map((k) => ({ k, r: d.last_runs.find((x) => x.kind === k) }));
+  const Tile = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
+    <div className="panel tile"><div className="muted small">{label}</div><div className="tile-v">{value}</div>{sub ? <div className="muted small">{sub}</div> : null}</div>
+  );
+  return (
+    <>
+      <header className="head"><div><div className="eyebrow">Tableau de bord</div><h1>Comment va TITRE</h1><p className="muted">Mis à jour chaque minute. Un lecteur actif = un appareil qui a ouvert l'app ce jour-là, avec ou sans compte.</p></div></header>
+      {runs.map(({ k, r }) => {
+        const alert = engineAlert(r, k);
+        return (
+          <button key={k} className={`status-bar ${alert ? 'off' : ''}`} style={{ width: '100%', textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit' }} onClick={() => go('engine')}>
+            <b>{k === 'edition' ? 'Édition du matin' : 'Dernière minute'} : {alert ? 'problème' : 'tout va bien'}</b>
+            <span className="muted small">{alert ?? `Dernier passage ${ago(r!.started_at)} : ${r!.summary ?? 'en cours'}`}</span>
+          </button>
+        );
+      })}
+      <h2>Lecteurs</h2>
+      <div className="tiles">
+        <Tile label="Actifs aujourd'hui" value={int(d.active_today)} />
+        <Tile label="Actifs sur 7 jours" value={int(d.active_7)} />
+        <Tile label="Actifs sur 30 jours" value={int(d.active_30)} />
+        <Tile label="Comptes créés" value={int(d.accounts)} sub={`+${int(d.accounts_7)} cette semaine`} />
+        <Tile label="Likes, 7 jours" value={int(d.likes_7)} />
+        <Tile label="Commentaires, 7 jours" value={int(d.comments_7)} sub={`${d.reports_open} signalement${d.reports_open > 1 ? 's' : ''} en attente · ${d.banned} banni${d.banned > 1 ? 's' : ''}`} />
+      </div>
+      <h2>Argent</h2>
+      <div className="tiles">
+        <Tile label="Coût de l'IA aujourd'hui" value={usd(d.ai_today)} />
+        <Tile label="Coût de l'IA, 7 jours" value={usd(d.ai_7)} />
+        <Tile label="Coût de l'IA, 30 jours" value={usd(d.ai_30)} sub="Estimé d'après les jetons consommés et le tarif du modèle" />
+        <Tile label="Revenus Premium" value="—" sub={`${int(d.premium)} abonné${d.premium > 1 ? 's' : ''} · s'affichera quand Premium sera branché`} />
+        <Tile label="Revenus publicité" value="—" sub="S'affichera quand la publicité sera branchée" />
+      </div>
+    </>
+  );
+}
+
 const STATUS_LABEL: Record<Status, string> = { draft: 'Brouillon', published: 'Publiée', rejected: 'Rejetée' };
 
 function EditionPage({ say }: { say: (m: string) => void }) {
@@ -280,10 +346,11 @@ function Count({ v, max }: { v: string; max: number }) {
 
 function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSave: (p: Partial<Article>, publish: boolean) => void }) {
   const [d, setD] = useState({ ...a, facts: a.facts.map((f) => ({ ...f })), summary: [...a.summary] });
+  const [uploading, setUploading] = useState(false);
   const set = <K extends keyof Article>(k: K, v: Article[K]) => setD((x) => ({ ...x, [k]: v }));
   const setFact = (i: number, k: keyof Fact, v: string) => setD((x) => ({ ...x, facts: x.facts.map((f, j) => (j === i ? { ...f, [k]: v } : f)) }));
   const over = plain(d.title).length > LIMITS.title || d.key_sentence.length > LIMITS.key || d.facts.some((f) => plain(f.text).length > LIMITS.fact) || d.summary.some((s) => s.length > LIMITS.summary);
-  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, rubric_id: d.rubric_id, essential: d.essential, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null });
+  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, rubric_id: d.rubric_id, essential: d.essential, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     addEventListener('keydown', k);
@@ -316,7 +383,18 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
           ))}
           <div className="row2">
             <label>Photo d'ambiance<select value={d.photo_tag ?? ''} onChange={(e) => set('photo_tag', e.target.value || null)}><option value="">Dégradé</option>{PHOTO_TAGS.map((t) => <option key={t}>{t}</option>)}</select></label>
-            <label>Ou adresse d'une photo libre de droits<input placeholder="https://…" value={d.photo_url ?? ''} onChange={(e) => set('photo_url', e.target.value)} /></label>
+            <label>Ou adresse d'une photo libre de droits<input placeholder="https://…" value={d.photo_url ?? ''} onChange={(e) => setD((x) => ({ ...x, photo_url: e.target.value, photo_credit: null }))} /></label>
+          </div>
+          <div className="row2">
+            <label>Ou envoyer une image (JPG, PNG, WebP, 5 Mo max.)<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              setUploading(true);
+              try { const url = await api.uploadPhoto(f); setD((x) => ({ ...x, photo_url: url, photo_credit: null })); }
+              catch (err) { alert(`Envoi impossible (${err instanceof Error ? err.message : err}). Collez plutôt l'adresse de l'image.`); }
+              finally { setUploading(false); }
+            }} /></label>
+            {d.photo_url ? <label>Crédit photo (affiché dans l'app)<input placeholder="Photo : Nom de l'auteur" value={d.photo_credit ?? ''} onChange={(e) => set('photo_credit', e.target.value)} /></label> : null}
           </div>
           {a.review_notes.length ? <p className="warn">Alertes du moteur : {a.review_notes.join(' · ')}. Elles disparaissent quand vous enregistrez.</p> : null}
         </div>
@@ -459,6 +537,11 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
         {Pick({ k: 'FLASH_MIN_IMPORTANCE', label: 'Importance minimum', help: 'Seuil pour publier une info en Dernière minute (sur 10).', def: '8', options: nums(range(6, 10), ' sur 10') })}
         {Pick({ k: 'FLASH_MIN_SOURCES', label: 'Médias minimum', help: 'Nombre de médias différents qui doivent annoncer le fait.', def: '2', options: nums([1, 2, 3, 4]) })}
         {Pick({ k: 'FLASH_MAX_PER_DAY', label: 'Infos par jour, au plus', help: 'Au-delà, le moteur arrête de publier jusqu’au lendemain.', def: '12', options: nums([3, 5, 8, 12, 20, 30, 50]) })}
+      </section>
+
+      <section className="panel settings">
+        <h2>Modération</h2>
+        {Text({ k: 'BANNED_WORDS', label: 'Mots interdits en plus', help: "Les insultes courantes sont déjà bloquées, même déguisées (c0nnard, connnnard). Ajoutez vos mots, séparés par des virgules : un commentaire ou un pseudo qui en contient un est refusé.", placeholder: 'mot1, mot2, une expression' })}
       </section>
 
       <section className="panel settings">
@@ -699,8 +782,14 @@ function SourcesPage({ say }: { say: (m: string) => void }) {
 function ModerationPage({ say }: { say: (m: string) => void }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
-  const [tab, setTab] = useState<'reports' | 'recent'>('reports');
-  const load = () => Promise.all([api.reports().then(setReports), api.comments().then(setComments)]);
+  const [banned, setBanned] = useState<Profile[]>([]);
+  const [tab, setTab] = useState<'reports' | 'recent' | 'banned'>('reports');
+  const load = () => Promise.all([api.reports().then(setReports), api.comments().then(setComments), api.banned().then(setBanned)]);
+  const ban = async (c?: Comment) => {
+    if (!c || !confirm(`Bannir ${c.pseudo ?? 'ce lecteur'} ? Ses commentaires disparaissent de l'app et il ne pourra plus commenter ni signaler.`)) return;
+    try { await api.setBanned(c.user_id, true); load(); say(`${c.pseudo ?? 'Lecteur'} banni`); }
+    catch (e) { say(e instanceof Error ? e.message : 'Bannissement impossible'); }
+  };
   useEffect(() => { load(); }, []);
   const grouped = useMemo(() => {
     const m = new Map<string, Report[]>();
@@ -709,10 +798,11 @@ function ModerationPage({ say }: { say: (m: string) => void }) {
   }, [reports]);
   return (
     <>
-      <header className="head"><div><div className="eyebrow">Modération</div><h1>Commentaires</h1><p className="muted">70 caractères maximum, signalables par les lecteurs. Un commentaire masqué disparaît de l'app.</p></div></header>
+      <header className="head"><div><div className="eyebrow">Modération</div><h1>Commentaires</h1><p className="muted">70 caractères maximum, signalables par les lecteurs. Les insultes sont refusées automatiquement (liste modifiable dans Réglages). Un commentaire masqué disparaît de l'app ; un lecteur banni ne peut plus commenter.</p></div></header>
       <div className="tabs">
         <button className={tab === 'reports' ? 'on' : ''} onClick={() => setTab('reports')}>Signalements <b>{grouped.length}</b></button>
         <button className={tab === 'recent' ? 'on' : ''} onClick={() => setTab('recent')}>Derniers commentaires <b>{comments.length}</b></button>
+        <button className={tab === 'banned' ? 'on' : ''} onClick={() => setTab('banned')}>Bannis <b>{banned.length}</b></button>
       </div>
       {tab === 'reports' ? (
         grouped.length ? grouped.map((rs) => {
@@ -727,10 +817,18 @@ function ModerationPage({ say }: { say: (m: string) => void }) {
               <div className="btns">
                 <button className="btn primary sm" onClick={async () => { await api.resolveReport(rs[0], true); load(); say('Commentaire masqué'); }}>Masquer</button>
                 <button className="btn sm" onClick={async () => { await api.resolveReport(rs[0], false); load(); say('Signalement classé'); }}>Laisser</button>
+                <button className="btn ghost sm" onClick={() => ban(c)}>Bannir l'auteur</button>
               </div>
             </article>
           );
         }) : <p className="muted empty">Aucun signalement en attente.</p>
+      ) : tab === 'banned' ? (
+        banned.length ? banned.map((p) => (
+          <article key={p.id} className="card">
+            <div className="body"><h3>{p.pseudo ?? 'Lecteur sans pseudo'}</h3><p className="muted small">compte créé {ago(p.created_at)}</p></div>
+            <div className="btns"><button className="btn sm" onClick={async () => { await api.setBanned(p.id, false); load(); say('Bannissement levé'); }}>Lever le bannissement</button></div>
+          </article>
+        )) : <p className="muted empty">Personne n'est banni.</p>
       ) : (
         comments.map((c) => (
           <article key={c.id} className={`card ${c.status === 'hidden' ? 'rejected' : ''}`}>
@@ -740,6 +838,7 @@ function ModerationPage({ say }: { say: (m: string) => void }) {
             </div>
             <div className="btns">
               <button className="btn sm" onClick={async () => { await api.setComment(c.id, c.status === 'hidden' ? 'visible' : 'hidden'); load(); say(c.status === 'hidden' ? 'Commentaire rétabli' : 'Commentaire masqué'); }}>{c.status === 'hidden' ? 'Rétablir' : 'Masquer'}</button>
+              <button className="btn ghost sm" onClick={() => ban(c)}>Bannir l'auteur</button>
             </div>
           </article>
         ))
@@ -749,15 +848,16 @@ function ModerationPage({ say }: { say: (m: string) => void }) {
 }
 
 /* ---------------- Équipe (admins) ---------------- */
+const ROLE: Record<Role, string> = { reader: 'Lecteur', moderator: 'Modération', editor: 'Rédaction', admin: 'Administrateur' };
 function TeamPage({ say, me }: { say: (m: string) => void; me: Me }) {
   const [list, setList] = useState<Profile[]>([]);
   const [pseudo, setPseudo] = useState('');
+  const [role, setRole] = useState<Role>('editor');
   const load = () => api.team().then(setList);
   useEffect(() => { load(); }, []);
-  const ROLE: Record<Role, string> = { reader: 'Lecteur', editor: 'Rédaction', admin: 'Administrateur' };
   return (
     <>
-      <header className="head"><div><div className="eyebrow">Équipe</div><h1>Qui a accès</h1><p className="muted">La rédaction valide les cartes et modère. Les administrateurs gèrent aussi l'équipe.</p></div></header>
+      <header className="head"><div><div className="eyebrow">Équipe</div><h1>Qui a accès</h1><p className="muted">Modération : les commentaires seulement (masquer, bannir). Rédaction : les infos, la Dernière minute, les sources et la modération. Administrateur : tout, y compris l'équipe et les réglages.</p></div></header>
       <table className="table">
         <thead><tr><th>Pseudo</th><th>Rôle</th><th>Depuis</th></tr></thead>
         <tbody>
@@ -778,13 +878,16 @@ function TeamPage({ say, me }: { say: (m: string) => void; me: Me }) {
         e.preventDefault();
         const p = await api.findProfile(pseudo.trim());
         if (!p) return say('Aucun compte avec ce pseudo. La personne doit d’abord créer un compte dans l’app.');
-        await api.setRole(p.id, 'editor');
+        await api.setRole(p.id, role);
         setPseudo('');
         load();
-        say(`${p.pseudo} rejoint la rédaction`);
+        say(`${p.pseudo} rejoint l'équipe (${ROLE[role]})`);
       }}>
-        <h2>Ajouter à la rédaction</h2>
-        <div className="row3"><label>Pseudo du compte TITRE<input value={pseudo} onChange={(e) => setPseudo(e.target.value)} required /></label></div>
+        <h2>Ajouter à l'équipe</h2>
+        <div className="row3">
+          <label>Pseudo du compte TITRE<input value={pseudo} onChange={(e) => setPseudo(e.target.value)} required /></label>
+          <label>Rôle<select value={role} onChange={(e) => setRole(e.target.value as Role)}>{(['moderator', 'editor', 'admin'] as Role[]).map((r) => <option key={r} value={r}>{ROLE[r]}</option>)}</select></label>
+        </div>
         <button className="btn primary">Ajouter</button>
       </form>
     </>

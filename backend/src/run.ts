@@ -175,6 +175,7 @@ async function edition() {
   const summary = `${fetched} titres lus, ${items.length} à traiter, ${stories.length} sujets retenus, ${written} cartes écrites (${fixed} corrigées par l'IA, ${flagged} à relire, ${failed} échecs).`;
   log(`Terminé : ${summary} ${live ? 'Édition publiée automatiquement.' : 'En attente de validation dans le back office.'}`);
   await J.finish(failed && !written ? 'error' : 'ok', summary, stats);
+  if (failed && !written) process.exitCode = 1; // le workflow GitHub échoue et prévient l'équipe
 }
 
 main()

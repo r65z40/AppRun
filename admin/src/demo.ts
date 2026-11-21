@@ -1,5 +1,5 @@
 // Données fictives : le back office fonctionne sans Supabase pour qu'on puisse l'essayer.
-import type { Api, Article, Comment, EngineRun, Setting, Edition, Flash, Profile, Report, Source } from './data';
+import type { Api, Article, Dashboard, Comment, EngineRun, Setting, Edition, Flash, Profile, Report, Source } from './data';
 
 const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 const yday = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date(Date.now() - 86400e3));
@@ -149,6 +149,19 @@ export function demoApi(): Api {
     async resolveReport(r, hide) { if (hide) comments = comments.map((c) => (c.id === r.comment_id ? { ...c, status: 'hidden' } : c)); reports = reports.map((x) => (x.comment_id === r.comment_id ? { ...x, resolved: true } : x)); },
     comments: () => wait(comments),
     async setComment(id, status) { comments = comments.map((c) => (c.id === id ? { ...c, status } : c)); },
+    async setBanned(id, ban) {
+      const p = readers.find((x) => x.id === id) ?? { id, pseudo: comments.find((c) => c.user_id === id)?.pseudo ?? null, role: 'reader' as const, premium: false, created_at: iso(20) };
+      if (!readers.includes(p)) readers.push(p);
+      p.banned = ban;
+      if (ban) comments = comments.map((c) => (c.user_id === id ? { ...c, status: 'hidden' } : c));
+    },
+    banned: () => wait(readers.filter((p) => p.banned)),
+    dashboard: () => wait<Dashboard>({
+      active_today: 1284, active_7: 4610, active_30: 9873, accounts: 742, accounts_7: 96, premium: 0, comments_7: 318, likes_7: 2240,
+      reports_open: reports.filter((r) => !r.resolved).length, banned: readers.filter((p) => p.banned).length, ai_today: 1.84, ai_7: 12.9, ai_30: 51.3,
+      last_runs: [{ kind: 'edition', status: 'ok', started_at: at(15 * 60), finished_at: at(15 * 60 - 6), summary: runs[2].summary }, { kind: 'flash', status: 'error', started_at: at(9), finished_at: at(8), summary: 'Échec : clé Claude refusée (exemple de panne)' }],
+    }),
+    uploadPhoto: async (file) => URL.createObjectURL(file),
     team: () => wait(team.filter((p) => p.role !== 'reader')),
     async setRole(id, role) {
       const r = readers.find((p) => p.id === id);

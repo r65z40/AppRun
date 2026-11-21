@@ -280,6 +280,16 @@ function Main() {
       acc.reportComment(c.id).then(() => showToast('Merci, l’équipe va vérifier ce commentaire.')).catch(() => showToast('Signalement non envoyé. Réessayez.'));
     });
   };
+  const blockComment = (c: Comment) => {
+    const a = cmts;
+    if (!a) return;
+    const hide = () => setCmtList(a, (l) => l.filter((k) => k.who !== c.who));
+    if (!acc.isLive(a.id)) { hide(); return showToast(`Vous ne verrez plus les commentaires de ${c.who}.`); }
+    withAccount('Connectez-vous pour bloquer un compte.', () => {
+      acc.blockAuthor(c.id).then(() => { hide(); feel('light'); showToast(`Vous ne verrez plus les commentaires de ${c.who}. Pour annuler : Mon compte.`); })
+        .catch(() => showToast('Blocage impossible. Réessayez.'));
+    });
+  };
   const deleteComment = (c: Comment) => {
     const a = cmts;
     if (!a) return;
@@ -404,6 +414,7 @@ function Main() {
         onVote={voteComment}
         onFlag={flagComment}
         onDelete={deleteComment}
+        onBlock={blockComment}
       />
 
       {overlay === 'settings' ? (

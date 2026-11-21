@@ -25,8 +25,8 @@ export type Article = {
 };
 export type Edition = { date: string; status: 'building' | 'ready' | 'published'; published_at: string | null; stats: Record<string, unknown> };
 export type Source = { id: string; name: string; url: string; rubric_hint: string | null; active: boolean; last_fetch_at: string | null; last_error: string | null };
-export type Role = 'reader' | 'editor' | 'admin';
-export type Profile = { id: string; pseudo: string | null; role: Role; premium: boolean; created_at: string };
+export type Role = 'reader' | 'moderator' | 'editor' | 'admin';
+export type Profile = { id: string; pseudo: string | null; role: Role; premium: boolean; banned?: boolean; created_at: string };
 export type Comment = { id: string; article_id: string; user_id: string; text: string; status: 'visible' | 'hidden'; created_at: string; article_title?: string; pseudo?: string | null };
 export type Report = { id: string; comment_id: string; reason: string | null; resolved: boolean; created_at: string; comment?: Comment };
 export type Flash = { id: string; status: 'published' | 'hidden'; rubric_id: string | null; importance: number; title: string; sentence: string; sources: { source: string; url: string }[]; manual: boolean; model: string | null; published_at: string; created_at: string };
@@ -46,6 +46,11 @@ export type EngineRun = {
 };
 export type Setting = { key: string; value: string; is_set: boolean; updated_at: string };
 export type Me = { id: string; email: string; role: Role };
+export type Dashboard = {
+  active_today: number; active_7: number; active_30: number; accounts: number; accounts_7: number; premium: number;
+  comments_7: number; likes_7: number; reports_open: number; banned: number; ai_today: number; ai_7: number; ai_30: number;
+  last_runs: { kind: 'edition' | 'flash'; status: EngineRun['status']; started_at: string; finished_at: string | null; summary: string | null }[];
+};
 
 export const RUBRICS: Record<string, string> = { france: 'France', monde: 'Monde', eco: 'Éco', tech: 'Tech', sport: 'Sport', culture: 'Culture' };
 export const PHOTO_TAGS = ['train', 'neige', 'eau', 'fjord', 'facade', 'velo', 'batiment', 'sommet', 'route', 'livre', 'lampe'];
@@ -72,6 +77,11 @@ export interface Api {
   resolveReport(r: Report, hide: boolean): Promise<void>;
   comments(): Promise<Comment[]>;
   setComment(id: string, status: Comment['status']): Promise<void>;
+  setBanned(userId: string, ban: boolean): Promise<void>;
+  banned(): Promise<Profile[]>;
+  dashboard(): Promise<Dashboard>;
+  /** Envoie une image et renvoie son adresse publique. */
+  uploadPhoto(file: File): Promise<string>;
   team(): Promise<Profile[]>;
   setRole(id: string, role: Role): Promise<void>;
   findProfile(pseudo: string): Promise<Profile | null>;
@@ -164,7 +174,17 @@ function supabaseApi(sb: SupabaseClient): Api {
     async setComment(id, status) {
       ok(await sb.from('comments').update({ status }).eq('id', id));
     },
-    team: async () => sb.from('profiles').select('*').in('role', ['editor', 'admin']).order('created_at').then(ok<Profile[]>),
+    async setBanned(userId, ban) {
+      ok(await sb.rpc('set_banned', { uid: userId, ban }));
+    },
+    banned: async () => sb.from('profiles').select('*').eq('banned', true).order('created_at', { ascending: false }).then(ok<Profile[]>),
+    dashboard: async () => ok(await sb.rpc('dashboard')) as Dashboard,
+    async uploadPhoto(file) {
+      const path = `${crypto.randomUUID()}.${file.name.split('.').pop()?.toLowerCase() || 'jpg'}`;
+      ok(await sb.storage.from('photos').upload(path, file, { contentType: file.type }));
+      return sb.storage.from('photos').getPublicUrl(path).data.publicUrl;
+    },
+    team: async () => sb.from('profiles').select('*').in('role', ['moderator', 'editor', 'admin']).order('created_at').then(ok<Profile[]>),
     async setRole(id, role) {
       ok(await sb.from('profiles').update({ role }).eq('id', id));
     },
