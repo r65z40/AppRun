@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { demoApi } from './demo';
+import { httpApi } from './http';
 
 export type Fact = { text: string; source: string; url: string };
 export type Status = 'draft' | 'published' | 'rejected';
@@ -127,4 +128,6 @@ function supabaseApi(sb: SupabaseClient): Api {
   };
 }
 
-export const api: Api = URL && KEY ? supabaseApi(createClient(URL, KEY)) : demoApi();
+// Ordre de préférence : API maison (VPS), puis Supabase, sinon démo.
+const API_URL = import.meta.env.VITE_API_URL as string | undefined;
+export const api: Api = API_URL ? httpApi(API_URL) : URL && KEY ? supabaseApi(createClient(URL, KEY)) : demoApi();

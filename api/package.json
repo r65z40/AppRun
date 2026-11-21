@@ -1,0 +1,26 @@
+{
+  "name": "titre-api",
+  "version": "1.0.0",
+  "description": "API TITRE (hébergement chez soi)",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/api.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.4.3",
+    "bcryptjs": "^3.0.3",
+    "fastify": "^5.12.8",
+    "jose": "^6.2.18",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "private": true,
+  "type": "module"
+}
