@@ -24,19 +24,26 @@ export const TAGS: Record<Tag, { label: string; why: (a: Article) => string }> =
 
 /** « Mon édition » (§16) : sujets majeurs pour tous, puis vos rubriques, puis une découverte. */
 export function buildColumns(active: string[], quota: number, premium: boolean): Column[] {
-  const act = RUBRICS.filter((r) => active.includes(r.id));
-  const other = RUBRICS.filter((r) => !active.includes(r.id));
+  const filled = RUBRICS.filter((r) => r.items.length > 0);
+  const act = filled.filter((r) => active.includes(r.id));
+  const other = filled.filter((r) => !active.includes(r.id));
   const total = act.reduce((n, r) => n + r.items.length, 0);
   const disc = other.length ? other[0].items[0] : null;
   const size = Math.min(quota, total + (disc ? 1 : 0));
+  const room = () => size - (disc ? 1 : 0);
   const picked: { a: Article; tag: Tag }[] = [];
-  for (let k = 0; picked.length < size - (disc ? 1 : 0); k++) {
+  // Les sujets majeurs du jour (choisis par la rédaction) passent en premier, pour tout le monde.
+  const ess = filled.flatMap((r) => r.items.filter((a) => a.essential)).slice(0, 4);
+  ess.forEach((a) => picked.length < room() && picked.push({ a, tag: 'ess' }));
+  const has = (a: Article) => picked.some((p) => p.a === a) || a === disc;
+  for (let k = 0; picked.length < room(); k++) {
     let added = false;
     for (const r of act) {
-      if (picked.length < size - (disc ? 1 : 0) && r.items[k]) {
-        picked.push({ a: r.items[k], tag: picked.length < 2 ? 'ess' : 'pv' });
+      const a = r.items[k];
+      if (a && picked.length < room() && !has(a)) {
+        picked.push({ a, tag: !ess.length && picked.length < 2 ? 'ess' : 'pv' });
         added = true;
-      }
+      } else if (a) added = true;
     }
     if (!added) break;
   }
