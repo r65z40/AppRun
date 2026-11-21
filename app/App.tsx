@@ -14,10 +14,13 @@ import { SummarySheet, CommentsSheet } from './src/Sheets';
 import { Bravo, End, Onboarding, Settings, Splash, Toast, type OnbResult, type Prefs } from './src/Screens';
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
 import { loadEdition, loadFlashes, remoteConfigured } from './src/remote';
+import { Account } from './src/Account';
+import * as acc from './src/account';
 import { isArticle, type Article, type Card, type Comment } from './src/types';
 
 type Phase = 'splash' | 'onb' | 'feed';
 type Overlay = null | 'bravo' | 'end' | 'settings';
+type AccountAsk = { reason: string | null; then?: () => void };
 
 const DWELL_MS = 1200; // une info compte comme lue après ~1 s à l'écran
 
@@ -76,6 +79,36 @@ function Main() {
   const [summary, setSummary] = useState<Article | null>(null);
   const [cmts, setCmts] = useState<Article | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [loadingCmts, setLoadingCmts] = useState(false);
+  // Compte lecteur
+  const me = acc.useMe();
+  const [account, setAccount] = useState<AccountAsk | null>(null);
+  useEffect(() => { acc.restore(); }, []);
+  /** Lance l'action si le lecteur est connecté (avec un pseudo si besoin), sinon ouvre « Mon compte » puis la lance. */
+  const withAccount = (reason: string, then: () => void, needPseudo = false) => {
+    const m = acc.currentMe();
+    if (m && (!needPseudo || m.pseudo)) return then();
+    feel('light');
+    setAccount({ reason, then });
+  };
+  // Mes likes : chargés à la connexion. Les compteurs reçus incluent déjà mon like, l'app l'ajoute elle-même.
+  const likedBase = useRef(new Set<string>());
+  useEffect(() => {
+    if (!me) {
+      setReactions({});
+      return;
+    }
+    acc.myLikes().then((ids) => {
+      const all = RUBRICS.flatMap((r) => r.items);
+      ids.forEach((id) => {
+        if (likedBase.current.has(id)) return;
+        likedBase.current.add(id);
+        const a = all.find((x) => x.id === id);
+        if (a) a.likes = Math.max(0, a.likes - 1);
+      });
+      setReactions((r) => ({ ...r, ...Object.fromEntries(ids.map((id) => [id, 1 as const])) }));
+    });
+  }, [me?.uid, loaded]);
   const readMs = useRef(0);
   const shownAt = useRef(Date.now());
   const bravoShown = useRef(false);
@@ -181,11 +214,79 @@ function Main() {
   }, [seen, limit, phase, overlay]);
 
   const onReact = (a: Article, v: 1 | -1) => {
-    setReactions((r) => ({ ...r, [a.id]: r[a.id] === v ? 0 : v }));
-    feel(v === 1 ? 'light' : 'select', v === 1 ? 'pop' : 'thud');
+    if (!acc.isLive(a.id)) {
+      setReactions((r) => ({ ...r, [a.id]: r[a.id] === v ? 0 : v }));
+      feel(v === 1 ? 'light' : 'select', v === 1 ? 'pop' : 'thud');
+      return;
+    }
+    withAccount('Créez un compte gratuit pour aimer les infos et commenter.', () => {
+      const on = reactions[a.id] !== 1;
+      setReactions((r) => ({ ...r, [a.id]: on ? 1 : 0 }));
+      feel(on ? 'light' : 'select', on ? 'pop' : 'thud');
+      acc.like(a.id, on).catch((e) => {
+        setReactions((r) => ({ ...r, [a.id]: on ? 0 : 1 }));
+        showToast(e instanceof acc.UserError ? e.message : 'Like non enregistré. Réessayez.');
+      });
+    });
   };
-  const commentsOf = (a: Article) => comments[a.id] ?? seedComments();
-  const commentCount = (a: Article) => a.comments + Math.max(0, commentsOf(a).length - 5);
+  const commentsOf = (a: Article) => comments[a.id] ?? (acc.isLive(a.id) ? [] : seedComments());
+  const commentCount = (a: Article) => (acc.isLive(a.id) ? comments[a.id]?.length ?? a.comments : a.comments + Math.max(0, commentsOf(a).length - 5));
+  const reloadComments = (a: Article) => {
+    if (!acc.isLive(a.id)) return Promise.resolve();
+    setLoadingCmts(true);
+    return acc.loadComments(a.id)
+      .then((list) => setComments((m) => ({ ...m, [a.id]: list })))
+      .catch(() => showToast('Commentaires indisponibles pour le moment.'))
+      .finally(() => setLoadingCmts(false));
+  };
+  const setCmtList = (a: Article, f: (l: Comment[]) => Comment[]) => setComments((m) => ({ ...m, [a.id]: f(m[a.id] ?? commentsOf(a)) }));
+  const sendComment = async (text: string): Promise<string | null> => {
+    const a = cmts;
+    if (!a) return null;
+    if (!acc.isLive(a.id)) {
+      const c: Comment = { id: 'm' + Date.now(), who: 'lecteur_matinal', color: C.violet, text, likes: 0, dislikes: 0, ago: "à l'instant", mine: 0, order: -1 - commentsOf(a).length, own: true };
+      setCmtList(a, (l) => [...l, c]);
+      return c.id;
+    }
+    const m = acc.currentMe();
+    if (!m || !m.pseudo) {
+      withAccount('Créez un compte gratuit pour commenter. Votre commentaire reste dans le champ.', () => {}, true);
+      return null;
+    }
+    try {
+      await acc.postComment(a.id, text);
+      const list = await acc.loadComments(a.id);
+      setComments((x) => ({ ...x, [a.id]: list }));
+      return list.find((c) => c.own && c.text === text.trim())?.id ?? null;
+    } catch (e) {
+      showToast(e instanceof acc.UserError ? e.message : 'Commentaire non envoyé. Réessayez.');
+      return null;
+    }
+  };
+  const voteComment = (c: Comment, v: -1 | 0 | 1) => {
+    const a = cmts;
+    if (!a) return;
+    const apply = (val: -1 | 0 | 1) => setCmtList(a, (l) => l.map((k) => (k.id === c.id ? { ...k, mine: val } : k)));
+    if (!acc.isLive(a.id)) return apply(v);
+    withAccount('Créez un compte gratuit pour voter et commenter.', () => {
+      apply(v);
+      acc.voteComment(c.id, v).catch(() => { apply(c.mine); showToast('Vote non enregistré. Réessayez.'); });
+    });
+  };
+  const flagComment = (c: Comment) => {
+    const a = cmts;
+    if (!a || !acc.isLive(a.id)) return showToast('Merci, l’équipe va vérifier ce commentaire.');
+    withAccount('Connectez-vous pour signaler un commentaire.', () => {
+      acc.reportComment(c.id).then(() => showToast('Merci, l’équipe va vérifier ce commentaire.')).catch(() => showToast('Signalement non envoyé. Réessayez.'));
+    });
+  };
+  const deleteComment = (c: Comment) => {
+    const a = cmts;
+    if (!a) return;
+    setCmtList(a, (l) => l.filter((k) => k.id !== c.id));
+    feel('light');
+    if (acc.isLive(a.id)) acc.deleteComment(c.id).catch(() => { reloadComments(a); showToast('Suppression impossible. Réessayez.'); });
+  };
   const openRead = (a: Article) => {
     markSeen(a.id);
     feel('light', 'whoosh');
@@ -194,6 +295,7 @@ function Main() {
   const openComments = (a: Article) => {
     feel('light');
     setCmts(a);
+    reloadComments(a);
   };
 
   const onOnb = (r: OnbResult) => {
@@ -296,11 +398,24 @@ function Main() {
         onClose={() => setCmts(null)}
         H={H}
         comments={cmts ? commentsOf(cmts) : []}
-        setComments={(c) => cmts && setComments((m) => ({ ...m, [cmts.id]: c }))}
-        onToast={showToast}
+        total={cmts ? commentCount(cmts) : 0}
+        loading={loadingCmts}
+        onSend={sendComment}
+        onVote={voteComment}
+        onFlag={flagComment}
+        onDelete={deleteComment}
       />
 
-      {overlay === 'settings' ? <Settings W={W} prefs={p} onSave={onSave} onClose={() => setOverlay(null)} /> : null}
+      {overlay === 'settings' ? (
+        <Settings
+          W={W}
+          prefs={p}
+          onSave={onSave}
+          onClose={() => setOverlay(null)}
+          account={me ? me.pseudo ?? '' : null}
+          onAccount={() => (acc.accountsOn ? setAccount({ reason: null }) : showToast('Les comptes arrivent avec la vraie base (mode démo).'))}
+        />
+      ) : null}
       {overlay === 'bravo' ? (
         <Bravo
           n={seen.size}
@@ -312,6 +427,16 @@ function Main() {
         />
       ) : null}
       {overlay === 'end' ? <End n={seen.size} realMs={readMs.current} allRead={allRead} left={remaining} onReread={onReread} /> : null}
+
+      {account ? (
+        <Account
+          W={W}
+          reason={account.reason}
+          onToast={showToast}
+          onClose={() => setAccount(null)}
+          onReady={account.then ? () => { const f = account.then!; setAccount(null); f(); } : undefined}
+        />
+      ) : null}
 
       {phase === 'onb' ? <Onboarding W={W} onDone={onOnb} /> : null}
       {phase === 'splash' ? <Splash onDone={() => setSplashDone(true)} /> : null}

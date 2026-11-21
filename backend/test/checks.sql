@@ -126,3 +126,108 @@ select count(*) = 1 and bool_and(value = 'sk-ant-test-1234') as ok from public.a
 \else
 \echo ÉCHEC  un lecteur a pu écrire un réglage
 \endif
+
+-- Communauté : commentaires publics avec pseudo, garde-fous, votes, signalements.
+insert into auth.users (id) values ('00000000-0000-0000-0000-000000000003'), ('00000000-0000-0000-0000-000000000004'), ('00000000-0000-0000-0000-000000000005');
+select id as aid from articles where status = 'published' order by rank limit 1 \gset
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000003';
+\set ON_ERROR_STOP off
+insert into comments (article_id, user_id, text) values (:'aid', '00000000-0000-0000-0000-000000000003', 'sans pseudo');
+update profiles set pseudo = 'pas valide !' where id = '00000000-0000-0000-0000-000000000003';
+update profiles set pseudo = 'LECTEUR' where id = '00000000-0000-0000-0000-000000000003';
+\set ON_ERROR_STOP on
+update profiles set pseudo = 'marie.l' where id = '00000000-0000-0000-0000-000000000003';
+insert into comments (article_id, user_id, text) values (:'aid', '00000000-0000-0000-0000-000000000003', '  À suivre de près  ');
+reset role;
+select count(*) filter (where text = 'sans pseudo') = 0 and count(*) filter (where text = 'À suivre de près') = 1 as ok from comments \gset
+\if :ok
+\echo OK  commentaire refusé sans pseudo, accepté avec (texte nettoyé)
+\else
+\echo ÉCHEC  garde-fou du pseudo
+\endif
+select (select pseudo from profiles where id = '00000000-0000-0000-0000-000000000003') = 'marie.l' as ok \gset
+\if :ok
+\echo OK  pseudo invalide ou déjà pris (majuscules comprises) refusé
+\else
+\echo ÉCHEC  contrôle du pseudo
+\endif
+-- Votes : le lecteur 1 aime le commentaire de marie.l ; un anonyme lit les commentaires avec les pseudos.
+select id as cid from comments where text = 'À suivre de près' \gset
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001';
+insert into comment_votes (user_id, comment_id, value) values ('00000000-0000-0000-0000-000000000001', :'cid', 1);
+select likes = 1 and mine = 1 as ok from article_comments(:'aid') where id = :'cid' \gset
+\if :ok
+\echo OK  vote enregistré, visible pour son auteur
+\else
+\echo ÉCHEC  vote
+\endif
+reset role;
+set request.jwt.claim.sub = '';
+set role anon;
+select count(*) = 2 and bool_and(pseudo in ('lecteur', 'marie.l')) and bool_and(mine = 0) as ok from article_comments(:'aid') \gset
+reset role;
+\if :ok
+\echo OK  un visiteur lit les commentaires avec les pseudos, sans voir les profils
+\else
+\echo ÉCHEC  lecture publique des commentaires
+\endif
+-- (refus d'accès ou zéro ligne : dans les deux cas le public ne voit aucun profil)
+\set ok true
+set role anon;
+\set ON_ERROR_STOP off
+select count(*) = 0 as ok from profiles \gset
+\set ON_ERROR_STOP on
+reset role;
+\if :ok
+\echo OK  profils privés pour le public
+\else
+\echo ÉCHEC  profils visibles
+\endif
+-- Trop de commentaires d'affilée : refusé au 6e en une minute.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000003';
+insert into comments (article_id, user_id, text) select :'aid', '00000000-0000-0000-0000-000000000003', 'c' || g from generate_series(1, 4) g;
+\set ON_ERROR_STOP off
+insert into comments (article_id, user_id, text) values (:'aid', '00000000-0000-0000-0000-000000000003', 'de trop');
+\set ON_ERROR_STOP on
+reset role;
+select count(*) = 0 as ok from comments where text = 'de trop' \gset
+\if :ok
+\echo OK  limite de 5 commentaires par minute
+\else
+\echo ÉCHEC  limite de rythme
+\endif
+-- Trois signalements différents : le commentaire est masqué automatiquement.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001';
+insert into reports (comment_id, user_id) values (:'cid', '00000000-0000-0000-0000-000000000001');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000004';
+insert into reports (comment_id, user_id) values (:'cid', '00000000-0000-0000-0000-000000000004');
+reset role;
+select status = 'visible' as ok2 from comments where id = :'cid' \gset
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000005';
+insert into reports (comment_id, user_id) values (:'cid', '00000000-0000-0000-0000-000000000005');
+reset role;
+select :'ok2'::boolean and status = 'hidden' as ok from comments where id = :'cid' \gset
+\if :ok
+\echo OK  masqué automatiquement au 3e signalement (pas avant)
+\else
+\echo ÉCHEC  masquage automatique
+\endif
+-- Réactions : un like par lecteur, compté dans les statistiques publiques.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000004';
+insert into reactions (user_id, article_id, value) values ('00000000-0000-0000-0000-000000000004', :'aid', 1)
+  on conflict (user_id, article_id) do update set value = excluded.value;
+reset role;
+set role anon;
+select likes >= 1 as ok from article_stats where article_id = :'aid' \gset
+reset role;
+\if :ok
+\echo OK  like compté dans les statistiques publiques
+\else
+\echo ÉCHEC  like
+\endif

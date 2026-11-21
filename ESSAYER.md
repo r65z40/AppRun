@@ -17,6 +17,8 @@ Pour voir le back office **sans rien installer**, ouvrez-le simplement : sans Su
      `postgresql://postgres.abcdefgh:[YOUR-PASSWORD]@aws-0-eu-west-3.pooler.supabase.com:5432/postgres`
      et remplacez `[YOUR-PASSWORD]`, **crochets compris**, par le mot de passe de la base.
 
+3. Pour les comptes lecteurs : ouvrez **Authentication > URL Configuration** et, dans **Site URL**, mettez `https://r65z40.github.io/AppRun/`, puis **Save**. C'est là que mène le lien de confirmation envoyé par e-mail à chaque nouveau lecteur.
+
 Vous n'avez **rien à coller dans le SQL Editor** : les tables sont créées automatiquement à l'étape 2.
 
 ## 2. GitHub : ranger ces 3 valeurs et mettre en ligne (5 min)
@@ -54,7 +56,7 @@ Après environ deux minutes, deux adresses fonctionnent :
 2. Ouvrez la page **Réglages** et collez vos clés :
    - **Clé Claude** : sur [console.anthropic.com](https://console.anthropic.com), ouvrez **API Keys > Create Key**, et ajoutez quelques euros de crédit dans **Billing**. Sans cette clé, le moteur ne peut pas écrire les cartes.
    - **Clé Pexels** (gratuite, facultative) : sur [pexels.com/api](https://www.pexels.com/api/), créez un compte puis cliquez sur **Your API Key**. Pour chaque article, Claude choisit des mots-clés et le moteur prend une vraie photo libre de droits.
-3. Choisissez vos options sur la même page : le modèle (Opus écrit le mieux), le nombre de sujets par rubrique, la publication sans relecture et la Dernière minute automatique.
+3. Vérifiez les options sur la même page : le modèle (Opus écrit le mieux), le nombre de sujets par rubrique, le **pilote automatique** (activé par défaut) et la Dernière minute.
 
 Les clés sont rangées dans votre base Supabase et ne sont jamais réaffichées en entier : seuls les 4 derniers caractères apparaissent.
 
@@ -62,7 +64,15 @@ Les clés sont rangées dans votre base Supabase et ne sont jamais réaffichées
 - l'édition, chaque matin à 5 h 30 ;
 - la Dernière minute, toutes les 20 minutes de 6 h à 23 h.
 
-Pour un essai tout de suite, cliquez sur **Lancer le moteur** dans le back office (ou [Actions > Édition du jour](https://github.com/r65z40/AppRun/actions/workflows/edition.yml) > Run workflow). Comptez quelques minutes, puis rechargez la page Édition : les cartes arrivent en **brouillon** si la publication sans relecture est coupée. La page **Moteur** montre ce que l'IA a lu, retenu et écrit.
+Avec le pilote automatique, l'IA choisit les sujets, écrit les cartes et publie l'édition sans vous. Une carte qui échoue aux contrôles (trop longue, source manquante, phrase reprise d'un média) est réécrite une fois par l'IA ; si elle reste en défaut, elle attend dans l'onglet **À relire**. Vous supervisez quand vous voulez : la page **Moteur** montre ce que l'IA a lu, retenu et écrit, et chaque carte peut être corrigée, dépubliée ou rejetée dans **Édition**.
+
+Pour un essai tout de suite, cliquez sur **Lancer le moteur** dans le back office (ou [Actions > Édition du jour](https://github.com/r65z40/AppRun/actions/workflows/edition.yml) > Run workflow). Comptez quelques minutes, puis rechargez l'app.
+
+## Les lecteurs et la communauté
+
+Dans l'app, un lecteur crée son compte (adresse, mot de passe, puis pseudo) quand il veut aimer une info ou commenter, ou depuis **Réglages > Compte**. La lecture reste possible sans compte.
+
+Garde-fous automatiques : un pseudo est obligatoire pour commenter, 5 commentaires par minute au plus, et un commentaire signalé par 3 lecteurs est masqué tout seul. La page **Modération** du back office liste les signalements : vous remettez en ligne ou laissez masqué.
 
 ---
 

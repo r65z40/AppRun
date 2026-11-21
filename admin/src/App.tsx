@@ -193,7 +193,7 @@ function EditionPage({ say }: { say: (m: string) => void }) {
           {ed ? (
             <div className="meta">
               <span className={`pill ${ed.status}`}>{ed.status === 'published' ? 'En ligne' : ed.status === 'ready' ? 'Prête, en attente' : 'En préparation'}</span>
-              {ed.stats.fetched != null ? <span className="muted">{String(ed.stats.fetched)} titres lus · {String(ed.stats.stories ?? 0)} sujets retenus · modèle {String(ed.stats.model ?? '—')}</span> : null}
+              {ed.stats.fetched != null ? <span className="muted">{String(ed.stats.fetched)} titres lus · {String(ed.stats.stories ?? 0)} sujets retenus{ed.stats.fixed ? ` · ${String(ed.stats.fixed)} corrigées par l’IA` : ''} · modèle {String(ed.stats.model ?? '—')}</span> : null}
             </div>
           ) : null}
         </div>
@@ -405,7 +405,7 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
           <div><b>Sujets par rubrique</b><p className="muted small">Nombre maximum de cartes écrites par rubrique et par édition.</p></div>
           <select value={get('PER_RUBRIC') || '8'} onChange={(e) => save('PER_RUBRIC', e.target.value)}>{[4, 6, 8, 10, 12, 16].map((n) => <option key={n} value={String(n)}>{n}</option>)}</select>
         </div>
-        {Toggle({ k: "AUTO_PUBLISH", label: "Publier sans relecture", help: "Les cartes sans alerte sont mises en ligne directement, ainsi que l'édition. Pratique pendant les essais.", def: false })}
+        {Toggle({ k: "AUTO_PUBLISH", label: "Pilote automatique", help: "Le moteur publie seul l'édition chaque matin. Une carte qui échoue aux contrôles est réécrite une fois par l'IA ; si elle reste en défaut, elle attend dans « À relire ». Vous pouvez toujours dépublier ou corriger une carte.", def: true })}
       </section>
       <section className="panel settings">
         <h2>Dernière minute</h2>

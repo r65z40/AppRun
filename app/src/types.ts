@@ -48,4 +48,6 @@ export type Comment = {
   ago: string;
   mine: -1 | 0 | 1;
   order: number;
+  /** Écrit par le lecteur connecté (il peut le supprimer). */
+  own?: boolean;
 };
