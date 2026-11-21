@@ -56,7 +56,7 @@ Après environ deux minutes, deux adresses fonctionnent :
 2. Ouvrez la page **Réglages** et collez vos clés :
    - **Clé Claude** : sur [console.anthropic.com](https://console.anthropic.com), ouvrez **API Keys > Create Key**, et ajoutez quelques euros de crédit dans **Billing**. Sans cette clé, le moteur ne peut pas écrire les cartes.
    - **Clé Unsplash** (gratuite, facultative) : sur [unsplash.com/developers](https://unsplash.com/developers), créez un compte développeur, puis ouvrez [New Application](https://unsplash.com/oauth/applications/new). Cochez les conditions, donnez un nom (par exemple TITRE), puis copiez l'**Access Key** (pas la *Secret Key*). Pour chaque article, Claude choisit des mots-clés et le moteur prend une vraie photo libre de droits, créditée à son auteur. La clé gratuite permet 50 recherches par heure, assez pour une édition. Pexels ne délivre plus de nouvelles clés.
-3. Vérifiez les options sur la même page : le modèle (Opus écrit le mieux), le nombre de sujets par rubrique, le **pilote automatique** (activé par défaut) et la Dernière minute.
+3. Sur la même page, réglez l'IA comme vous voulez : modèle et niveau de réflexion, **consignes de la rédaction** et **sujets à écarter** (en texte libre), nombre de sujets par rubrique et de cartes au total, importance et nombre de médias minimum, autocorrection, publication automatique, et tous les seuils de la Dernière minute. Un interrupteur **Mettre le moteur en pause** arrête tout en cas de besoin.
 
 Les clés sont rangées dans votre base Supabase et ne sont jamais réaffichées en entier : seuls les 4 derniers caractères apparaissent.
 

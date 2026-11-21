@@ -38,6 +38,10 @@ export type EngineRun = {
     left?: { source: string; title: string }[];
     cards?: { rubric: string; title: string; issues: string[]; error?: string; photo?: string }[];
     flashes?: { title: string; sources: string[]; rejected?: string }[];
+    /** Réglages utilisés pendant ce passage. */
+    config?: Record<string, string | number | boolean>;
+    /** Sujets proposés par l'IA mais écartés par les réglages. */
+    dropped?: { label: string; why: string }[];
   };
 };
 export type Setting = { key: string; value: string; is_set: boolean; updated_at: string };

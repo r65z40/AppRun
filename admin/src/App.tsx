@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ENGINE_URL, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
 type Page = 'edition' | 'flash' | 'engine' | 'sources' | 'moderation' | 'team' | 'settings';
@@ -348,6 +348,7 @@ const safeBold = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').r
 /* ---------------- Sources ---------------- */
 /* ---------------- Réglages ---------------- */
 const MODELS: [string, string][] = [['claude-opus-5-5', 'Claude Opus 5.5 (meilleure qualité)'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 (équilibré)'], ['claude-haiku-5-5', 'Claude Haiku 5.5 (le moins cher)']];
+const range = (a: number, b: number, step = 1) => Array.from({ length: Math.floor((b - a) / step) + 1 }, (_, i) => a + i * step);
 function SettingsPage({ say }: { say: (m: string) => void }) {
   const [list, setList] = useState<Setting[] | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -355,7 +356,7 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
   useEffect(() => { load(); }, []);
   const get = (k: string) => list?.find((s) => s.key === k)?.value ?? '';
   const save = async (k: string, v: string, msg = 'Réglage enregistré') => {
-    try { await api.setSetting(k, v); setDraft((d) => ({ ...d, [k]: '' })); await load(); say(msg); }
+    try { await api.setSetting(k, v); setDraft((d) => { const n = { ...d }; delete n[k]; return n; }); await load(); say(msg); }
     catch (e) { say(e instanceof Error ? e.message : 'Enregistrement impossible'); }
   };
   const Key = ({ k, label, help, link }: { k: string; label: string; help: string; link: [string, string] }) => (
@@ -380,38 +381,91 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
       </label>
     );
   };
+  const Pick = ({ k, label, help, def, options }: { k: string; label: string; help: string; def: string; options: [string, string][] }) => (
+    <div className="setting">
+      <div><b>{label}</b><p className="muted small">{help}</p></div>
+      <select value={get(k) || def} onChange={(e) => save(k, e.target.value === def ? '' : e.target.value)} aria-label={label}>
+        {options.map(([v, l]) => <option key={v} value={v}>{l}{v === def ? ' (par défaut)' : ''}</option>)}
+      </select>
+    </div>
+  );
+  const nums = (vals: number[], unit = '') => vals.map((n) => [String(n), `${n}${unit}`] as [string, string]);
+  const Text = ({ k, label, help, placeholder }: { k: string; label: string; help: string; placeholder: string }) => {
+    const cur = get(k);
+    const val = draft[k] ?? cur;
+    return (
+      <div className="setting column">
+        <div><b>{label}</b> {cur ? <span className="pill published">Actives</span> : null}<p className="muted small">{help}</p></div>
+        <textarea rows={4} maxLength={2000} placeholder={placeholder} value={val} onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} aria-label={label} />
+        <div className="setting-actions">
+          <span className="muted small">{val.length}/2000</span>
+          <button className="btn primary" disabled={val === cur} onClick={() => save(k, val, val.trim() ? 'Consignes enregistrées' : 'Consignes effacées')}>Enregistrer</button>
+        </div>
+      </div>
+    );
+  };
   if (!list) return <p className="muted">Chargement…</p>;
+  const paused = get('ENGINE_PAUSED') === '1';
+  const auto = get('AUTO_PUBLISH') ? get('AUTO_PUBLISH') === '1' : true;
   return (
     <>
       <header className="head">
         <div>
           <div className="eyebrow">Réglages</div>
-          <h1>Installation et moteur</h1>
-          <p className="muted">Tout se règle ici. Le moteur relit ces réglages à chaque passage : pas besoin de toucher à GitHub. Les clés sont gardées dans la base et ne sont plus jamais affichées en entier.</p>
+          <h1>Pilotage de l'IA</h1>
+          <p className="muted">Tout se règle ici. Le moteur relit ces réglages à chaque passage, et la page Moteur montre ceux qui ont servi. Les clés sont gardées dans la base et ne sont plus jamais affichées en entier.</p>
         </div>
       </header>
+      <div className={`status-bar ${paused ? 'off' : ''}`}>
+        <b>{paused ? 'Moteur en pause' : auto ? 'Pilote automatique : l’IA publie seule' : 'Relecture : l’IA prépare, vous publiez'}</b>
+        <span className="muted small">{paused ? 'Ni édition ni Dernière minute tant que la pause est active.' : 'Édition chaque matin à 5 h 30, Dernière minute toutes les 20 minutes de 6 h à 23 h.'}</span>
+      </div>
+
+      <section className="panel settings">
+        <h2>Pilotage</h2>
+        {Toggle({ k: 'ENGINE_PAUSED', label: 'Mettre le moteur en pause', help: "Arrêt d'urgence : plus aucune édition ni Dernière minute. Ce qui est déjà en ligne reste visible.", def: false })}
+        {Toggle({ k: 'AUTO_PUBLISH', label: 'Pilote automatique', help: "L'IA publie l'édition seule chaque matin. Coupé : les cartes arrivent en brouillon et vous les publiez dans Édition.", def: true })}
+      </section>
+
+      <section className="panel settings">
+        <h2>Comportement de l'IA</h2>
+        {Pick({ k: 'TITRE_MODEL', label: 'Modèle Claude', help: 'Opus écrit le mieux ; Sonnet et Haiku coûtent nettement moins cher.', def: 'claude-opus-5-5', options: MODELS })}
+        {Pick({ k: 'TITRE_EFFORT', label: 'Niveau de réflexion', help: "Plus de réflexion = sujets mieux choisis et cartes plus soignées, mais plus lent et plus cher.", def: 'medium', options: [['low', 'Rapide'], ['medium', 'Équilibré'], ['high', 'Approfondi']] })}
+        {Text({ k: 'AI_GUIDELINES', label: 'Consignes de la rédaction', help: "Votre ligne éditoriale, donnée à l'IA à chaque passage (choix des sujets, écriture, Dernière minute). Elle ne peut pas l'amener à inventer ou déformer un fait.", placeholder: "Exemples :\n- Ton direct, phrases courtes, pas de jargon.\n- Toujours expliquer l'impact concret pour un jeune actif.\n- Privilégier les sujets européens en Monde." })}
+        {Text({ k: 'AI_AVOID', label: 'Sujets à écarter', help: "L'IA ne retiendra jamais ces sujets, ni dans l'édition ni en Dernière minute.", placeholder: "Exemples :\n- Faits divers sans portée nationale\n- Rumeurs de transferts au football\n- Vie privée des célébrités" })}
+      </section>
+
+      <section className="panel settings">
+        <h2>Édition : choix des sujets</h2>
+        {Pick({ k: 'PER_RUBRIC', label: 'Sujets par rubrique', help: 'Nombre maximum de sujets que l’IA retient dans chaque rubrique.', def: '8', options: nums([2, 3, 4, 5, 6, 8, 10, 12, 16, 20]) })}
+        {Pick({ k: 'MAX_CARDS', label: "Cartes par édition, au total", help: 'Plafond de cartes écrites chaque matin, toutes rubriques confondues. Au-delà, les sujets les moins importants sont écartés.', def: '40', options: nums([8, 12, 16, 24, 32, 40, 50, 60, 80, 120]) })}
+        {Pick({ k: 'MAX_ESSENTIAL', label: 'Sujets « essentiels »', help: 'Les sujets que tout le monde voit en tête de « Mon édition », quelles que soient ses rubriques.', def: '4', options: nums(range(0, 10)) })}
+        {Pick({ k: 'MIN_IMPORTANCE', label: 'Importance minimum', help: "L'IA note chaque sujet de 1 (anecdotique) à 10 (majeur). En dessous de ce seuil, le sujet est écarté.", def: '1', options: [['1', '1 (tout garder)'], ...nums(range(2, 8)).map(([v, l]) => [v, `${l} sur 10`] as [string, string])] })}
+        {Pick({ k: 'MIN_SOURCES', label: 'Médias minimum par sujet', help: 'Nombre de médias différents qui doivent parler du sujet pour qu’il soit retenu. 2 ou plus = moins de sujets, mais tous recoupés.', def: '1', options: nums([1, 2, 3, 4]) })}
+        {Pick({ k: 'WINDOW_HOURS', label: 'Période couverte', help: "Les dépêches publiées dans les dernières heures avant l'édition.", def: '30', options: nums([12, 18, 24, 30, 36, 48], ' h') })}
+      </section>
+
+      <section className="panel settings">
+        <h2>Édition : écriture et publication</h2>
+        {Toggle({ k: 'AUTO_FIX', label: 'Autocorrection', help: "Une carte qui échoue aux contrôles (trop longue, source manquante, phrase reprise d'un média) est réécrite une fois par l'IA.", def: true })}
+        {Toggle({ k: 'PUBLISH_FLAGGED', label: 'Publier aussi les cartes avec alerte', help: "Déconseillé. Coupé, une carte encore en défaut attend dans « À relire ».", def: false })}
+        {Pick({ k: 'PUBLISH_MIN_IMPORTANCE', label: 'Publication automatique à partir de', help: 'Avec le pilote automatique, seules les cartes au moins aussi importantes sont publiées ; les autres attendent en brouillon.', def: '1', options: [['1', 'Toutes les cartes'], ...nums(range(3, 9)).map(([v, l]) => [v, `Importance ${l} et plus`] as [string, string])] })}
+      </section>
+
+      <section className="panel settings">
+        <h2>Dernière minute</h2>
+        {Toggle({ k: 'FLASH_ENABLED', label: 'Activée', help: 'Le moteur cherche les infos majeures toutes les 20 minutes, de 6 h à 23 h.', def: true })}
+        {Toggle({ k: 'FLASH_AUTO_PUBLISH', label: 'Publier sans relecture', help: 'Sinon, les infos arrivent masquées et vous les mettez en ligne depuis la page Dernière minute.', def: true })}
+        {Pick({ k: 'FLASH_MIN_IMPORTANCE', label: 'Importance minimum', help: 'Seuil pour publier une info en Dernière minute (sur 10).', def: '8', options: nums(range(6, 10), ' sur 10') })}
+        {Pick({ k: 'FLASH_MIN_SOURCES', label: 'Médias minimum', help: 'Nombre de médias différents qui doivent annoncer le fait.', def: '2', options: nums([1, 2, 3, 4]) })}
+        {Pick({ k: 'FLASH_MAX_PER_DAY', label: 'Infos par jour, au plus', help: 'Au-delà, le moteur arrête de publier jusqu’au lendemain.', def: '12', options: nums([3, 5, 8, 12, 20, 30, 50]) })}
+      </section>
+
       <section className="panel settings">
         <h2>Clés</h2>
         {Key({ k: "ANTHROPIC_API_KEY", label: "Clé Claude", help: "Pour choisir les sujets et écrire les cartes. Elle commence par sk-ant-.", link: ['https://console.anthropic.com/settings/keys', 'Créer une clé'] })}
         {Key({ k: "UNSPLASH_ACCESS_KEY", label: "Clé Unsplash (photos)", help: "Facultatif. Une vraie photo libre de droits par article, créditée à son auteur ; sans clé, les photos d'ambiance de l'app. Collez l'« Access Key ».", link: ['https://unsplash.com/oauth/applications/new', 'Créer une clé gratuite'] })}
         {Key({ k: "PEXELS_API_KEY", label: "Clé Pexels (ancienne)", help: "Seulement si vous en avez déjà une : Pexels ne délivre plus de nouvelles clés. Utilisée si Unsplash ne trouve rien.", link: ['https://www.pexels.com/api/', 'Pexels'] })}
-      </section>
-      <section className="panel settings">
-        <h2>Édition du matin</h2>
-        <div className="setting">
-          <div><b>Modèle Claude</b><p className="muted small">Opus écrit le mieux ; Sonnet et Haiku coûtent nettement moins cher.</p></div>
-          <select value={get('TITRE_MODEL') || 'claude-opus-5-5'} onChange={(e) => save('TITRE_MODEL', e.target.value)}>{MODELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-        </div>
-        <div className="setting">
-          <div><b>Sujets par rubrique</b><p className="muted small">Nombre maximum de cartes écrites par rubrique et par édition.</p></div>
-          <select value={get('PER_RUBRIC') || '8'} onChange={(e) => save('PER_RUBRIC', e.target.value)}>{[4, 6, 8, 10, 12, 16].map((n) => <option key={n} value={String(n)}>{n}</option>)}</select>
-        </div>
-        {Toggle({ k: "AUTO_PUBLISH", label: "Pilote automatique", help: "Le moteur publie seul l'édition chaque matin. Une carte qui échoue aux contrôles est réécrite une fois par l'IA ; si elle reste en défaut, elle attend dans « À relire ». Vous pouvez toujours dépublier ou corriger une carte.", def: true })}
-      </section>
-      <section className="panel settings">
-        <h2>Dernière minute</h2>
-        {Toggle({ k: "FLASH_ENABLED", label: "Activée", help: "Le moteur cherche les infos majeures toutes les 20 minutes, de 6 h à 23 h.", def: true })}
-        {Toggle({ k: "FLASH_AUTO_PUBLISH", label: "Publier sans relecture", help: "Sinon, les infos arrivent masquées et vous les mettez en ligne depuis la page Dernière minute.", def: true })}
       </section>
     </>
   );
@@ -455,10 +509,19 @@ function EnginePage() {
   );
 }
 
+const fmtTok = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} M` : n >= 1e3 ? `${Math.round(n / 1e3)} k` : String(n));
+const CONFIG_LABEL: Record<string, string> = {
+  modele: 'Modèle', effort: 'Réflexion', consignes: 'Consignes', a_eviter: 'Sujets à écarter', fenetre_h: 'Période (h)', par_rubrique: 'Sujets par rubrique',
+  cartes_max: 'Cartes au total', essentiels_max: 'Essentiels', importance_min: 'Importance minimum', medias_min: 'Médias minimum', pilote_auto: 'Pilote automatique',
+  autocorrection: 'Autocorrection', publier_alertes: 'Publier avec alerte', importance_min_publication: 'Publication à partir de', active: 'Activée',
+  publication_auto: 'Publication sans relecture', max_par_jour: 'Infos par jour',
+};
 function RunDetails({ r }: { r: EngineRun }) {
   const d = r.details ?? {};
+  const ai = r.stats?.ai as { calls: number; input: number; output: number } | undefined;
   return (
     <div className="run-body">
+      {ai?.calls ? <p className="muted small">IA : {ai.calls} appel{ai.calls > 1 ? 's' : ''} · {fmtTok(ai.input)} jetons lus · {fmtTok(ai.output)} jetons écrits{r.stats?.model ? ` · ${String(r.stats.model)}` : ''}</p> : null}
       {d.stories?.length ? (
         <section>
           <h3>Sujets retenus ({d.stories.length})</h3>
@@ -470,6 +533,12 @@ function RunDetails({ r }: { r: EngineRun }) {
           ))}
         </section>
       ) : null}
+      {d.dropped?.length ? (
+        <section>
+          <h3>Écartés par vos réglages ({d.dropped.length})</h3>
+          <ul>{d.dropped.map((x, i) => <li key={i} className="small">{x.label} <span className="muted">: {x.why}</span></li>)}</ul>
+        </section>
+      ) : null}
       {d.cards?.length ? (
         <section>
           <h3>Cartes écrites</h3>
@@ -479,13 +548,19 @@ function RunDetails({ r }: { r: EngineRun }) {
       {d.flashes ? (
         <section>
           <h3>Infos proposées par l'IA ({d.flashes.length})</h3>
-          {d.flashes.length ? <ul>{d.flashes.map((f, i) => <li key={i}>{f.rejected ? '✗' : '⚡'} {f.title} <span className="muted small">({f.sources.join(', ')}){f.rejected ? ` : écartée, ${f.rejected}` : ''}</span></li>)}</ul> : <p className="muted small">Rien d'assez important et confirmé par deux médias.</p>}
+          {d.flashes.length ? <ul>{d.flashes.map((f, i) => <li key={i}>{f.rejected ? '✗' : '⚡'} {f.title} <span className="muted small">({f.sources.join(', ')}){f.rejected ? ` : écartée, ${f.rejected}` : ''}</span></li>)}</ul> : <p className="muted small">Rien d'assez important et confirmé selon vos réglages.</p>}
         </section>
       ) : null}
       {d.left?.length ? (
         <details>
           <summary className="muted">Titres non retenus ({d.left.length}{d.left.length >= 150 ? '+' : ''})</summary>
           <ul>{d.left.map((it, i) => <li key={i} className="muted small">{it.source} : {it.title}</li>)}</ul>
+        </details>
+      ) : null}
+      {d.config ? (
+        <details>
+          <summary className="muted">Réglages utilisés pour ce passage</summary>
+          <dl className="config">{Object.entries(d.config).map(([k, v]) => <Fragment key={k}><dt>{CONFIG_LABEL[k] ?? k}</dt><dd>{v === true ? 'oui' : v === false ? 'non' : String(v)}</dd></Fragment>)}</dl>
         </details>
       ) : null}
       <details open={!d.stories && !d.flashes}>
