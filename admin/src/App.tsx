@@ -393,7 +393,8 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
       <section className="panel settings">
         <h2>Clés</h2>
         {Key({ k: "ANTHROPIC_API_KEY", label: "Clé Claude", help: "Pour choisir les sujets et écrire les cartes. Elle commence par sk-ant-.", link: ['https://console.anthropic.com/settings/keys', 'Créer une clé'] })}
-        {Key({ k: "PEXELS_API_KEY", label: "Clé Pexels (photos)", help: "Facultatif. Une vraie photo libre de droits par article ; sans clé, les photos d'ambiance de l'app.", link: ['https://www.pexels.com/api/', 'Créer une clé gratuite'] })}
+        {Key({ k: "UNSPLASH_ACCESS_KEY", label: "Clé Unsplash (photos)", help: "Facultatif. Une vraie photo libre de droits par article, créditée à son auteur ; sans clé, les photos d'ambiance de l'app. Collez l'« Access Key ».", link: ['https://unsplash.com/oauth/applications/new', 'Créer une clé gratuite'] })}
+        {Key({ k: "PEXELS_API_KEY", label: "Clé Pexels (ancienne)", help: "Seulement si vous en avez déjà une : Pexels ne délivre plus de nouvelles clés. Utilisée si Unsplash ne trouve rien.", link: ['https://www.pexels.com/api/', 'Pexels'] })}
       </section>
       <section className="panel settings">
         <h2>Édition du matin</h2>

@@ -2,7 +2,7 @@
 
 À la fin, le moteur lit les médias, écrit les cartes du jour et les infos « Dernière minute ». Vous les relisez dans le back office, et elles s'affichent dans l'app sur votre iPhone.
 
-Il n'y a que **3 étapes**. Tout le reste (les clés Claude et Pexels, le modèle, la publication automatique) se règle ensuite dans le back office, page **Réglages**.
+Il n'y a que **3 étapes**. Tout le reste (les clés Claude et Unsplash, le modèle, la publication automatique) se règle ensuite dans le back office, page **Réglages**.
 
 Pour voir le back office **sans rien installer**, ouvrez-le simplement : sans Supabase, il démarre en mode démo, avec des données fictives.
 
@@ -55,7 +55,7 @@ Après environ deux minutes, deux adresses fonctionnent :
 1. Ouvrez le back office. La première fois, il affiche **Créer le compte administrateur** : saisissez votre adresse et un mot de passe. Le premier compte créé devient administrateur. Si Supabase vous envoie un e-mail de confirmation, cliquez sur le lien, puis connectez-vous.
 2. Ouvrez la page **Réglages** et collez vos clés :
    - **Clé Claude** : sur [console.anthropic.com](https://console.anthropic.com), ouvrez **API Keys > Create Key**, et ajoutez quelques euros de crédit dans **Billing**. Sans cette clé, le moteur ne peut pas écrire les cartes.
-   - **Clé Pexels** (gratuite, facultative) : sur [pexels.com/api](https://www.pexels.com/api/), créez un compte puis cliquez sur **Your API Key**. Pour chaque article, Claude choisit des mots-clés et le moteur prend une vraie photo libre de droits.
+   - **Clé Unsplash** (gratuite, facultative) : sur [unsplash.com/developers](https://unsplash.com/developers), créez un compte développeur, puis ouvrez [New Application](https://unsplash.com/oauth/applications/new). Cochez les conditions, donnez un nom (par exemple TITRE), puis copiez l'**Access Key** (pas la *Secret Key*). Pour chaque article, Claude choisit des mots-clés et le moteur prend une vraie photo libre de droits, créditée à son auteur. La clé gratuite permet 50 recherches par heure, assez pour une édition. Pexels ne délivre plus de nouvelles clés.
 3. Vérifiez les options sur la même page : le modèle (Opus écrit le mieux), le nombre de sujets par rubrique, le **pilote automatique** (activé par défaut) et la Dernière minute.
 
 Les clés sont rangées dans votre base Supabase et ne sont jamais réaffichées en entier : seuls les 4 derniers caractères apparaissent.
@@ -101,4 +101,4 @@ Installez **Expo Go** sur l'iPhone et scannez le QR code affiché.
 - **Le back office affiche « Mode démo »** : les variables `SUPABASE_URL` et `SUPABASE_ANON_KEY` étaient vides lors de la mise en ligne. Relancez « Site en ligne ».
 - **Le moteur s'arrête avec « clé Claude manquante »** : collez la clé dans **Réglages**.
 - **Une source est en erreur** : la page Sources affiche l'erreur. Désactivez la source ou remplacez l'adresse du flux.
-- **Les anciens secrets `ANTHROPIC_API_KEY` et `PEXELS_API_KEY` dans GitHub** marchent toujours, mais la valeur saisie dans Réglages passe en priorité.
+- **Les anciens secrets `ANTHROPIC_API_KEY`, `UNSPLASH_ACCESS_KEY` et `PEXELS_API_KEY` dans GitHub** marchent toujours, mais la valeur saisie dans Réglages passe en priorité.

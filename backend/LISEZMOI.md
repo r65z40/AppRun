@@ -20,7 +20,7 @@ Le guide pas à pas est dans [`ESSAYER.md`](../ESSAYER.md). En résumé :
 2. **GitHub** : secret `DATABASE_URL`, variables `SUPABASE_URL` et `SUPABASE_ANON_KEY`, puis **Actions > Installer la base**.
    Les tables sont créées automatiquement (`npm run install-db`, table `_titre_migrations`), y compris sur une base déjà installée à la main.
    Le moteur et la Dernière minute appliquent aussi les migrations manquantes à chaque lancement.
-3. **Back office > Réglages** : clé Claude, clé Pexels, modèle, `AUTO_PUBLISH`, `FLASH_AUTO_PUBLISH`, `FLASH_ENABLED`, `PER_RUBRIC`.
+3. **Back office > Réglages** : clé Claude, clé Unsplash (ou Pexels, ancienne), modèle, `AUTO_PUBLISH`, `FLASH_AUTO_PUBLISH`, `FLASH_ENABLED`, `PER_RUBRIC`.
    Ces réglages sont rangés dans la table `app_settings` (lisible seulement par les fonctions `admin_settings` et `set_setting`) et passent avant les secrets et variables GitHub.
 
 Coût estimé avec le modèle par défaut (Claude Opus 5.5) : environ 4 centimes par carte, soit 2 € environ par édition de 50 cartes.
