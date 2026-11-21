@@ -16,7 +16,7 @@ Pour la rédaction : valider l'édition du jour, gérer les sources, modérer le
 
 ## Premier accès
 1. Ouvrez le back office : la première fois, il propose **Créer le compte administrateur**. Le premier compte créé devient administrateur.
-2. Page **Réglages** (administrateurs seulement) : clés Claude et Pexels, modèle, sujets par rubrique, publication sans relecture, Dernière minute. Les clés sont masquées (4 derniers caractères).
+2. Page **Réglages** (administrateurs seulement) : clés Claude et Unsplash (ou Pexels, ancienne), modèle, sujets par rubrique, publication sans relecture, Dernière minute. Les clés sont masquées (4 derniers caractères).
 3. Ajoutez ensuite la rédaction depuis la page Équipe.
 
 ## En local

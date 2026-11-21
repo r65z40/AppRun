@@ -231,3 +231,15 @@ reset role;
 \else
 \echo ÉCHEC  like
 \endif
+
+-- Clé Unsplash : acceptée et masquée comme les autres clés.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000ad';
+select public.set_setting('UNSPLASH_ACCESS_KEY', 'abcdEFGH9876');
+select value = '••••9876' as ok from public.admin_settings() where key = 'UNSPLASH_ACCESS_KEY' \gset
+reset role;
+\if :ok
+\echo OK  clé Unsplash enregistrée et masquée
+\else
+\echo ÉCHEC  clé Unsplash
+\endif
