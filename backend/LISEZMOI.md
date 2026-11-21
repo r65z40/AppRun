@@ -15,24 +15,15 @@ L'IA ne retient que les faits majeurs, nouveaux et annoncés par au moins deux m
 Coût estimé : environ 1 € par jour.
 
 ## À brancher (une fois)
+Le guide pas à pas est dans [`ESSAYER.md`](../ESSAYER.md). En résumé :
+1. **Supabase** : créez un projet (région Paris) et notez l'adresse *Session pooler* (`DATABASE_URL`), l'adresse du projet et la clé publique.
+2. **GitHub** : secret `DATABASE_URL`, variables `SUPABASE_URL` et `SUPABASE_ANON_KEY`, puis **Actions > Installer la base**.
+   Les tables sont créées automatiquement (`npm run install-db`, table `_titre_migrations`), y compris sur une base déjà installée à la main.
+   Le moteur et la Dernière minute appliquent aussi les migrations manquantes à chaque lancement.
+3. **Back office > Réglages** : clé Claude, clé Pexels, modèle, `AUTO_PUBLISH`, `FLASH_AUTO_PUBLISH`, `FLASH_ENABLED`, `PER_RUBRIC`.
+   Ces réglages sont rangés dans la table `app_settings` (lisible seulement par les fonctions `admin_settings` et `set_setting`) et passent avant les secrets et variables GitHub.
 
-### 1. Supabase (base de données, gratuit pour commencer)
-1. Créez un projet sur https://supabase.com (région Europe, Paris ou Francfort).
-2. Menu **SQL Editor** : collez et exécutez dans l'ordre `supabase/migrations/0001_init.sql`, `0002_roles.sql`, `0003_flashes.sql`, puis `supabase/seed.sql` (les sources de départ).
-3. Notez dans **Project Settings** :
-   - *Database > Connection string > Session pooler* : c'est `DATABASE_URL` (secret, pour le moteur) ;
-   - *API > Project URL* et clé *anon public* : pour l'app (fichier `app/.env`, voir `app/.env.example`).
-
-### 2. Clé IA
-Créez une clé sur https://console.anthropic.com : c'est `ANTHROPIC_API_KEY` (secret).
-Coût estimé avec le modèle par défaut (Claude Opus 5.5) : environ 4 centimes par carte, soit 2 € environ par édition de 50 cartes (60 € par mois).
-
-### 3. GitHub (lancement automatique)
-Dans le dépôt : **Settings > Secrets and variables > Actions**
-- *Secrets* : `DATABASE_URL` et `ANTHROPIC_API_KEY` ;
-- *Variables* (facultatif) : `AUTO_PUBLISH` = `1` pour publier sans relecture (déconseillé au début), `TITRE_MODEL` pour changer de modèle.
-
-Le workflow « Édition du jour » tourne tous les matins ; on peut aussi le lancer à la main (onglet **Actions > Édition du jour > Run workflow**).
+Coût estimé avec le modèle par défaut (Claude Opus 5.5) : environ 4 centimes par carte, soit 2 € environ par édition de 50 cartes.
 
 ## En local
 ```bash

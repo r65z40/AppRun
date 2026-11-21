@@ -1,5 +1,5 @@
 // Données fictives : le back office fonctionne sans Supabase pour qu'on puisse l'essayer.
-import type { Api, Article, Comment, EngineRun, Edition, Flash, Profile, Report, Source } from './data';
+import type { Api, Article, Comment, EngineRun, Setting, Edition, Flash, Profile, Report, Source } from './data';
 
 const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 const yday = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date(Date.now() - 86400e3));
@@ -94,6 +94,7 @@ let runs: EngineRun[] = [
       cards: [{ rubric: 'france', title: 'Grève SNCF : un TGV sur deux lundi', issues: [] }, { rubric: 'sport', title: 'Le PSG s’impose à Munich', issues: ['fait 2 sans source valable'] }],
     } },
 ];
+let settings: Setting[] = [{ key: 'ANTHROPIC_API_KEY', value: '••••x7Qa', is_set: true, updated_at: new Date().toISOString() }, { key: 'TITRE_MODEL', value: 'claude-opus-5-5', is_set: true, updated_at: new Date().toISOString() }];
 const readers: Profile[] = [{ id: 'u0', pseudo: 'Camille_R', role: 'reader', premium: false, created_at: iso(50) }];
 
 const wait = <T>(v: T) => new Promise<T>((r) => setTimeout(() => r(structuredClone(v)), 120));
@@ -104,6 +105,13 @@ export function demoApi(): Api {
     demo: true,
     me: () => wait(signed ? { id: 'u-admin', email: 'demo@titre.app', role: 'admin' as const } : null),
     async signIn() { signed = true; return null; },
+    async needsAdmin() { return false; },
+    async signUp() { signed = true; return null; },
+    settings: () => wait(settings),
+    async setSetting(key, value) {
+      settings = settings.filter((s) => s.key !== key);
+      if (value.trim()) settings.push({ key, value: key.endsWith('_KEY') ? '••••' + value.trim().slice(-4) : value.trim(), is_set: true, updated_at: new Date().toISOString() });
+    },
     async signOut() { signed = false; },
     editions: () => wait(editions),
     articles: (date) => wait(articles.filter((a) => a.edition_date === date)),

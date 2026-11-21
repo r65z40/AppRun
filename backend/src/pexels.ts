@@ -1,7 +1,7 @@
 // Photo d'illustration libre de droits (Pexels) à partir des mots-clés choisis par Claude.
 // Sans PEXELS_API_KEY, rien ne change : l'app garde les photos d'ambiance embarquées.
-const KEY = process.env.PEXELS_API_KEY;
-export const pexelsOn = !!KEY;
+const key = () => process.env.PEXELS_API_KEY;
+export const pexelsOn = () => !!key();
 
 type Photo = { id: number; url: string; photographer: string; src: { portrait: string; large: string } };
 export type PickedPhoto = { url: string; credit: string };
@@ -9,6 +9,7 @@ export type PickedPhoto = { url: string; credit: string };
 const used = new Set<number>(); // pas deux fois la même photo dans un passage
 
 export async function findPhoto(query: string): Promise<PickedPhoto | null> {
+  const KEY = key();
   if (!KEY || !query.trim()) return null;
   const u = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&orientation=portrait&per_page=10`;
   const r = await fetch(u, { headers: { Authorization: KEY }, signal: AbortSignal.timeout(10000) });

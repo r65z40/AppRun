@@ -5,10 +5,11 @@
  *
  * Usage : npm run flash -- [--fixtures test/feeds]
  */
+import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
-import { MODEL, checkFlash, selectFlashes, type Item } from './ai.js';
+import { model, checkFlash, selectFlashes, type Item } from './ai.js';
 
 const args = process.argv.slice(2);
 const fx = args.indexOf('--fixtures');
@@ -31,6 +32,7 @@ async function main() {
 }
 
 async function flash() {
+  if (process.env.FLASH_ENABLED === '0') return J.finish('ok', 'Dernière minute désactivée dans les réglages.');
   const fetched = await collect(FIXTURES, log);
   const used = new Set((await q<{ id: string }>("select unnest(raw_item_ids)::text as id from flashes where created_at > now() - interval '24 hours'")).map((r) => r.id));
   const raws = (await q<Raw>(
@@ -60,7 +62,7 @@ async function flash() {
     await q(
       `insert into flashes (status, rubric_id, importance, title, sentence, sources, raw_item_ids, model)
        values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [AUTO ? 'published' : 'hidden', f.rubric, Math.min(10, Math.max(8, f.importance)), f.title.slice(0, 90), f.sentence.slice(0, 220), JSON.stringify(sources), its.map((r) => r.id), MODEL],
+      [AUTO ? 'published' : 'hidden', f.rubric, Math.min(10, Math.max(8, f.importance)), f.title.slice(0, 90), f.sentence.slice(0, 220), JSON.stringify(sources), its.map((r) => r.id), model()],
     );
     n++;
     log(`  ⚡ ${f.title}`);
