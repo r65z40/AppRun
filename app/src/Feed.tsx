@@ -5,6 +5,8 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
+  withRepeat,
+  useReducedMotion,
   cancelAnimation,
   Easing,
   interpolate,
@@ -285,8 +287,8 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
       <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
         <Animated.View style={[styles.content, pad, depth]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <View style={styles.liveDot} />
-            <Text style={[styles.kicker, { marginBottom: 0 }]}>DERNIÈRE MINUTE · {flashTime(card.at).toUpperCase()}</Text>
+            <LiveDot size={8} />
+            <Text style={styles.kicker}><Text style={{ color: C.coral }}>EN DIRECT</Text> · {flashTime(card.at).toUpperCase()}</Text>
           </View>
           <Text style={[styles.title, { marginTop: 14 }]}>{card.title}</Text>
           <Text style={styles.key}>{card.sentence}</Text>
@@ -406,6 +408,24 @@ function FactRow({ text, source, doc, last, onSource }: { text: string; source: 
   );
 }
 
+/** Point « en direct » : un halo corail qui s'élargit et s'efface, en boucle. */
+function LiveDot({ size }: { size: number }) {
+  const reduce = useReducedMotion();
+  const t = useSharedValue(0);
+  useEffect(() => {
+    if (reduce) return;
+    t.value = withRepeat(withTiming(1, { duration: 1600, easing: Easing.out(Easing.quad) }), -1, false);
+    return () => cancelAnimation(t);
+  }, [reduce]);
+  const halo = useAnimatedStyle(() => ({ opacity: 0.55 * (1 - t.value), transform: [{ scale: 1 + t.value * 1.8 }] }));
+  const dot = { width: size, height: size, borderRadius: size / 2, backgroundColor: C.coral };
+  return (
+    <View style={dot}>
+      <Animated.View style={[StyleSheet.absoluteFill, { borderRadius: size / 2, backgroundColor: C.coral }, halo]} />
+    </View>
+  );
+}
+
 function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; goRub: (n: number) => void }) {
   const [lay, setLay] = useState<Record<number, { x: number; w: number }>>({});
   const [boxW, setBoxW] = useState(0);
@@ -420,6 +440,12 @@ function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; 
     prog.value = withTiming(Math.min(1, api.seenN / api.limit), { duration: 500, easing: Easing.bezier(0.23, 1, 0.32, 1) });
   }, [api.seenN, api.limit]);
   const bar = useAnimatedStyle(() => ({ width: `${prog.value * 100}%` }));
+  // Nouvelle info en Dernière minute depuis le dernier passage : l'onglet passe en corail.
+  const flashCol = api.cols.find((c) => c.id === 'flash');
+  const newest = flashCol?.cards[0] && isFlash(flashCol.cards[0]) ? flashCol.cards[0].at : '';
+  const [flashSeen, setFlashSeen] = useState('');
+  useEffect(() => { if (api.cols[api.ri]?.id === 'flash') setFlashSeen(newest); }, [api.ri, newest]);
+  const flashFresh = !!newest && newest > flashSeen;
   return (
     <View style={[styles.head, { paddingTop: top + 8 }]} pointerEvents="box-none">
       <View style={styles.headRow}>
@@ -438,7 +464,10 @@ function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; 
                 accessibilityRole="tab"
                 accessibilityState={{ selected: i === api.ri }}
               >
-                <Text style={[styles.rubTxt, i === api.ri && styles.rubOn]}>{c.name}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                  {c.id === 'flash' ? <LiveDot size={7} /> : null}
+                  <Text style={[styles.rubTxt, c.id === 'flash' && flashFresh && i !== api.ri && { color: C.coral }, i === api.ri && styles.rubOn]}>{c.name}</Text>
+                </View>
                 {i === api.ri ? <View style={styles.rubDot} /> : null}
               </Pressable>
             ))}
@@ -472,7 +501,6 @@ function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; 
 const FLASH_GRAD = ['#FF6B8A', '#7B5CFF', '#3a1d5c', '#0E0B1F'];
 
 const styles = StyleSheet.create({
-  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.coral },
   flashSrc: { color: C.text2, fontFamily: F.semi, fontSize: 14 },
   blob: { position: 'absolute', width: '70%', aspectRatio: 1, borderRadius: 999, opacity: 0.55 },
   card: { position: 'absolute', left: 0 },

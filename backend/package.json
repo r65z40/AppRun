@@ -6,7 +6,8 @@
     "engine": "tsx src/run.ts",
     "typecheck": "tsc --noEmit",
     "test": "bash test/run-local.sh",
-    "flash": "tsx src/flash.ts"
+    "flash": "tsx src/flash.ts",
+    "setup-sql": "bash scripts/setup-sql.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

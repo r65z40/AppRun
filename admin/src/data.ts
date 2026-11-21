@@ -53,9 +53,16 @@ export interface Api {
   team(): Promise<Profile[]>;
   setRole(id: string, role: Role): Promise<void>;
   findProfile(pseudo: string): Promise<Profile | null>;
+  createArticle(a: Partial<Article> & { edition_date: string; rubric_id: string }): Promise<void>;
+  /** Démo : simule le moteur pas à pas. Vraie base : null (le moteur tourne sur GitHub). */
+  runEngine?(onStep: (s: string) => void): Promise<void>;
   flashes(): Promise<Flash[]>;
   saveFlash(f: Partial<Flash> & { id?: string }): Promise<void>;
 }
+
+// Page GitHub où lancer le moteur à la main (bouton « Run workflow »).
+const REPO = (import.meta.env.VITE_GITHUB_REPO as string | undefined) || 'r65z40/AppRun';
+export const ENGINE_URL = `https://github.com/${REPO}/actions/workflows/edition.yml`;
 
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -126,6 +133,12 @@ function supabaseApi(sb: SupabaseClient): Api {
     },
     async findProfile(pseudo) {
       return (ok(await sb.from('profiles').select('*').ilike('pseudo', pseudo).limit(1)) as Profile[])[0] ?? null;
+    },
+    async createArticle(a) {
+      const { data } = await sb.auth.getUser();
+      ok(await sb.from('editions').upsert({ date: a.edition_date }, { onConflict: 'date', ignoreDuplicates: true }));
+      const last = ok(await sb.from('articles').select('rank').eq('edition_date', a.edition_date).eq('rubric_id', a.rubric_id).order('rank', { ascending: false }).limit(1)) as { rank: number }[];
+      ok(await sb.from('articles').insert({ ...a, rank: (last[0]?.rank ?? -1) + 1, edited_by: data.user?.id }));
     },
     // Les dernières 48 heures, la plus récente en haut.
     flashes: async () => sb.from('flashes').select('*').gt('published_at', new Date(Date.now() - 48 * 3600e3).toISOString()).order('published_at', { ascending: false }).then(ok<Flash[]>),

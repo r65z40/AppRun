@@ -65,6 +65,18 @@ let flashes: Flash[] = [
   fl(260, 'Un joueur du PSG transféré pour 90 M€', 'Information non confirmée par le club à cette heure.', ['L’Équipe', 'RMC Sport'], { rubric_id: 'sport', status: 'hidden' }),
   fl(320, 'Tempête : 80 000 foyers privés d’électricité', 'Les rafales ont dépassé 130 km/h en Bretagne. Enedis prévoit un retour à la normale d’ici demain soir.', ['Ouest-France', 'franceinfo'], { rubric_id: 'france', manual: true, model: null }),
 ];
+// Ce que le moteur « écrit » quand on le lance dans la démo.
+const SIMULATED: Article[] = [
+  art('tech', 'L’Europe impose le chargeur universel aux PC', 'Dès 2027, tous les ordinateurs portables vendus dans l’UE devront se charger en USB-C.', [
+    ['Obligation à partir du <b>28 avril 2027</b>', 'Numerama'], ['Concerne aussi les <b>tablettes et liseuses</b>', 'Le Monde'], ['Bruxelles vise <b>11 000 tonnes</b> de déchets en moins', 'franceinfo'],
+  ], ['Les smartphones sont déjà concernés depuis 2024.', 'Les fabricants de PC doivent adapter leurs prises.', 'Des contrôles seront menés par chaque pays.'], { importance: 6, photo_tag: 'lampe', created_at: new Date().toISOString() }),
+  art('culture', 'Le Louvre ouvre une nouvelle entrée', 'Un accès par la Colonnade doit désengorger la pyramide, saturée aux heures de pointe.', [
+    ['Ouverture prévue en <b>2031</b>', 'Le Monde'], ['Coût estimé : <b>700 M€</b>', 'Les Echos'], ['<b>8,7 millions</b> de visiteurs en 2025', 'franceinfo'],
+  ], ['La pyramide a été conçue pour 4 millions de visiteurs.', 'Une seconde entrée et de nouvelles salles.', 'Un concours d’architectes sera lancé l’an prochain.'], { importance: 5, photo_tag: 'batiment', created_at: new Date().toISOString() }),
+  art('monde', 'Élections au Chili : second tour serré', 'Les deux candidats sont au coude-à-coude selon les derniers sondages, publiés vendredi.', [
+    ['Écart de <b>2 points</b> dans les sondages', 'RFI'], ['Participation attendue au-dessus de <b>80 %</b>', 'Le Monde'], ['Résultats attendus <b>dimanche soir</b>', 'franceinfo'],
+  ], ['Le vote est obligatoire au Chili depuis 2022.', 'Le nouveau président entrera en fonction en mars.', 'Le Parlement reste divisé.'], { importance: 6, photo_tag: 'sommet', review_notes: ['fait 2 : vérifier le chiffre'], created_at: new Date().toISOString() }),
+];
 const readers: Profile[] = [{ id: 'u0', pseudo: 'Camille_R', role: 'reader', premium: false, created_at: iso(50) }];
 
 const wait = <T>(v: T) => new Promise<T>((r) => setTimeout(() => r(structuredClone(v)), 120));
@@ -81,6 +93,25 @@ export function demoApi(): Api {
     async saveArticle(id, patch) { articles = articles.map((a) => (a.id === id ? { ...a, ...patch } : a)); },
     async saveArticles(ps) { ps.forEach((p) => (articles = articles.map((a) => (a.id === p.id ? { ...a, ...p.patch } : a)))); },
     async setEdition(date, status) { const e = editions.find((x) => x.date === date); if (e) { e.status = status; e.published_at = status === 'published' ? new Date().toISOString() : null; } },
+    async createArticle(a) {
+      if (!editions.some((e) => e.date === a.edition_date)) editions.unshift({ date: a.edition_date, status: 'building', published_at: null, stats: {} });
+      const rank = articles.filter((x) => x.edition_date === a.edition_date && x.rubric_id === a.rubric_id).length;
+      articles = [...articles, { ...art(a.rubric_id, '', '', [], []), model: null, photo_tag: null, ...a, rank }];
+    },
+    async runEngine(onStep) {
+      const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const fresh = SIMULATED.filter((s) => !articles.some((a) => a.title === s.title));
+      onStep('Lecture des 10 sources (titres et chapôs)…'); await pause(900);
+      onStep(`${180 + fresh.length * 17} titres lus. Choix des sujets…`); await pause(1100);
+      if (!fresh.length) { onStep('Rien de nouveau depuis le dernier passage.'); return; }
+      for (const [i, s] of fresh.entries()) { onStep(`Écriture ${i + 1}/${fresh.length} : ${s.title}`); await pause(700); }
+      onStep('Contrôles : longueur, sources, copie mot pour mot…'); await pause(700);
+      const e = editions.find((x) => x.date === today);
+      fresh.forEach((s) => { articles = [...articles, { ...s, rank: articles.filter((x) => x.edition_date === today && x.rubric_id === s.rubric_id).length }]; });
+      if (e) e.stats = { ...e.stats, stories: Number(e.stats.stories ?? 0) + fresh.length, written: Number(e.stats.written ?? 0) + fresh.length };
+      const flagged = fresh.filter((s) => s.review_notes.length).length;
+      onStep(`Terminé : ${fresh.length} brouillons ajoutés${flagged ? `, dont ${flagged} à relire` : ''}.`);
+    },
     flashes: () => wait(flashes),
     async saveFlash(f) {
       if (f.id) flashes = flashes.map((x) => (x.id === f.id ? { ...x, ...f } : x));

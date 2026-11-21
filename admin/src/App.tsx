@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type Flash, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, ENGINE_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type Flash, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
 type Page = 'edition' | 'flash' | 'sources' | 'moderation' | 'team';
 const PAGES: [Page, string][] = [['edition', 'Édition'], ['flash', 'Dernière minute'], ['sources', 'Sources'], ['moderation', 'Modération'], ['team', 'Équipe']];
@@ -103,6 +103,18 @@ function EditionPage({ say }: { say: (m: string) => void }) {
   const [list, setList] = useState<Article[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [edit, setEdit] = useState<Article | null>(null);
+  const [steps, setSteps] = useState<string[] | null>(null);
+  const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
+  const blank = (): Article => ({
+    id: '', edition_date: date ?? today, rubric_id: 'france', status: 'draft', rank: 0, importance: 5, essential: false, title: '', key_sentence: '',
+    facts: [0, 1, 2].map(() => ({ text: '', source: '', url: '' })), summary: ['', '', ''], photo_tag: null, photo_url: null, review_notes: [], model: null, published_at: null, created_at: '',
+  });
+  const runEngine = async () => {
+    if (!api.runEngine) return void window.open(ENGINE_URL, '_blank', 'noopener');
+    setSteps([]);
+    await api.runEngine((s) => setSteps((l) => [...(l ?? []), s]));
+    await reload(today);
+  };
   const reload = useCallback(async (d = date) => {
     const e = await api.editions();
     setEds(e);
@@ -168,10 +180,19 @@ function EditionPage({ say }: { say: (m: string) => void }) {
           <select value={date ?? ''} onChange={(e) => reload(e.target.value)} aria-label="Choisir une édition">
             {eds.map((e) => <option key={e.date} value={e.date}>{dateLabel(e.date)}</option>)}
           </select>
+          <button className="btn" onClick={() => setEdit(blank())}>Nouvel article</button>
+          <button className="btn" onClick={runEngine} title={api.runEngine ? 'Simulation du moteur (mode démo)' : 'Ouvre GitHub : bouton « Run workflow »'}>Lancer le moteur{api.runEngine ? '' : ' ↗'}</button>
           <button className="btn" onClick={publishClean}>Publier les cartes sans alerte</button>
           <button className={`btn ${ed?.status === 'published' ? '' : 'primary'}`} onClick={toggleEdition}>{ed?.status === 'published' ? 'Retirer l’édition' : 'Mettre l’édition en ligne'}</button>
         </div>
       </header>
+
+      {steps ? (
+        <div className="panel engine">
+          <div className="engine-head"><b>Moteur</b><button className="btn ghost sm" onClick={() => setSteps(null)}>Fermer</button></div>
+          <ol>{steps.map((s, i) => <li key={i} className={i === steps.length - 1 && !s.startsWith('Terminé') && !s.startsWith('Rien') ? 'running' : 'done'}>{s}</li>)}</ol>
+        </div>
+      ) : null}
 
       <div className="tabs">
         {([['all', 'Toutes', list.length], ['review', 'À relire', count(isReview)], ['draft', 'Brouillons', count((a) => a.status === 'draft')], ['published', 'Publiées', count((a) => a.status === 'published')], ['rejected', 'Rejetées', count((a) => a.status === 'rejected')]] as [Filter, string, number][]).map(([f, l, n]) => (
@@ -214,6 +235,14 @@ function EditionPage({ say }: { say: (m: string) => void }) {
           a={edit}
           onClose={() => setEdit(null)}
           onSave={async (patch, pub) => {
+            if (!edit.id) {
+              const f = patch.facts ?? [];
+              if (!patch.title?.trim() || !patch.key_sentence?.trim() || f.some((x) => !x.text.trim() || !x.source.trim())) return say('Remplissez le titre, la phrase clé et les 3 faits avec leur source');
+              await api.createArticle({ ...patch, edition_date: edit.edition_date, rubric_id: patch.rubric_id ?? edit.rubric_id, status: pub ? 'published' : 'draft', published_at: pub ? new Date().toISOString() : null });
+              setEdit(null);
+              await reload(edit.edition_date);
+              return say(pub ? 'Article ajouté et publié' : 'Article ajouté en brouillon');
+            }
             await save(edit, { ...patch, review_notes: [], ...(pub ? { status: 'published', published_at: new Date().toISOString() } : {}) }, pub ? 'Carte enregistrée et publiée' : 'Carte enregistrée');
             setEdit(null);
           }}
