@@ -7,11 +7,15 @@ export type Article = {
   hour: string;
   key: string;
   facts: Fact[];
-  photo: number | null;
+  photo: number | { uri: string } | null;
   grad: string[] | null;
   likes: number;
   comments: number;
   summary?: string[];
+  /** Sujet majeur du jour (choisi par la rédaction). */
+  essential?: boolean;
+  /** « D'après … » : médias d'où viennent les faits. */
+  media?: string;
 };
 
 export type Rubric = { id: string; name: string; items: Article[] };

@@ -1,0 +1,35 @@
+name: Édition du jour
+
+on:
+  schedule:
+    - cron: '30 4 * * *' # 5 h 30 à Paris en hiver (6 h 30 en été)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date de l’édition (AAAA-MM-JJ), vide = aujourd’hui'
+        required: false
+
+concurrency: edition
+
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Construire l'édition
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AUTO_PUBLISH: ${{ vars.AUTO_PUBLISH }}
+          TITRE_MODEL: ${{ vars.TITRE_MODEL }}
+        run: npm run engine -- ${{ inputs.date && format('--date {0}', inputs.date) || '' }}

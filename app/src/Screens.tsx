@@ -8,6 +8,7 @@ import { RUBRICS } from './content';
 import { CREDITS } from './edition';
 import { AppIcon, Chip, GradButton, Press, SoftButton, Toggle, st } from './ui';
 import { feel } from './feel';
+import { todayLabel, tomorrowLabel } from './dates';
 
 const DRAWER = Easing.bezier(0.32, 0.72, 0, 1);
 const OUT = Easing.bezier(0.23, 1, 0.32, 1);
@@ -29,7 +30,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
         <Animated.View style={[{ alignItems: 'center', gap: 12 }, a]}>
           <AppIcon size={64} glass />
           <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 72, letterSpacing: -2.5 }}>TITRE</Text>
-          <Text style={{ color: 'rgba(255,255,255,0.9)', fontFamily: F.regular, fontSize: 17 }}>Samedi 21 novembre</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.9)', fontFamily: F.regular, fontSize: 17 }}>{todayLabel()}</Text>
         </Animated.View>
       </LinearGradient>
     </Animated.View>
@@ -299,7 +300,7 @@ export function End({ n, realMs, allRead, left, onReread }: { n: number; realMs:
         <View style={styles.moon} />
         <Text style={styles.endH}>{allRead ? "C'est tout pour aujourd'hui." : 'Bonne journée.'}{'\n'}<Text style={{ color: '#b9a8ff' }}>À demain.</Text></Text>
         <Text style={[styles.p, { fontSize: 17 }]}>
-          {allRead ? 'Vous avez lu toutes les infos du jour. ' : `Il reste ${left} infos aujourd'hui si vous changez d'avis. `}Prochaine édition dimanche 22 novembre à 6 h 00.
+          {allRead ? 'Vous avez lu toutes les infos du jour. ' : `Il reste ${left} infos aujourd'hui si vous changez d'avis. `}Prochaine édition {tomorrowLabel()} à 6 h 00.
         </Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {[[String(n), 'infos lues'], [fmt(real).replace(/ \d+ s$/, ''), 'de lecture'], ['5 jours', "d'affilée"]].map(([b, s]) => (

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View, Pressable, type LayoutChangeEvent } from 'react-native';
+import { Linking, StyleSheet, Text, View, Pressable, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -316,7 +316,7 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
         <Text style={styles.key}>{a.key}</Text>
         <View>
           {a.facts.map((f, i) => (
-            <FactRow key={i} text={f.text} source={f.source} doc={f.doc} last={i === a.facts.length - 1} onSource={() => api.onToast('Ouverture de la source officielle')} />
+            <FactRow key={i} text={f.text} source={f.source} doc={f.doc} last={i === a.facts.length - 1} onSource={() => (/^https?:\/\//.test(f.doc) ? Linking.openURL(f.doc).catch(() => api.onToast('Lien indisponible')) : api.onToast('Ouverture de la source officielle'))} />
           ))}
         </View>
         <View style={styles.actions}>
@@ -336,7 +336,7 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
             <Icon name="share" size={20} />
           </Press>
         </View>
-        <Text style={styles.sources}>{MEDIA}</Text>
+        <Text style={styles.sources}>{a.media ?? MEDIA}</Text>
       </Animated.View>
     </View>
   );
@@ -392,7 +392,7 @@ function FactRow({ text, source, doc, last, onSource }: { text: string; source: 
       </Animated.View>
       <Animated.View style={[styles.factBack, rear]} pointerEvents={back ? 'auto' : 'none'}>
         <Text style={styles.backTxt} numberOfLines={2}>
-          ↳ {source} · <Text style={{ color: C.text2 }}>{doc}</Text>
+          ↳ {source}{/^https?:\/\//.test(doc) ? null : <Text style={{ color: C.text2 }}> · {doc}</Text>}
         </Text>
         <Pressable onPress={onSource} hitSlop={10}>
           <Text style={styles.backLink}>Voir ›</Text>

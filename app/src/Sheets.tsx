@@ -11,6 +11,7 @@ import type { Article, Comment } from './types';
 import { summaryOf } from './edition';
 import { Icon, Press } from './ui';
 import { feel } from './feel';
+import { todayLabel, yearLabel } from './dates';
 
 const DRAWER = Easing.bezier(0.32, 0.72, 0, 1);
 
@@ -81,7 +82,7 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
         <>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 30, paddingBottom: 30 }}>
             <Text style={styles.h2}>{a.title.toUpperCase()}</Text>
-            <Text style={styles.date}>Samedi 21 novembre 2026 · lecture 1 min</Text>
+            <Text style={styles.date}>{todayLabel()} {yearLabel()} · lecture 1 min</Text>
             {summaryOf(a).map((t, i) => (
               <View key={i} style={{ marginBottom: 26 }}>
                 <Text style={styles.blkH}>{heads[i].toUpperCase()}</Text>

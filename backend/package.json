@@ -1,0 +1,24 @@
+{
+  "name": "titre-backend",
+  "version": "1.0.0",
+  "description": "Moteur de contenu TITRE",
+  "scripts": {
+    "engine": "tsx src/run.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bash test/run-local.sh"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.12.0",
+    "fast-xml-parser": "^5.12.1",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "private": true,
+  "type": "module"
+}

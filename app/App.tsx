@@ -13,12 +13,12 @@ import { Feed } from './src/Feed';
 import { SummarySheet, CommentsSheet } from './src/Sheets';
 import { Bravo, End, Onboarding, Settings, Splash, Toast, type Prefs } from './src/Screens';
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
+import { loadEdition } from './src/remote';
 import { isAd, type Article, type Card, type Comment } from './src/types';
 
 type Phase = 'splash' | 'onb' | 'feed';
 type Overlay = null | 'bravo' | 'end' | 'settings';
 
-const ALL_IDS = new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id)));
 const DWELL_MS = 1200; // une info compte comme lue après ~1 s à l'écran
 
 export default function App() {
@@ -38,6 +38,12 @@ function Main() {
   const { width: W, height: H } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [phase, setPhase] = useState<Phase>('splash');
+  // La vraie édition se charge pendant l'écran de lancement (4 s au plus, sinon contenu de démo).
+  const [loaded, setLoaded] = useState(false);
+  const [splashDone, setSplashDone] = useState(false);
+  useEffect(() => { loadEdition().finally(() => setLoaded(true)); }, []);
+  useEffect(() => { if (loaded && splashDone && phase === 'splash') setPhase('onb'); }, [loaded, splashDone]);
+  const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded]);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 8, sound: true, haptic: true, parallax: true, premium: false, time: '7 h 30' });
 
@@ -274,7 +280,7 @@ function Main() {
       {overlay === 'end' ? <End n={seen.size} realMs={readMs.current} allRead={allRead} left={remaining} onReread={onReread} /> : null}
 
       {phase === 'onb' ? <Onboarding W={W} onDone={onOnb} /> : null}
-      {phase === 'splash' ? <Splash onDone={() => setPhase('onb')} /> : null}
+      {phase === 'splash' ? <Splash onDone={() => setSplashDone(true)} /> : null}
 
       <Toast msg={toast} top={insets.top + 96} />
     </View>
