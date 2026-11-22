@@ -272,6 +272,21 @@ select public.has_insult('Espèce de navet') as ok \gset
 \else
 \echo ÉCHEC  mots interdits des réglages
 \endif
+-- Modération « IA seulement » : le filtre de mots-clés se met en retrait.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000ad';
+select public.set_setting('MODERATION', 'ai');
+reset role;
+select not public.has_insult('Quel connard') as ok \gset
+set role authenticated;
+select public.set_setting('MODERATION', '');
+reset role;
+select :'ok'::boolean and public.has_insult('Quel connard') as ok \gset
+\if :ok
+\echo OK  mode « IA seulement » : mots-clés désactivés, rétablis ensuite
+\else
+\echo ÉCHEC  choix du mode de modération
+\endif
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000004';
 \set ON_ERROR_STOP off

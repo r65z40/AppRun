@@ -40,6 +40,7 @@ export type EngineRun = {
     flashes?: { title: string; sources: string[]; rejected?: string }[];
     /** Commentaires signalés tranchés par l'IA pendant ce passage. */
     moderation?: { text: string; decision: 'hide' | 'keep'; reason: string }[];
+    moderation_ai?: { calls: number; input: number; output: number; model: string };
     /** Réglages utilisés pendant ce passage. */
     config?: Record<string, string | number | boolean>;
     /** Sujets proposés par l'IA mais écartés par les réglages. */
@@ -50,6 +51,7 @@ export type Setting = { key: string; value: string; is_set: boolean; updated_at:
 export type Me = { id: string; email: string; role: Role };
 export type Reader = { id: string; pseudo: string | null; email: string; role: Role; premium: boolean; banned: boolean; created_at: string; last_seen: string | null; comments: number; hidden: number; reports: number };
 export type AuditEntry = { at: string; who: string; action: string; target: string | null; detail: string | null };
+export type ModerationCost = { judged: number; input: number; output: number; cost: number };
 export type TopArticle = { title: string; rubric_id: string; likes: number; comments: number };
 export type Dashboard = {
   active_today: number; active_7: number; active_30: number; accounts: number; accounts_7: number; premium: number;
@@ -86,6 +88,7 @@ export interface Api {
   banned(): Promise<Profile[]>;
   dashboard(): Promise<Dashboard>;
   topArticles(): Promise<TopArticle[]>;
+  moderationCost(): Promise<ModerationCost>;
   readers(search: string): Promise<Reader[]>;
   deleteUser(id: string): Promise<void>;
   audit(): Promise<AuditEntry[]>;
@@ -189,6 +192,7 @@ function supabaseApi(sb: SupabaseClient): Api {
     banned: async () => sb.from('profiles').select('*').eq('banned', true).order('created_at', { ascending: false }).then(ok<Profile[]>),
     dashboard: async () => ok(await sb.rpc('dashboard')) as Dashboard,
     topArticles: async () => ok(await sb.rpc('top_articles')) as TopArticle[],
+    moderationCost: async () => ok(await sb.rpc('moderation_cost')) as ModerationCost,
     readers: async (search) => ok(await sb.rpc('admin_users', { search })) as Reader[],
     async deleteUser(id) {
       ok(await sb.rpc('delete_user', { uid: id }));
