@@ -175,11 +175,12 @@ async function edition() {
   const live = AUTO_PUBLISH && (await q<{ n: number }>(`select count(*)::int as n from articles where edition_date = $1 and status = 'published'`, [DATE]))[0].n > 0;
   await q(
     `update editions set status = $2, stats = $3, published_at = case when $2 = 'published' then now() else published_at end where date = $1`,
-    [DATE, live ? 'published' : 'ready', JSON.stringify(stats)],
+    [DATE, live ? 'published' : failed && !written ? 'building' : 'ready', JSON.stringify(stats)], // tout a échoué : le prochain essai refera l'édition
   );
   const summary = `${fetched} titres lus, ${items.length} à traiter, ${stories.length} sujets retenus, ${written} cartes écrites (${fixed} corrigées par l'IA, ${flagged} à relire, ${failed} échecs).`;
   log(`Terminé : ${summary} ${live ? 'Édition publiée automatiquement.' : 'En attente de validation dans le back office.'}`);
   await J.finish(failed && !written ? 'error' : 'ok', summary, stats);
+  if (failed && !written) process.exitCode = 1; // le workflow GitHub échoue et prévient l'équipe
 }
 
 main()

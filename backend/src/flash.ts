@@ -1,5 +1,5 @@
 /**
- * Dernière minute : tourne toutes les 20 minutes de 6 h à 23 h.
+ * Dernière minute : tourne toutes les 10 minutes de 6 h à 23 h.
  * Lit les sources, garde les dépêches des deux dernières heures, l'IA retient les faits majeurs
  * confirmés par deux médias, publiés aussitôt (FLASH_AUTO_PUBLISH=0 pour les garder masqués jusqu'à validation).
  *
@@ -11,6 +11,7 @@ import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
 import { model, checkFlash, selectFlashes, usage, type Item } from './ai.js';
 import { cfg, snapshot } from './config.js';
+import { moderate } from './moderate.js';
 
 const args = process.argv.slice(2);
 const fx = args.indexOf('--fixtures');
@@ -35,6 +36,7 @@ async function main() {
 async function flash() {
   J.details.config = snapshot('flash');
   if (cfg.paused()) return J.finish('ok', 'Moteur en pause dans les réglages : rien fait.');
+  J.details.moderation = await moderate(log).catch((e) => { log(`Modération impossible : ${e instanceof Error ? e.message : e}`); return []; });
   if (!cfg.flashEnabled()) return J.finish('ok', 'Dernière minute désactivée dans les réglages.');
   const todayCount = (await q<{ n: number }>("select count(*)::int as n from flashes where published_at > date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris'"))[0].n;
   if (todayCount >= cfg.flashMaxPerDay()) return J.finish('ok', `Plafond atteint : ${todayCount} infos aujourd'hui (réglage : ${cfg.flashMaxPerDay()}).`);
@@ -76,7 +78,7 @@ async function flash() {
   }
   const summary = `${fetched} titres lus, ${items.length} dépêches récentes, ${n} info(s) publiée(s).`;
   log(`Dernière minute : ${summary}`);
-  await J.finish('ok', summary, { fetched, items: items.length, proposed: found.length, published: n, ai: { ...usage } });
+  await J.finish('ok', summary, { fetched, items: items.length, proposed: found.length, published: n, model: model(), ai: { ...usage } });
 }
 
 main().catch((e) => { console.error(e); process.exitCode = 1; }).finally(() => pool.end());

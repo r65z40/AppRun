@@ -15,16 +15,16 @@ export type Me = { uid: string; email: string; pseudo: string | null };
 /* ---------- Stockage de la session ---------- */
 const SKEY = 'titre.session';
 const store = {
-  async get(): Promise<string | null> {
+  async get(k = SKEY): Promise<string | null> {
     try {
-      if (Platform.OS === 'web') return globalThis.localStorage?.getItem(SKEY) ?? null;
-      return await SecureStore.getItemAsync(SKEY);
+      if (Platform.OS === 'web') return globalThis.localStorage?.getItem(k) ?? null;
+      return await SecureStore.getItemAsync(k);
     } catch { return null; }
   },
-  async set(v: string | null) {
+  async set(v: string | null, k = SKEY) {
     try {
-      if (Platform.OS === 'web') { v ? globalThis.localStorage?.setItem(SKEY, v) : globalThis.localStorage?.removeItem(SKEY); return; }
-      v ? await SecureStore.setItemAsync(SKEY, v) : await SecureStore.deleteItemAsync(SKEY);
+      if (Platform.OS === 'web') { v ? globalThis.localStorage?.setItem(k, v) : globalThis.localStorage?.removeItem(k); return; }
+      v ? await SecureStore.setItemAsync(k, v) : await SecureStore.deleteItemAsync(k);
     } catch {}
   },
 };
@@ -126,8 +126,15 @@ export async function restore() {
     const raw = await store.get();
     if (raw) try { session = JSON.parse(raw); } catch { session = null; }
   }
-  if (session && !(await token())) return;
-  await loadMe();
+  if (!session || (await token())) await loadMe();
+  ping();
+}
+
+/** Compte l'appareil comme lecteur actif du jour (identifiant tiré au hasard, rien de personnel). */
+async function ping() {
+  let d = await store.get('titre.device');
+  if (!d) { d = Math.random().toString(36).slice(2) + Date.now().toString(36); await store.set(d, 'titre.device'); }
+  api('rpc/ping', { method: 'POST', body: { d } }).catch(() => {});
 }
 
 /** Création de compte. Renvoie 'confirm' si Supabase demande de confirmer l'adresse par e-mail. */
@@ -223,6 +230,20 @@ export async function voteComment(commentId: string, v: -1 | 0 | 1) {
 
 export async function reportComment(commentId: string) {
   await api('reports?on_conflict=comment_id,user_id', { method: 'POST', body: { comment_id: commentId, user_id: session!.uid }, prefer: 'resolution=ignore-duplicates' });
+}
+
+/** Ne plus voir les commentaires de l'auteur de ce commentaire. */
+export async function blockAuthor(commentId: string) {
+  await api('rpc/block_author', { method: 'POST', body: { cid: commentId } });
+}
+
+export async function blockedCount(): Promise<number> {
+  if (!session) return 0;
+  return (await api<unknown[]>(`blocks?select=blocked_id&user_id=eq.${session.uid}`).catch(() => [])).length;
+}
+
+export async function unblockAll() {
+  await api(`blocks?user_id=eq.${session!.uid}`, { method: 'DELETE' });
 }
 
 export async function deleteComment(commentId: string) {

@@ -14,13 +14,23 @@ DATABASE_URL="$DB" MOCK_AI=1 npx tsx src/flash.ts --fixtures test/feeds
 echo "--- Vérifications"
 psql "$DB" -v ON_ERROR_STOP=1 -q -f test/checks.sql
 
+echo "--- Modération autonome : l'IA tranche les signalements restants"
+psql "$DB" -qc "insert into reports (comment_id, user_id) select id, '00000000-0000-0000-0000-000000000001' from comments where text = 'c1'" \
+  -c "update comments set text = 'Quel idiot' where text = 'c1'"
+DATABASE_URL="$DB" MOCK_AI=1 npx tsx src/flash.ts --fixtures test/feeds >/dev/null
+psql "$DB" -tAc "select case when not exists (select 1 from reports where not resolved)
+  and (select status from comments where text = 'À suivre de près') = 'visible' and (select status from comments where text = 'Quel idiot') = 'hidden'
+  and (select count(*) from audit_log where actor is null and detail like 'IA :%') = 2
+  then 'OK  signalements tranchés par l''IA (un gardé, un masqué), décisions au journal' else 'ÉCHEC  modération autonome' end"
+psql "$DB" -tAc "select case when count(*) filter (where action = 'Lecteur banni') = 1 and count(*) filter (where action = 'Réglage modifié' and detail = 'clé remplacée') >= 1 then 'OK  journal : bannissement et réglages tracés, clés jamais écrites' else 'ÉCHEC  journal' end from audit_log"
+
 echo "--- Installation automatique sur une base vide"
 psql "$ADMIN" -qc "drop database if exists titre_vide" -c "create database titre_vide"
 VIDE=${DB/titre_test/titre_vide}
 psql "$VIDE" -v ON_ERROR_STOP=1 -q -f test/supabase-stub.sql
 DATABASE_URL="$VIDE" npx tsx src/install.ts
 DATABASE_URL="$VIDE" npx tsx src/install.ts
-psql "$VIDE" -tAc "select case when count(*) = 9 then 'OK  base vide installée toute seule (8 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
+psql "$VIDE" -tAc "select case when count(*) = 10 then 'OK  base vide installée toute seule (9 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
 psql "$VIDE" -tAc "select case when count(*) >= 10 then 'OK  sources de départ présentes' else 'ÉCHEC  sources absentes' end from sources"
 
 echo "--- Pilote automatique (réglage par défaut) : l'édition se publie seule"
