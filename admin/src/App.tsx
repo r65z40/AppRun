@@ -126,7 +126,7 @@ type Filter = 'all' | 'review' | 'draft' | 'published' | 'rejected';
 /* ---------------- Tableau de bord ---------------- */
 const usd = (n: number) => `${n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
 const int = (n: number) => n.toLocaleString('fr-FR');
-// Un passage en panne, bloqué, ou trop ancien (édition : 1 par jour ; Dernière minute : toutes les 20 min de 6 h à 23 h).
+// Un passage en panne, bloqué, ou trop ancien (édition : 1 par jour ; Dernière minute : toutes les 10 min de 6 h à 23 h).
 function engineAlert(r: Dashboard['last_runs'][number] | undefined, kind: 'edition' | 'flash'): string | null {
   if (!r) return 'Aucun passage enregistré pour l’instant.';
   const h = (Date.now() - new Date(r.started_at).getTime()) / 3600e3;
@@ -507,7 +507,7 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
       </header>
       <div className={`status-bar ${paused ? 'off' : ''}`}>
         <b>{paused ? 'Moteur en pause' : auto ? 'Pilote automatique : l’IA publie seule' : 'Relecture : l’IA prépare, vous publiez'}</b>
-        <span className="muted small">{paused ? 'Ni édition ni Dernière minute tant que la pause est active.' : 'Édition chaque matin à 5 h 30, Dernière minute toutes les 20 minutes de 6 h à 23 h.'}</span>
+        <span className="muted small">{paused ? 'Ni édition ni Dernière minute tant que la pause est active.' : 'Édition chaque matin à 5 h 30, Dernière minute toutes les 10 minutes de 6 h à 23 h.'}</span>
       </div>
 
       <section className="panel settings">
@@ -543,7 +543,7 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
 
       <section className="panel settings">
         <h2>Dernière minute</h2>
-        {Toggle({ k: 'FLASH_ENABLED', label: 'Activée', help: 'Le moteur cherche les infos majeures toutes les 20 minutes, de 6 h à 23 h.', def: true })}
+        {Toggle({ k: 'FLASH_ENABLED', label: 'Activée', help: 'Le moteur cherche les infos majeures toutes les 10 minutes, de 6 h à 23 h.', def: true })}
         {Toggle({ k: 'FLASH_AUTO_PUBLISH', label: 'Publier sans relecture', help: 'Sinon, les infos arrivent masquées et vous les mettez en ligne depuis la page Dernière minute.', def: true })}
         {Pick({ k: 'FLASH_MIN_IMPORTANCE', label: 'Importance minimum', help: 'Seuil pour publier une info en Dernière minute (sur 10).', def: '8', options: nums(range(6, 10), ' sur 10') })}
         {Pick({ k: 'FLASH_MIN_SOURCES', label: 'Médias minimum', help: 'Nombre de médias différents qui doivent annoncer le fait.', def: '2', options: nums([1, 2, 3, 4]) })}
@@ -552,7 +552,7 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
 
       <section className="panel settings">
         <h2>Modération</h2>
-        {Toggle({ k: 'AI_MODERATION', label: "L'IA tranche les signalements", help: "Toutes les 20 minutes, l'IA relit les commentaires signalés : elle masque ce qui enfreint les règles, garde le reste et laisse à l'équipe les cas douteux. Chaque décision est expliquée dans le Journal.", def: true })}
+        {Toggle({ k: 'AI_MODERATION', label: "L'IA tranche les signalements", help: "Toutes les 10 minutes, l'IA relit les commentaires signalés : elle masque ce qui enfreint les règles, garde le reste et laisse à l'équipe les cas douteux. Chaque décision est expliquée dans le Journal.", def: true })}
         {Text({ k: 'BANNED_WORDS', label: 'Mots interdits en plus', help: "Les insultes courantes sont déjà bloquées, même déguisées (c0nnard, connnnard). Ajoutez vos mots, séparés par des virgules : un commentaire ou un pseudo qui en contient un est refusé.", placeholder: 'mot1, mot2, une expression' })}
       </section>
 
@@ -691,7 +691,7 @@ function FlashPage({ say }: { say: (m: string) => void }) {
         <div>
           <div className="eyebrow">Dernière minute</div>
           <h1>Infos de la journée</h1>
-          <p className="muted">Le moteur passe toutes les 20 minutes, de 6 h à 23 h, et publie seul les infos majeures confirmées par au moins deux médias. Elles restent 24 heures dans l'app. Masquez, corrigez ou ajoutez une info ici.</p>
+          <p className="muted">Le moteur passe toutes les 10 minutes, de 6 h à 23 h, et publie seul les infos majeures confirmées par au moins deux médias. Elles restent 24 heures dans l'app. Masquez, corrigez ou ajoutez une info ici.</p>
         </div>
         <div className="actions"><a className="btn" href={FLASH_URL} target="_blank" rel="noreferrer">Lancer maintenant ↗</a></div>
       </header>

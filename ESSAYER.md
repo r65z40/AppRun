@@ -62,7 +62,7 @@ Les clés sont rangées dans votre base Supabase et ne sont jamais réaffichées
 
 **C'est tout.** Le moteur tourne seul :
 - l'édition, chaque matin à 5 h 30 ;
-- la Dernière minute, toutes les 20 minutes de 6 h à 23 h.
+- la Dernière minute, toutes les 10 minutes de 6 h à 23 h.
 
 Avec le pilote automatique, l'IA choisit les sujets, écrit les cartes et publie l'édition sans vous. Une carte qui échoue aux contrôles (trop longue, source manquante, phrase reprise d'un média) est réécrite une fois par l'IA ; si elle reste en défaut, elle attend dans l'onglet **À relire**. Vous supervisez quand vous voulez : la page **Moteur** montre ce que l'IA a lu, retenu et écrit, et chaque carte peut être corrigée, dépubliée ou rejetée dans **Édition**.
 

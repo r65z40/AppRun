@@ -1,5 +1,5 @@
 /**
- * Dernière minute : tourne toutes les 20 minutes de 6 h à 23 h.
+ * Dernière minute : tourne toutes les 10 minutes de 6 h à 23 h.
  * Lit les sources, garde les dépêches des deux dernières heures, l'IA retient les faits majeurs
  * confirmés par deux médias, publiés aussitôt (FLASH_AUTO_PUBLISH=0 pour les garder masqués jusqu'à validation).
  *
