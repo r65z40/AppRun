@@ -54,6 +54,11 @@ async function edition() {
   }
 
   const ed = await q<{ status: string }>('select status from editions where date = $1', [DATE]);
+  // --once (passages automatiques) : une seule édition par jour, même si GitHub lance plusieurs rattrapages.
+  if (args.includes('--once') && ed[0] && ed[0].status !== 'building') {
+    log('Édition du jour déjà faite : rattrapage inutile.');
+    return J.finish('ok', 'Édition du jour déjà faite.');
+  }
   if (ed[0]?.status === 'published' && !args.includes('--force')) {
     log('Édition déjà publiée : rien à faire (ajoutez --force pour compléter).');
     return J.finish('ok', 'Édition déjà publiée, rien à faire.');
@@ -71,7 +76,7 @@ async function edition() {
        from raw_items r join sources s on s.id = r.source_id
       where coalesce(r.published_at, r.fetched_at) between $1 and $2
       order by coalesce(r.published_at, r.fetched_at) desc limit 400`,
-    [new Date(end.getTime() - WINDOW_H * 3600e3), FIXTURES ? new Date('2100-01-01') : end],
+    [FIXTURES ? new Date(0) : new Date(end.getTime() - WINDOW_H * 3600e3), FIXTURES ? new Date('2100-01-01') : end], // flux d'exemple : dates figées
   );
   // Ne pas réécrire un sujet déjà traité dans cette édition.
   const done = new Set((await q<{ id: string }>('select unnest(raw_item_ids)::text as id from articles where edition_date = $1 and status <> $2', [DATE, 'rejected'])).map((r) => r.id));
