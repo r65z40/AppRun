@@ -355,3 +355,29 @@ reset role;
 \else
 \echo OK  tableau de bord refusé aux lecteurs
 \endif
+
+-- Lecteurs : liste et suppression réservées aux administrateurs, jamais un administrateur supprimé.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000ad';
+select count(*) >= 6 and count(*) filter (where pseudo = 'paul' and banned) = 1 as ok from public.admin_users('') \gset
+reset role;
+insert into auth.users (id) values ('00000000-0000-0000-0000-000000000009');
+set role authenticated;
+select public.delete_user('00000000-0000-0000-0000-000000000009');
+\set ON_ERROR_STOP off
+select public.delete_user('00000000-0000-0000-0000-0000000000ad');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000002';
+select count(*) as leak2 from public.admin_users('') \gset
+\set ON_ERROR_STOP on
+reset role;
+select :'ok'::boolean and not exists (select 1 from auth.users where id = '00000000-0000-0000-0000-000000000009')
+   and exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000ad') as ok \gset
+\if :ok
+\if :{?leak2}
+\echo ÉCHEC  liste des lecteurs visible par la rédaction
+\else
+\echo OK  lecteurs : liste et suppression réservées aux admins, admin jamais supprimé
+\endif
+\else
+\echo ÉCHEC  page Lecteurs
+\endif

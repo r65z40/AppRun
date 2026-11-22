@@ -1,8 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { api, ENGINE_URL, type Dashboard, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, ENGINE_URL, type AuditEntry, type Dashboard, type Reader, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'dashboard' | 'edition' | 'flash' | 'engine' | 'sources' | 'moderation' | 'team' | 'settings';
-const PAGES: [Page, string][] = [['dashboard', 'Tableau de bord'], ['edition', 'Édition'], ['flash', 'Dernière minute'], ['engine', 'Moteur'], ['sources', 'Sources'], ['moderation', 'Modération'], ['team', 'Équipe'], ['settings', 'Réglages']];
+type Page = 'dashboard' | 'readers' | 'audit' | 'edition' | 'flash' | 'engine' | 'sources' | 'moderation' | 'team' | 'settings';
+const PAGES: [Page, string][] = [['dashboard', 'Tableau de bord'], ['edition', 'Édition'], ['flash', 'Dernière minute'], ['engine', 'Moteur'], ['sources', 'Sources'], ['moderation', 'Modération'], ['readers', 'Lecteurs'], ['team', 'Équipe'], ['audit', 'Journal'], ['settings', 'Réglages']];
 const LIMITS = { title: 60, key: 140, fact: 90, summary: 280 };
 const SUMMARY_HEADS = ['Contexte', 'Ce qui change', 'Et après'];
 
@@ -12,8 +12,9 @@ const ago = (iso: string | null) => {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   return m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`;
 };
-// Modération : seulement les commentaires. Rédaction : tout sauf l'équipe et les réglages.
-const allowed = (role: Role, p: Page) => role === 'admin' || (role === 'editor' ? p !== 'team' && p !== 'settings' : p === 'moderation');
+// Modération : seulement les commentaires. Rédaction : tout sauf les lecteurs, l'équipe, le journal et les réglages.
+const ADMIN_ONLY: Page[] = ['readers', 'team', 'audit', 'settings'];
+const allowed = (role: Role, p: Page) => role === 'admin' || (role === 'editor' ? !ADMIN_ONLY.includes(p) : p === 'moderation');
 const plain = (s: string) => s.replace(/<\/?b>/g, '');
 
 export default function App() {
@@ -60,6 +61,8 @@ export default function App() {
         {page === 'engine' && allowed(me.role, page) && <EnginePage />}
         {page === 'sources' && allowed(me.role, page) && <SourcesPage say={say} />}
         {page === 'moderation' && <ModerationPage say={say} />}
+        {page === 'readers' && allowed(me.role, page) && <ReadersPage say={say} />}
+        {page === 'audit' && allowed(me.role, page) && <AuditPage />}
         {page === 'team' && allowed(me.role, page) && <TeamPage say={say} me={me} />}
         {page === 'settings' && allowed(me.role, page) && <SettingsPage say={say} />}
       </main>
@@ -136,9 +139,10 @@ function engineAlert(r: Dashboard['last_runs'][number] | undefined, kind: 'editi
 }
 function DashboardPage({ go }: { go: (p: Page) => void }) {
   const [d, setD] = useState<Dashboard | null>(null);
+  const [top, setTop] = useState<TopArticle[]>([]);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    const load = () => api.dashboard().then(setD).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    const load = () => Promise.all([api.dashboard().then(setD), api.topArticles().then(setTop)]).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
     load();
     const t = setInterval(load, 60000);
     return () => clearInterval(t);
@@ -170,6 +174,13 @@ function DashboardPage({ go }: { go: (p: Page) => void }) {
         <Tile label="Likes, 7 jours" value={int(d.likes_7)} />
         <Tile label="Commentaires, 7 jours" value={int(d.comments_7)} sub={`${d.reports_open} signalement${d.reports_open > 1 ? 's' : ''} en attente · ${d.banned} banni${d.banned > 1 ? 's' : ''}`} />
       </div>
+      <h2>Ce qui fait réagir cette semaine</h2>
+      {top.length ? (
+        <table className="table">
+          <thead><tr><th>Info</th><th>Likes</th><th>Commentaires</th></tr></thead>
+          <tbody>{top.map((a, i) => <tr key={i}><td><span className="muted small">{RUBRICS[a.rubric_id]}</span> {a.title}</td><td>{int(a.likes)}</td><td>{int(a.comments)}</td></tr>)}</tbody>
+        </table>
+      ) : <p className="muted">Pas encore de réactions cette semaine.</p>}
       <h2>Argent</h2>
       <div className="tiles">
         <Tile label="Coût de l'IA aujourd'hui" value={usd(d.ai_today)} />
@@ -541,6 +552,7 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
 
       <section className="panel settings">
         <h2>Modération</h2>
+        {Toggle({ k: 'AI_MODERATION', label: "L'IA tranche les signalements", help: "Toutes les 20 minutes, l'IA relit les commentaires signalés : elle masque ce qui enfreint les règles, garde le reste et laisse à l'équipe les cas douteux. Chaque décision est expliquée dans le Journal.", def: true })}
         {Text({ k: 'BANNED_WORDS', label: 'Mots interdits en plus', help: "Les insultes courantes sont déjà bloquées, même déguisées (c0nnard, connnnard). Ajoutez vos mots, séparés par des virgules : un commentaire ou un pseudo qui en contient un est refusé.", placeholder: 'mot1, mot2, une expression' })}
       </section>
 
@@ -632,6 +644,12 @@ function RunDetails({ r }: { r: EngineRun }) {
         <section>
           <h3>Infos proposées par l'IA ({d.flashes.length})</h3>
           {d.flashes.length ? <ul>{d.flashes.map((f, i) => <li key={i}>{f.rejected ? '✗' : '⚡'} {f.title} <span className="muted small">({f.sources.join(', ')}){f.rejected ? ` : écartée, ${f.rejected}` : ''}</span></li>)}</ul> : <p className="muted small">Rien d'assez important et confirmé selon vos réglages.</p>}
+        </section>
+      ) : null}
+      {d.moderation?.length ? (
+        <section>
+          <h3>Signalements tranchés par l'IA ({d.moderation.length})</h3>
+          <ul>{d.moderation.map((m, i) => <li key={i}>{m.decision === 'hide' ? '🚫 masqué' : '✓ gardé'} « {m.text} » <span className="muted small">{m.reason}</span></li>)}</ul>
         </section>
       ) : null}
       {d.left?.length ? (
@@ -842,6 +860,72 @@ function ModerationPage({ say }: { say: (m: string) => void }) {
             </div>
           </article>
         ))
+      )}
+    </>
+  );
+}
+
+/* ---------------- Lecteurs (admins) ---------------- */
+function ReadersPage({ say }: { say: (m: string) => void }) {
+  const [search, setSearch] = useState('');
+  const [list, setList] = useState<Reader[] | null>(null);
+  const load = useCallback(() => api.readers(search.trim()).then(setList).catch((e) => { setList([]); say(e instanceof Error ? e.message : 'Lecture impossible'); }), [search, say]);
+  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
+  const act = async (f: () => Promise<void>, msg: string) => {
+    try { await f(); await load(); say(msg); } catch (e) { say(e instanceof Error ? e.message : 'Action impossible'); }
+  };
+  return (
+    <>
+      <header className="head"><div><div className="eyebrow">Lecteurs</div><h1>Tous les comptes</h1><p className="muted">Les 200 derniers comptes, ou ceux qui correspondent à votre recherche. Supprimer un compte efface aussi ses commentaires et ses likes, sans retour possible (droit à l'effacement).</p></div></header>
+      <input className="search" placeholder="Chercher un pseudo ou une adresse e-mail" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Chercher un lecteur" />
+      {!list ? <p className="muted">Chargement…</p> : !list.length ? <p className="muted empty">Aucun compte.</p> : (
+        <table className="table">
+          <thead><tr><th>Lecteur</th><th>Inscrit</th><th>Vu</th><th>Commentaires</th><th>Statut</th><th></th></tr></thead>
+          <tbody>
+            {list.map((p) => (
+              <tr key={p.id}>
+                <td><b>{p.pseudo ?? '—'}</b><div className="muted small">{p.email}</div></td>
+                <td className="muted">{ago(p.created_at)}</td>
+                <td className="muted">{p.last_seen ? dateLabel(p.last_seen) : 'jamais'}</td>
+                <td>{p.comments}{p.hidden ? <span className="muted small"> · {p.hidden} masqué{p.hidden > 1 ? 's' : ''}</span> : null}{p.reports ? <span className="warn small"> · {p.reports} signalement{p.reports > 1 ? 's' : ''}</span> : null}</td>
+                <td>{p.banned ? <span className="pill rejected">Banni</span> : p.role !== 'reader' ? <span className="pill published">{ROLE[p.role]}</span> : p.premium ? <span className="pill published">Premium</span> : <span className="muted small">Lecteur</span>}</td>
+                <td className="btns">
+                  {p.role === 'reader' ? <button className="btn sm" onClick={() => act(() => api.setBanned(p.id, !p.banned), p.banned ? 'Bannissement levé' : 'Lecteur banni')}>{p.banned ? 'Débannir' : 'Bannir'}</button> : null}
+                  {p.role !== 'admin' ? <button className="btn ghost sm" onClick={() => confirm(`Supprimer définitivement le compte ${p.pseudo ?? p.email} et tout ce qu'il a écrit ?`) && act(() => api.deleteUser(p.id), 'Compte supprimé')}>Supprimer</button> : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
+  );
+}
+
+/* ---------------- Journal (admins) ---------------- */
+function AuditPage() {
+  const [list, setList] = useState<AuditEntry[] | null>(null);
+  const [who, setWho] = useState<'all' | 'ia' | 'team'>('all');
+  useEffect(() => { api.audit().then(setList).catch(() => setList([])); }, []);
+  const when = (iso: string) => new Date(iso).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const shown = (list ?? []).filter((e) => who === 'all' || (who === 'ia') === (e.who === 'IA / moteur'));
+  return (
+    <>
+      <header className="head"><div><div className="eyebrow">Journal</div><h1>Qui a fait quoi</h1><p className="muted">Chaque décision importante de l'IA et de l'équipe : publications, commentaires masqués ou rétablis, bannissements, changements de rôle et de réglages.</p></div></header>
+      <div className="tabs">
+        {([['all', 'Tout'], ['ia', 'IA'], ['team', 'Équipe']] as const).map(([k, l]) => <button key={k} className={who === k ? 'on' : ''} onClick={() => setWho(k)}>{l}</button>)}
+      </div>
+      {!list ? <p className="muted">Chargement…</p> : !shown.length ? <p className="muted empty">Rien pour l'instant.</p> : (
+        <table className="table">
+          <thead><tr><th>Quand</th><th>Qui</th><th>Quoi</th></tr></thead>
+          <tbody>{shown.map((e, i) => (
+            <tr key={i}>
+              <td className="muted small">{when(e.at)}</td>
+              <td>{e.who}</td>
+              <td><b>{e.action}</b>{e.target ? ` : ${e.target}` : ''}{e.detail ? <div className="muted small">{e.detail}</div> : null}</td>
+            </tr>
+          ))}</tbody>
+        </table>
       )}
     </>
   );

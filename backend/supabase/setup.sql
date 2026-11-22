@@ -467,6 +467,19 @@ end $$;
 -- Modération renforcée (filtre d'insultes, blocage, bannissement, rôle Modération),
 -- tableau de bord (lecteurs actifs, coût de l'IA) et photos envoyées depuis le back office.
 
+-- 0. Journal des actions (équipe et IA), lisible par les administrateurs ------------------------------
+create table if not exists public.audit_log (
+  id bigserial primary key,
+  at timestamptz not null default now(),
+  actor uuid references auth.users (id) on delete set null, -- vide = l'IA ou le moteur
+  action text not null,
+  target text,
+  detail text
+);
+create index if not exists audit_log_at on public.audit_log (at desc);
+alter table public.audit_log enable row level security;
+revoke all on public.audit_log from anon, authenticated;
+
 -- 1. Rôle « Modération » : modère les commentaires sans toucher aux infos -----------------------
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check check (role in ('reader', 'moderator', 'editor', 'admin'));
@@ -539,6 +552,7 @@ begin
   end if;
   update public.profiles set banned = ban where id = uid;
   if ban then
+    perform set_config('titre.reason', 'auteur banni', true);
     update public.comments set status = 'hidden' where user_id = uid and status = 'visible';
     update public.reports set resolved = true where comment_id in (select id from public.comments where user_id = uid);
   end if;
@@ -680,7 +694,7 @@ begin
     'WINDOW_HOURS', 'PER_RUBRIC', 'MAX_CARDS', 'MAX_ESSENTIAL', 'MIN_IMPORTANCE', 'MIN_SOURCES',
     'AUTO_PUBLISH', 'AUTO_FIX', 'PUBLISH_FLAGGED', 'PUBLISH_MIN_IMPORTANCE',
     'FLASH_ENABLED', 'FLASH_AUTO_PUBLISH', 'FLASH_MIN_IMPORTANCE', 'FLASH_MIN_SOURCES', 'FLASH_MAX_PER_DAY',
-    'BANNED_WORDS'
+    'BANNED_WORDS', 'AI_MODERATION'
   ) then
     raise exception 'Réglage inconnu : %', k;
   end if;
@@ -691,6 +705,8 @@ begin
     insert into public.app_settings (key, value, updated_at, updated_by) values (k, trim(v), now(), auth.uid())
     on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = auth.uid();
   end if;
+  insert into public.audit_log (actor, action, target, detail)
+  values (auth.uid(), 'Réglage modifié', k, case when k like '%_KEY' then 'clé remplacée' else left(coalesce(trim(v), ''), 200) end);
 end $$;
 
 -- 6. Photos envoyées depuis le back office (Supabase Storage, dossier public « photos ») -----------
@@ -707,6 +723,103 @@ do $$ begin
 exception when others then
   raise notice 'Envoi de photos non installé : %', sqlerrm;
 end $$;
+
+-- 7. Journal automatique des changements importants ------------------------------------------------
+-- Le moteur peut joindre une raison (décision de l'IA) avec set_config('titre.reason', …, true).
+create or replace function public.audit() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare a text; t text;
+begin
+  -- Un IF par table : PL/pgSQL ne lit pas new.banned sur une table qui n'a pas cette colonne.
+  if tg_table_name = 'comments' then
+    if new.status is distinct from old.status then
+      a := case new.status when 'hidden' then 'Commentaire masqué' else 'Commentaire rétabli' end; t := '« ' || new.text || ' »';
+    end if;
+  elsif tg_table_name = 'profiles' then
+    if new.banned is distinct from old.banned then
+      a := case when new.banned then 'Lecteur banni' else 'Bannissement levé' end; t := coalesce(new.pseudo, 'lecteur sans pseudo');
+    elsif new.role is distinct from old.role then
+      a := 'Rôle : ' || old.role || ' → ' || new.role; t := coalesce(new.pseudo, 'compte sans pseudo');
+    end if;
+  elsif tg_table_name = 'articles' then
+    if new.status is distinct from old.status then
+      a := case new.status when 'published' then 'Info publiée' when 'rejected' then 'Info rejetée' else 'Info repassée en brouillon' end; t := new.title;
+    end if;
+  elsif new.status is distinct from old.status then -- flashes
+    a := case new.status when 'published' then 'Dernière minute publiée' else 'Dernière minute masquée' end; t := new.title;
+  end if;
+  if a is null then return new; end if;
+  insert into public.audit_log (actor, action, target, detail)
+  values (auth.uid(), a, left(t, 200), nullif(current_setting('titre.reason', true), ''));
+  return new;
+end $$;
+drop trigger if exists comments_audit on public.comments;
+create trigger comments_audit after update on public.comments for each row execute function public.audit();
+drop trigger if exists profiles_audit on public.profiles;
+create trigger profiles_audit after update on public.profiles for each row execute function public.audit();
+drop trigger if exists articles_audit on public.articles;
+create trigger articles_audit after update on public.articles for each row execute function public.audit();
+drop trigger if exists flashes_audit on public.flashes;
+create trigger flashes_audit after update on public.flashes for each row execute function public.audit();
+
+create or replace function public.admin_audit(lim int default 200)
+returns table (at timestamptz, who text, action text, target text, detail text)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Réservé aux administrateurs'; end if;
+  return query
+    select l.at, case when l.actor is null then 'IA / moteur' else coalesce(p.pseudo, u.email, 'membre de l''équipe') end, l.action, l.target, l.detail
+      from public.audit_log l left join public.profiles p on p.id = l.actor left join auth.users u on u.id = l.actor
+     order by l.at desc limit least(lim, 1000);
+end $$;
+revoke all on function public.admin_audit(int) from public, anon;
+grant execute on function public.admin_audit(int) to authenticated;
+
+-- 8. Lecteurs : recherche, activité, suppression de compte (administrateurs) ----------------------------
+create or replace function public.admin_users(search text default '')
+returns table (id uuid, pseudo text, email text, role text, premium boolean, banned boolean, created_at timestamptz,
+               last_seen date, comments int, hidden int, reports int)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Réservé aux administrateurs'; end if;
+  return query
+    select p.id, p.pseudo, u.email::text, p.role, p.premium, p.banned, p.created_at,
+           (select max(v.day) from public.visits v where v.user_id = p.id),
+           (select count(*)::int from public.comments c where c.user_id = p.id),
+           (select count(*)::int from public.comments c where c.user_id = p.id and c.status = 'hidden'),
+           (select count(*)::int from public.reports r join public.comments c on c.id = r.comment_id where c.user_id = p.id)
+      from public.profiles p join auth.users u on u.id = p.id
+     where coalesce(search, '') = '' or p.pseudo ilike '%' || search || '%' or u.email ilike '%' || search || '%'
+     order by p.created_at desc limit 200;
+end $$;
+revoke all on function public.admin_users(text) from public, anon;
+grant execute on function public.admin_users(text) to authenticated;
+
+-- Supprimer un compte et tout ce qu'il a écrit (droit à l'effacement). Jamais un administrateur.
+create or replace function public.delete_user(uid uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Réservé aux administrateurs'; end if;
+  if exists (select 1 from public.profiles where id = uid and role = 'admin') then
+    raise exception 'Impossible de supprimer un administrateur';
+  end if;
+  insert into public.audit_log (actor, action, target)
+  select auth.uid(), 'Compte supprimé', coalesce(pseudo, 'lecteur sans pseudo') from public.profiles where id = uid;
+  delete from auth.users where id = uid;
+end $$;
+revoke all on function public.delete_user(uuid) from public, anon;
+grant execute on function public.delete_user(uuid) to authenticated;
+
+-- 9. Tableau de bord : les infos qui ont le plus fait réagir cette semaine ------------------------------
+create or replace function public.top_articles() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(t), '[]'::jsonb) from (
+    select a.title, a.rubric_id, s.likes, s.comments
+      from public.articles a join public.article_stats s on s.article_id = a.id
+     where a.published_at > now() - interval '7 days' and public.is_staff()
+     order by s.likes + 2 * s.comments desc, a.published_at desc limit 5) t;
+$$;
+grant execute on function public.top_articles() to authenticated;
 
 -- ===== supabase/seed.sql
 -- Sources de départ : flux RSS publics (titre + chapô).

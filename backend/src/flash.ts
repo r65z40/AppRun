@@ -11,6 +11,7 @@ import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
 import { model, checkFlash, selectFlashes, usage, type Item } from './ai.js';
 import { cfg, snapshot } from './config.js';
+import { moderate } from './moderate.js';
 
 const args = process.argv.slice(2);
 const fx = args.indexOf('--fixtures');
@@ -35,6 +36,7 @@ async function main() {
 async function flash() {
   J.details.config = snapshot('flash');
   if (cfg.paused()) return J.finish('ok', 'Moteur en pause dans les réglages : rien fait.');
+  J.details.moderation = await moderate(log).catch((e) => { log(`Modération impossible : ${e instanceof Error ? e.message : e}`); return []; });
   if (!cfg.flashEnabled()) return J.finish('ok', 'Dernière minute désactivée dans les réglages.');
   const todayCount = (await q<{ n: number }>("select count(*)::int as n from flashes where published_at > date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris'"))[0].n;
   if (todayCount >= cfg.flashMaxPerDay()) return J.finish('ok', `Plafond atteint : ${todayCount} infos aujourd'hui (réglage : ${cfg.flashMaxPerDay()}).`);

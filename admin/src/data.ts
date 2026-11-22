@@ -38,6 +38,8 @@ export type EngineRun = {
     left?: { source: string; title: string }[];
     cards?: { rubric: string; title: string; issues: string[]; error?: string; photo?: string }[];
     flashes?: { title: string; sources: string[]; rejected?: string }[];
+    /** Commentaires signalés tranchés par l'IA pendant ce passage. */
+    moderation?: { text: string; decision: 'hide' | 'keep'; reason: string }[];
     /** Réglages utilisés pendant ce passage. */
     config?: Record<string, string | number | boolean>;
     /** Sujets proposés par l'IA mais écartés par les réglages. */
@@ -46,6 +48,9 @@ export type EngineRun = {
 };
 export type Setting = { key: string; value: string; is_set: boolean; updated_at: string };
 export type Me = { id: string; email: string; role: Role };
+export type Reader = { id: string; pseudo: string | null; email: string; role: Role; premium: boolean; banned: boolean; created_at: string; last_seen: string | null; comments: number; hidden: number; reports: number };
+export type AuditEntry = { at: string; who: string; action: string; target: string | null; detail: string | null };
+export type TopArticle = { title: string; rubric_id: string; likes: number; comments: number };
 export type Dashboard = {
   active_today: number; active_7: number; active_30: number; accounts: number; accounts_7: number; premium: number;
   comments_7: number; likes_7: number; reports_open: number; banned: number; ai_today: number; ai_7: number; ai_30: number;
@@ -80,6 +85,10 @@ export interface Api {
   setBanned(userId: string, ban: boolean): Promise<void>;
   banned(): Promise<Profile[]>;
   dashboard(): Promise<Dashboard>;
+  topArticles(): Promise<TopArticle[]>;
+  readers(search: string): Promise<Reader[]>;
+  deleteUser(id: string): Promise<void>;
+  audit(): Promise<AuditEntry[]>;
   /** Envoie une image et renvoie son adresse publique. */
   uploadPhoto(file: File): Promise<string>;
   team(): Promise<Profile[]>;
@@ -179,6 +188,12 @@ function supabaseApi(sb: SupabaseClient): Api {
     },
     banned: async () => sb.from('profiles').select('*').eq('banned', true).order('created_at', { ascending: false }).then(ok<Profile[]>),
     dashboard: async () => ok(await sb.rpc('dashboard')) as Dashboard,
+    topArticles: async () => ok(await sb.rpc('top_articles')) as TopArticle[],
+    readers: async (search) => ok(await sb.rpc('admin_users', { search })) as Reader[],
+    async deleteUser(id) {
+      ok(await sb.rpc('delete_user', { uid: id }));
+    },
+    audit: async () => ok(await sb.rpc('admin_audit', { lim: 300 })) as AuditEntry[],
     async uploadPhoto(file) {
       const path = `${crypto.randomUUID()}.${file.name.split('.').pop()?.toLowerCase() || 'jpg'}`;
       ok(await sb.storage.from('photos').upload(path, file, { contentType: file.type }));
