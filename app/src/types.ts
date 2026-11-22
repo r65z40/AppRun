@@ -17,6 +17,10 @@ export type Article = {
   /** « D'après … » : médias d'où viennent les faits. */
   media?: string;
   credit?: string;
+  /** Note d'importance donnée par l'IA (1 à 10) : les plus importantes passent en tête. */
+  importance?: number;
+  /** Réactions emoji : nombre par emoji, réaction du lecteur comprise. */
+  emojis?: Record<string, number>;
 };
 
 export type Rubric = { id: string; name: string; items: Article[] };
@@ -33,6 +37,8 @@ export type Tag = 'ess' | 'pv' | 'dec';
 
 export type Column = {
   id: string;
+  /** Rubrique que le lecteur ne suit pas : proposée après ses rubriques. */
+  extra?: boolean;
   name: string;
   cards: Card[];
   tags: Record<string, Tag>;
@@ -50,4 +56,6 @@ export type Comment = {
   order: number;
   /** Écrit par le lecteur connecté (il peut le supprimer). */
   own?: boolean;
+  /** L'auteur est abonné Premium. */
+  premium?: boolean;
 };

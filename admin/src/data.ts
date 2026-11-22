@@ -59,7 +59,14 @@ export type Dashboard = {
   last_runs: { kind: 'edition' | 'flash'; status: EngineRun['status']; started_at: string; finished_at: string | null; summary: string | null }[];
 };
 
-export const RUBRICS: Record<string, string> = { france: 'France', monde: 'Monde', eco: 'Éco', tech: 'Tech', sport: 'Sport', culture: 'Culture' };
+export const RUBRICS: Record<string, string> = {
+  france: 'France', monde: 'Monde', eco: 'Économie', tech: 'High-tech', science: 'Sciences', sante: 'Santé',
+  ecologie: 'Écologie', sport: 'Sport', culture: 'Culture', people: 'People',
+};
+/** Message affiché à l'ouverture de l'app, pour un public choisi. */
+export type Audience = 'all' | 'free' | 'premium' | 'guests' | 'members';
+export const AUDIENCES: Record<Audience, string> = { all: 'Tout le monde', free: 'Lecteurs gratuits', premium: 'Abonnés Premium', guests: 'Sans compte', members: 'Avec un compte' };
+export type AppMessage = { id: string; title: string; body: string; audience: Audience; active: boolean; ends_at: string | null; created_at: string };
 export const PHOTO_TAGS = ['train', 'neige', 'eau', 'fjord', 'facade', 'velo', 'batiment', 'sommet', 'route', 'livre', 'lampe'];
 
 export interface Api {
@@ -103,6 +110,9 @@ export interface Api {
   runs(): Promise<EngineRun[]>;
   flashes(): Promise<Flash[]>;
   saveFlash(f: Partial<Flash> & { id?: string }): Promise<void>;
+  messages(): Promise<AppMessage[]>;
+  saveMessage(m: Partial<AppMessage> & { id?: string }): Promise<void>;
+  deleteMessage(id: string): Promise<void>;
 }
 
 // Page GitHub où lancer le moteur à la main (bouton « Run workflow »).
@@ -223,6 +233,15 @@ function supabaseApi(sb: SupabaseClient): Api {
       const { data } = await sb.auth.getUser();
       if (f.id) ok(await sb.from('flashes').update({ ...f, edited_by: data.user?.id }).eq('id', f.id));
       else ok(await sb.from('flashes').insert({ ...f, manual: true, edited_by: data.user?.id }));
+    },
+    messages: async () => sb.from('app_messages').select('*').order('created_at', { ascending: false }).limit(50).then(ok<AppMessage[]>),
+    async saveMessage(m) {
+      const { data } = await sb.auth.getUser();
+      if (m.id) ok(await sb.from('app_messages').update(m).eq('id', m.id));
+      else ok(await sb.from('app_messages').insert({ ...m, created_by: data.user?.id }));
+    },
+    async deleteMessage(id) {
+      ok(await sb.from('app_messages').delete().eq('id', id));
     },
   };
 }

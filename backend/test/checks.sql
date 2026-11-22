@@ -129,7 +129,8 @@ select count(*) = 1 and bool_and(value = 'sk-ant-test-1234') as ok from public.a
 
 -- Communauté : commentaires publics avec pseudo, garde-fous, votes, signalements.
 insert into auth.users (id) values ('00000000-0000-0000-0000-000000000003'), ('00000000-0000-0000-0000-000000000004'), ('00000000-0000-0000-0000-000000000005');
-select id as aid from articles where status = 'published' order by rank limit 1 \gset
+-- L'info déjà commentée plus haut par « lecteur ».
+select article_id as aid from comments where text = 'Très clair, merci' \gset
 set role authenticated;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000003';
 \set ON_ERROR_STOP off

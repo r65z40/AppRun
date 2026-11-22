@@ -5,6 +5,9 @@ on:
     # 5 h 30 à Paris en hiver, puis des rattrapages : GitHub retarde ou saute souvent les tâches prévues.
     # Les passages suivants s'arrêtent tout seuls quand l'édition du jour est déjà faite (--once).
     - cron: '29 4,5,6,7 * * *'
+    # Mises à jour au fil de la journée (9 h à 22 h à Paris en hiver) : sujets nouveaux et importants seulement.
+    # Si l'édition du matin manque encore, ce passage la construit en entier.
+    - cron: '43 8-21 * * *'
   workflow_dispatch:
     inputs:
       date:
@@ -43,7 +46,7 @@ jobs:
           UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
           AUTO_PUBLISH: ${{ vars.AUTO_PUBLISH }}
           TITRE_MODEL: ${{ vars.TITRE_MODEL }}
-        run: npm run engine -- ${{ inputs.date && format('--date {0}', inputs.date) || '' }} ${{ github.event_name == 'schedule' && '--once' || '' }}
+        run: npm run engine -- ${{ inputs.date && format('--date {0}', inputs.date) || '' }} ${{ github.event.schedule == '43 8-21 * * *' && '--update' || github.event_name == 'schedule' && '--once' || '' }}
       # Panne passagère (API saturée, média injoignable…) : on réessaie seul 10 minutes plus tard.
       - name: Nouvel essai si le premier a échoué
         if: steps.first.outcome == 'failure'
@@ -54,7 +57,7 @@ jobs:
           UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
           AUTO_PUBLISH: ${{ vars.AUTO_PUBLISH }}
           TITRE_MODEL: ${{ vars.TITRE_MODEL }}
-        run: sleep 600 && npm run engine -- ${{ inputs.date && format('--date {0}', inputs.date) || '' }} ${{ github.event_name == 'schedule' && '--once' || '' }}
+        run: sleep 600 && npm run engine -- ${{ inputs.date && format('--date {0}', inputs.date) || '' }} ${{ github.event.schedule == '43 8-21 * * *' && '--update' || github.event_name == 'schedule' && '--once' || '' }}
       - name: Prévenir l'équipe si le moteur plante
         if: failure()
         env:
