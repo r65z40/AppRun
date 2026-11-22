@@ -36,7 +36,8 @@ async function main() {
 async function flash() {
   J.details.config = snapshot('flash');
   if (cfg.paused()) return J.finish('ok', 'Moteur en pause dans les réglages : rien fait.');
-  J.details.moderation = await moderate(log).catch((e) => { log(`Modération impossible : ${e instanceof Error ? e.message : e}`); return []; });
+  const mod = await moderate(log).catch((e) => { log(`Modération impossible : ${e instanceof Error ? e.message : e}`); return null; });
+  if (mod?.ai) { J.details.moderation = mod.done; J.details.moderation_ai = mod.ai; }
   if (!cfg.flashEnabled()) return J.finish('ok', 'Dernière minute désactivée dans les réglages.');
   const todayCount = (await q<{ n: number }>("select count(*)::int as n from flashes where published_at > date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris'"))[0].n;
   if (todayCount >= cfg.flashMaxPerDay()) return J.finish('ok', `Plafond atteint : ${todayCount} infos aujourd'hui (réglage : ${cfg.flashMaxPerDay()}).`);

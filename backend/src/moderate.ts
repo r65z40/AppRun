@@ -3,19 +3,23 @@
 // En cas de doute, l'IA laisse le signalement à l'équipe.
 import { q } from './db.js';
 import { cfg } from './config.js';
-import { judgeComments } from './ai.js';
+import { judgeComments, model, usage } from './ai.js';
 
 type Row = { id: string; text: string; article: string; reports: number };
 
+/** Renvoie les décisions et les jetons consommés par la modération (comptés à part du reste du passage). */
 export async function moderate(log: (...a: unknown[]) => void) {
-  if (!cfg.aiModeration()) return [];
+  const none = { done: [], ai: null };
+  if (!cfg.aiModeration()) return none;
   const rows = await q<Row>(
     `select c.id, c.text, a.title as article, count(r.id)::int as reports
        from comments c join reports r on r.comment_id = c.id and not r.resolved join articles a on a.id = c.article_id
       group by c.id, a.title order by min(r.created_at) limit 40`,
   );
-  if (!rows.length) return [];
+  if (!rows.length) return none;
+  const before = { ...usage };
   const verdicts = await judgeComments(rows.map((r, k) => ({ n: k + 1, text: r.text, article: r.article, reports: r.reports })));
+  const ai = { calls: usage.calls - before.calls, input: usage.input - before.input, output: usage.output - before.output, model: model() };
   const done: { text: string; decision: string; reason: string }[] = [];
   for (const v of verdicts) {
     const c = rows[v.n - 1];
@@ -30,6 +34,6 @@ export async function moderate(log: (...a: unknown[]) => void) {
     done.push({ text: c.text, decision: v.decision, reason: v.reason });
     log(`  ${v.decision === 'hide' ? '🚫 masqué' : '✓ gardé'} : « ${c.text} » (${v.reason})`);
   }
-  log(`Modération : ${rows.length} commentaire(s) signalé(s), ${done.length} tranché(s) par l'IA, ${rows.length - done.length} laissé(s) à l'équipe.`);
-  return done;
+  log(`Modération : ${rows.length} commentaire(s) signalé(s), ${done.length} tranché(s) par l'IA, ${rows.length - done.length} laissé(s) à l'équipe (${ai.input + ai.output} jetons).`);
+  return { done, ai };
 }
