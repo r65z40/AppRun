@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type Reader, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
 type Page = 'dashboard' | 'readers' | 'audit' | 'edition' | 'flash' | 'messages' | 'engine' | 'sources' | 'moderation' | 'team' | 'settings';
 const PAGES: [Page, string][] = [['dashboard', 'Tableau de bord'], ['edition', 'Édition'], ['flash', 'Dernière minute'], ['messages', 'Messages'], ['engine', 'Moteur'], ['sources', 'Sources'], ['moderation', 'Modération'], ['readers', 'Lecteurs'], ['team', 'Équipe'], ['audit', 'Journal'], ['settings', 'Réglages']];
@@ -141,9 +141,10 @@ function engineAlert(r: Dashboard['last_runs'][number] | undefined, kind: 'editi
 function DashboardPage({ go }: { go: (p: Page) => void }) {
   const [d, setD] = useState<Dashboard | null>(null);
   const [top, setTop] = useState<TopArticle[]>([]);
+  const [mod, setMod] = useState<ModerationCost | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    const load = () => Promise.all([api.dashboard().then(setD), api.topArticles().then(setTop)]).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    const load = () => Promise.all([api.dashboard().then(setD), api.topArticles().then(setTop), api.moderationCost().then(setMod)]).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
     load();
     const t = setInterval(load, 60000);
     return () => clearInterval(t);
@@ -187,6 +188,7 @@ function DashboardPage({ go }: { go: (p: Page) => void }) {
         <Tile label="Coût de l'IA aujourd'hui" value={usd(d.ai_today)} />
         <Tile label="Coût de l'IA, 7 jours" value={usd(d.ai_7)} />
         <Tile label="Coût de l'IA, 30 jours" value={usd(d.ai_30)} sub="Estimé d'après les jetons consommés et le tarif du modèle" />
+        <Tile label="Modération par l'IA, 30 jours" value={usd(mod?.cost ?? 0)} sub={`${int(mod?.judged ?? 0)} commentaire${(mod?.judged ?? 0) > 1 ? 's' : ''} tranché${(mod?.judged ?? 0) > 1 ? 's' : ''} · ${fmtTok((mod?.input ?? 0) + (mod?.output ?? 0))} jetons (déjà compris dans le coût de l'IA)`} />
         <Tile label="Revenus Premium" value="—" sub={`${int(d.premium)} abonné${d.premium > 1 ? 's' : ''} · s'affichera quand Premium sera branché`} />
         <Tile label="Revenus publicité" value="—" sub="S'affichera quand la publicité sera branchée" />
       </div>
@@ -564,7 +566,7 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
 
       <section className="panel settings">
         <h2>Modération</h2>
-        {Toggle({ k: 'AI_MODERATION', label: "L'IA tranche les signalements", help: "Toutes les 10 minutes, l'IA relit les commentaires signalés : elle masque ce qui enfreint les règles, garde le reste et laisse à l'équipe les cas douteux. Chaque décision est expliquée dans le Journal.", def: true })}
+        {Pick({ k: 'MODERATION', label: 'Mode de modération', help: "Mots-clés : un commentaire ou un pseudo qui contient une insulte de la liste est refusé à l'envoi, sans coût. IA : toutes les 10 minutes, l'IA relit les commentaires signalés, masque ce qui enfreint les règles, garde le reste et laisse les cas douteux à l'équipe ; chaque décision est expliquée dans le Journal et son coût est au Tableau de bord.", def: 'both', options: [['both', 'Mots-clés et IA'], ['words', 'Mots-clés seulement (gratuit)'], ['ai', 'IA seulement']] })}
         {Text({ k: 'BANNED_WORDS', label: 'Mots interdits en plus', help: "Les insultes courantes sont déjà bloquées, même déguisées (c0nnard, connnnard). Ajoutez vos mots, séparés par des virgules : un commentaire ou un pseudo qui en contient un est refusé.", placeholder: 'mot1, mot2, une expression' })}
       </section>
 
@@ -715,7 +717,7 @@ function RunDetails({ r }: { r: EngineRun }) {
       ) : null}
       {d.moderation?.length ? (
         <section>
-          <h3>Signalements tranchés par l'IA ({d.moderation.length})</h3>
+          <h3>Signalements tranchés par l'IA ({d.moderation.length}){d.moderation_ai ? <span className="muted small"> · {fmtTok(d.moderation_ai.input + d.moderation_ai.output)} jetons</span> : null}</h3>
           <ul>{d.moderation.map((m, i) => <li key={i}>{m.decision === 'hide' ? '🚫 masqué' : '✓ gardé'} « {m.text} » <span className="muted small">{m.reason}</span></li>)}</ul>
         </section>
       ) : null}

@@ -177,6 +177,7 @@ export function demoApi(): Api {
       last_runs: [{ kind: 'edition', status: 'ok', started_at: at(15 * 60), finished_at: at(15 * 60 - 6), summary: runs[2].summary }, { kind: 'flash', status: 'error', started_at: at(9), finished_at: at(8), summary: 'Échec : clé Claude refusée (exemple de panne)' }],
     }),
     uploadPhoto: async (file) => URL.createObjectURL(file),
+    moderationCost: () => wait({ judged: 64, input: 182_400, output: 21_300, cost: 1.16 }),
     topArticles: () => wait(articles.slice(0, 4).map((a, i) => ({ title: a.title, rubric_id: a.rubric_id, likes: 412 - i * 87, comments: 38 - i * 9 }))),
     readers: (search) => wait([...team, ...readers, ...comments.map((c) => ({ id: c.user_id, pseudo: c.pseudo ?? null, role: 'reader' as const, premium: false, created_at: iso(40) } as Profile))]
       .filter((p, i, all) => all.findIndex((x) => x.id === p.id) === i && (!search || p.pseudo?.toLowerCase().includes(search.toLowerCase())))

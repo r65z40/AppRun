@@ -22,6 +22,7 @@ psql "$DB" -tAc "select case when not exists (select 1 from reports where not re
   and (select status from comments where text = 'À suivre de près') = 'visible' and (select status from comments where text = 'Quel idiot') = 'hidden'
   and (select count(*) from audit_log where actor is null and detail like 'IA :%') = 2
   then 'OK  signalements tranchés par l''IA (un gardé, un masqué), décisions au journal' else 'ÉCHEC  modération autonome' end"
+psql "$DB" -tAc "select case when (details->'moderation_ai') ? 'input' and jsonb_array_length(details->'moderation') = 2 then 'OK  jetons de la modération comptés à part' else 'ÉCHEC  jetons de la modération' end from engine_runs where kind = 'flash' order by started_at desc limit 1"
 psql "$DB" -tAc "select case when count(*) filter (where action = 'Lecteur banni') = 1 and count(*) filter (where action = 'Réglage modifié' and detail = 'clé remplacée') >= 1 then 'OK  journal : bannissement et réglages tracés, clés jamais écrites' else 'ÉCHEC  journal' end from audit_log"
 
 echo "--- Installation automatique sur une base vide"
@@ -30,7 +31,7 @@ VIDE=${DB/titre_test/titre_vide}
 psql "$VIDE" -v ON_ERROR_STOP=1 -q -f test/supabase-stub.sql
 DATABASE_URL="$VIDE" npx tsx src/install.ts
 DATABASE_URL="$VIDE" npx tsx src/install.ts
-psql "$VIDE" -tAc "select case when count(*) = 11 then 'OK  base vide installée toute seule (10 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
+psql "$VIDE" -tAc "select case when count(*) = 12 then 'OK  base vide installée toute seule (11 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
 psql "$VIDE" -tAc "select case when count(*) >= 10 then 'OK  sources de départ présentes' else 'ÉCHEC  sources absentes' end from sources"
 
 echo "--- Pilote automatique (réglage par défaut) : l'édition se publie seule"

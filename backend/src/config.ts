@@ -44,7 +44,7 @@ export const cfg = {
   flashMaxPerDay: () => num('FLASH_MAX_PER_DAY', 12, 1, 50),
 
   // Modération : l'IA tranche les commentaires signalés.
-  aiModeration: () => on('AI_MODERATION', true),
+  aiModeration: () => process.env.MODERATION !== 'words', // 'both' (défaut), 'words' ou 'ai'
 };
 
 /** Photo des réglages utilisés, gardée dans le journal de chaque passage. */
