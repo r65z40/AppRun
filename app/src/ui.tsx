@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { C, F, GRAD, GRAD3 } from './theme';
 
 /* ---------- Icônes (traits fins, style Lucide) ---------- */
-type IconName = 'up' | 'down' | 'cmt' | 'share' | 'flag' | 'book' | 'gear' | 'send';
+type IconName = 'up' | 'down' | 'cmt' | 'share' | 'flag' | 'book' | 'gear' | 'send' | 'smile';
 const PATHS: Record<IconName, string> = {
   up: 'M7 10v11H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3zm0 0 4-8a3 3 0 0 1 3 3v4h5.5a2 2 0 0 1 2 2.3l-1.4 8a2 2 0 0 1-2 1.7H7',
   down: 'M17 14V3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-3zm0 0-4 8a3 3 0 0 1-3-3v-4H4.5a2 2 0 0 1-2-2.3l1.4-8a2 2 0 0 1 2-1.7H17',
@@ -16,6 +16,7 @@ const PATHS: Record<IconName, string> = {
   book: 'M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5zM8 7h7',
   gear: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
   send: 'M5 12h14M13 6l6 6-6 6',
+  smile: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM8 14.5s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01',
 };
 export function Icon({ name, size = 22, color = '#fff', fill = 'none' }: { name: IconName; size?: number; color?: string; fill?: string }) {
   return (

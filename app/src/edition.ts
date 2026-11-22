@@ -22,9 +22,15 @@ export const TAGS: Record<Tag, { label: string; why: (a: Article) => string }> =
   dec: { label: 'Découverte', why: () => 'Pour sortir un peu de vos habitudes.' },
 };
 
-export function buildColumns(active: string[], quota: number, premium: boolean): Column[] {
+/**
+ * taste : goût du lecteur par rubrique (likes moins dislikes). Les rubriques qu'il aime le plus passent en premier
+ * dans « Mon édition » et dans la roue des rubriques.
+ */
+export function buildColumns(active: string[], quota: number, premium: boolean, taste: Record<string, number> = {}): Column[] {
   // « Mon édition » : uniquement les rubriques choisies, sujets majeurs en tête, puis chaque rubrique à tour de rôle.
-  const act = RUBRICS.filter((r) => active.includes(r.id) && r.items.length > 0);
+  const score = (id: string) => taste[id] ?? 0;
+  const act = RUBRICS.filter((r) => active.includes(r.id) && r.items.length > 0).sort((a, b) => score(b.id) - score(a.id));
+  const others = RUBRICS.filter((r) => !active.includes(r.id) && r.items.length > 0);
   const picked: { a: Article; tag: Tag }[] = [];
   const all = act.flatMap((r) => r.items);
   all.filter((a) => a.essential).slice(0, 4).forEach((a) => picked.length < quota && picked.push({ a, tag: 'pv' }));
@@ -49,6 +55,8 @@ export function buildColumns(active: string[], quota: number, premium: boolean):
     // Dernière minute : juste après l'édition, la plus récente en haut.
     ...(FLASHES.length ? [{ id: 'flash', name: 'Dernière minute', cards: [...FLASHES].sort((a, b) => b.at.localeCompare(a.at)), tags: {} }] : []),
     ...act.map((r) => ({ id: r.id, name: r.name, cards: r.items, tags: {} })),
+    // Puis les rubriques non suivies : toujours accessibles en continuant à glisser.
+    ...others.map((r) => ({ id: r.id, name: r.name, cards: r.items, tags: {}, extra: true })),
   ];
 }
 

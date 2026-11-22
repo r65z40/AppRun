@@ -20,6 +20,8 @@ export async function migrate(log: (...a: unknown[]) => void = console.log): Pro
     if (await has('public.flashes')) already.push('0003_flashes.sql');
     if (await has('public.engine_runs')) already.push('0004_journal_photos.sql');
     if (await has('public.app_settings')) already.push('0005_settings.sql');
+    // setup.sql récent (0010 change la forme de article_comments : 0006 et 0009 ne peuvent plus repasser après).
+    if (await has('public.app_messages')) already.push('0006_community.sql', '0007_unsplash.sql', '0008_reglages_ia.sql', '0009_moderation_gestion.sql', '0010_lecteurs.sql');
     for (const n of already) await q('insert into public._titre_migrations (name) values ($1) on conflict do nothing', [n]);
     done = new Set(already);
   }

@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Linking, Platform, StyleSheet, Text, View, Pressable, type LayoutChangeEvent } from 'react-native';
 import Animated, {
+  FadeIn,
+  FadeOut,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
   withRepeat,
+  withSequence,
   useReducedMotion,
   cancelAnimation,
   Easing,
@@ -22,12 +25,12 @@ import { C, F, GRAD3, SPRING, SPRING_FLICK } from './theme';
 import { isAd, isArticle, isFlash, type Article, type Card, type Column, type Tag } from './types';
 import { rubricOf } from './edition';
 import { flashTime } from './dates';
-import { PHOTOS } from './content';
+import { EMOJIS, PHOTOS } from './content';
 import { Icon, Press, Rich } from './ui';
 import { feel } from './feel';
 
 const EXT = 140; // les photos débordent sur les côtés pour se fondre entre rubriques
-const MAX_COLS = 8;
+const MAX_COLS = 14; // Mon édition + Dernière minute + 12 rubriques
 
 export type FeedApi = {
   cols: Column[];
@@ -49,6 +52,10 @@ export type FeedApi = {
   onRead: (a: Article) => void;
   onComments: (a: Article) => void;
   onReact: (a: Article, v: 1 | -1) => void;
+  /** Mode choisi par l'équipe : réactions emoji à la place des commentaires. */
+  emojiMode: boolean;
+  myEmoji: Record<string, string>;
+  onEmoji: (a: Article, e: string | null) => void;
   onToast: (msg: string) => void;
   onSettings: () => void;
 };
@@ -71,7 +78,9 @@ export function Feed(p: FeedApi & { W: number; H: number }) {
   const colX = useSharedValue(-p.ri * W);
   const y0 = useSharedValue(0), y1 = useSharedValue(0), y2 = useSharedValue(0), y3 = useSharedValue(0);
   const y4 = useSharedValue(0), y5 = useSharedValue(0), y6 = useSharedValue(0), y7 = useSharedValue(0);
-  const ys = [y0, y1, y2, y3, y4, y5, y6, y7].slice(0, MAX_COLS);
+  const y8 = useSharedValue(0), y9 = useSharedValue(0), y10 = useSharedValue(0), y11 = useSharedValue(0);
+  const y12 = useSharedValue(0), y13 = useSharedValue(0);
+  const ys = [y0, y1, y2, y3, y4, y5, y6, y7, y8, y9, y10, y11, y12, y13].slice(0, MAX_COLS);
 
   // Ce que le fil du geste (thread UI) doit savoir de l'état.
   const sRi = useSharedValue(p.ri);
@@ -202,14 +211,14 @@ export function Feed(p: FeedApi & { W: number; H: number }) {
         <View style={StyleSheet.absoluteFill}>
         <Animated.View style={[StyleSheet.absoluteFill, rowStyle]}>
           {/* Couche des photos : toutes sous tous les textes, pour un fondu propre */}
-          {cols.map((col, ci) => (
+          {cols.slice(0, MAX_COLS).map((col, ci) => (
             <ColumnStack key={'bg' + col.id} y={ys[ci]} W={W} H={H} ci={ci}>
               {col.cards.map((c, k) => (
                 <Background key={c.id} card={c} k={k} ci={ci} W={W} H={H} colX={colX} y={ys[ci]} tiltX={p.tiltX} tiltY={p.tiltY} parallax={p.parallax} />
               ))}
             </ColumnStack>
           ))}
-          {cols.map((col, ci) => (
+          {cols.slice(0, MAX_COLS).map((col, ci) => (
             <ColumnStack key={'fg' + col.id} y={ys[ci]} W={W} H={H} ci={ci}>
               {col.cards.map((c, k) => (
                 <CardContent key={c.id} card={c} k={k} W={W} H={H} tag={col.tags[c.id]} api={p} bottom={insets.bottom} tiltX={p.tiltX} tiltY={p.tiltY} />
@@ -285,6 +294,7 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
   // le texte bouge très peu, à l'opposé de la photo : effet de profondeur
   const depth = useAnimatedStyle(() => ({ transform: [{ translateX: -tiltX.value * 0.18 }, { translateY: -tiltY.value * 0.18 }] }));
   const pad = { paddingBottom: Math.max(28, bottom + 14) };
+  const [pick, setPick] = useState(false); // choix d'un emoji ouvert
   if (isFlash(card)) {
     return (
       <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
@@ -322,6 +332,9 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
   }
   const a = card;
   const r = api.reactions[a.id] ?? 0;
+  const mine = api.myEmoji[a.id];
+  const emo = (e: string) => (a.emojis?.[e] ?? 0) + (mine === e ? 1 : 0);
+  const emoTotal = EMOJIS.reduce((n, e) => n + emo(e), 0);
   return (
     <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
       <Animated.View style={[styles.content, pad, depth]}>
@@ -334,14 +347,25 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
           ))}
         </View>
         <View style={styles.actions}>
+          {pick ? (
+            <EmojiPicker mine={mine} count={emo} onPick={(e) => { setPick(false); api.onEmoji(a, e === mine ? null : e); }} />
+          ) : null}
           <Press onPress={() => api.onRead(a)} accessibilityLabel="Lire le résumé, 1 minute" style={[styles.read, { marginRight: 'auto' }]}>
             <Text style={styles.readTxt}>Lire · 1 min</Text>
           </Press>
           <ReactBtn icon="up" n={a.likes + (r === 1 ? 1 : 0)} on={r === 1} color={C.violet} onPress={() => api.onReact(a, 1)} label="J'aime" />
-          <Press onPress={() => api.onComments(a)} style={styles.ic} accessibilityLabel="Commentaires">
-            <Icon name="cmt" size={20} />
-            <Text style={styles.icTxt}>{api.commentCount(a)}</Text>
-          </Press>
+          <ReactBtn icon="down" on={r === -1} color={C.coral} onPress={() => api.onReact(a, -1)} label="Je n'aime pas" />
+          {api.emojiMode ? (
+            <Press onPress={() => { setPick(!pick); feel('select'); }} style={styles.ic} accessibilityLabel="Réagir avec un emoji">
+              {mine ? <Text style={{ fontSize: 20 }}>{mine}</Text> : <Icon name="smile" size={20} />}
+              <Text style={styles.icTxt}>{emoTotal}</Text>
+            </Press>
+          ) : (
+            <Press onPress={() => api.onComments(a)} style={styles.ic} accessibilityLabel="Commentaires">
+              <Icon name="cmt" size={20} />
+              <Text style={styles.icTxt}>{api.commentCount(a)}</Text>
+            </Press>
+          )}
           <Press onPress={() => { api.onToast("Lien de l'info copié"); feel('light'); }} style={styles.ic} accessibilityLabel="Partager">
             <Icon name="share" size={20} />
           </Press>
@@ -351,28 +375,72 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
   );
 }
 
-function ReactBtn({ icon, n, on, color, onPress, label }: { icon: 'up' | 'down'; n?: number; on: boolean; color: string; onPress: () => void; label: string }) {
+/**
+ * Like / dislike : le pouce s'écrase puis rebondit, une gerbe d'éclats part autour (vers le haut pour un like,
+ * vers le bas pour un dislike) et un anneau s'élargit. Annuler son vote : le pouce se contracte simplement.
+ */
+export function ReactBtn({ icon, n, on, color, onPress, label, row }: { icon: 'up' | 'down'; n?: number; on: boolean; color: string; onPress: () => void; label: string; row?: boolean }) {
+  const reduce = useReducedMotion();
   const s = useSharedValue(1);
-  const a = useAnimatedStyle(() => ({ transform: [{ scale: s.value }] }));
+  const rot = useSharedValue(0);
+  const burst = useSharedValue(1);
+  const a = useAnimatedStyle(() => ({ transform: [{ scale: s.value }, { rotate: `${rot.value}deg` }] }));
+  const ring = useAnimatedStyle(() => ({ opacity: burst.value < 1 ? 0.7 * (1 - burst.value) : 0, transform: [{ scale: 0.5 + burst.value * 1.3 }] }));
+  const play = () => {
+    if (on) {
+      s.value = withSequence(withTiming(0.8, { duration: 90 }), withSpring(1, { duration: 300, dampingRatio: 0.7 }));
+      return;
+    }
+    s.value = withSequence(withTiming(0.7, { duration: 90 }), withSpring(1, { duration: 520, dampingRatio: 0.38 }));
+    rot.value = withSequence(withTiming(icon === 'up' ? -16 : 16, { duration: 110 }), withSpring(0, { duration: 500, dampingRatio: 0.45 }));
+    if (!reduce) {
+      burst.value = 0;
+      burst.value = withTiming(1, { duration: 560, easing: Easing.out(Easing.cubic) });
+    }
+  };
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: on }}
-      onPress={() => {
-        onPress();
-        // le pouce rebondit quand on aime, se contracte quand on n'aime pas
-        s.value = withTiming(icon === 'up' && !on ? 1.32 : 0.78, { duration: 120 }, () => {
-          s.value = withSpring(1, { duration: 400, dampingRatio: 0.5 });
-        });
-      }}
-      style={styles.ic}
+      onPress={() => { play(); onPress(); }}
+      style={row ? styles.icRow : styles.ic}
     >
-      <Animated.View style={a}>
-        <Icon name={icon} size={20} color={on ? '#fff' : '#fff'} fill={on ? color : 'none'} />
-      </Animated.View>
-      {n != null ? <Text style={styles.icTxt}>{n}</Text> : null}
+      <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <Animated.View pointerEvents="none" style={[styles.ring, { borderColor: color }, ring]} />
+        {Array.from({ length: 8 }, (_, i) => <Spark key={i} i={i} t={burst} color={i % 2 ? color : C.pink} down={icon === 'down'} />)}
+        <Animated.View style={a}>
+          <Icon name={icon} size={20} color="#fff" fill={on ? color : 'none'} />
+        </Animated.View>
+      </View>
+      {n != null ? <Text style={row ? styles.footTxt : styles.icTxt}>{n}</Text> : null}
     </Pressable>
+  );
+}
+function Spark({ i, t, color, down }: { i: number; t: SharedValue<number>; color: string; down: boolean }) {
+  // éventail de 8 éclats sur 220°, ouvert vers le haut (like) ou vers le bas (dislike)
+  const ang = ((-200 + i * (220 / 7)) * Math.PI) / 180 * (down ? -1 : 1);
+  const st = useAnimatedStyle(() => {
+    const d = 8 + t.value * 22;
+    return {
+      opacity: t.value < 1 ? 1 - t.value : 0,
+      transform: [{ translateX: Math.cos(ang) * d }, { translateY: Math.sin(ang) * d }, { scale: 1 - t.value * 0.6 }],
+    };
+  });
+  return <Animated.View pointerEvents="none" style={[styles.spark, { backgroundColor: color }, st]} />;
+}
+
+/** Les six réactions emoji, au-dessus des boutons ; la mienne est entourée. */
+function EmojiPicker({ mine, count, onPick }: { mine?: string; count: (e: string) => number; onPick: (e: string) => void }) {
+  return (
+    <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={styles.picker}>
+      {EMOJIS.map((e) => (
+        <Press key={e} scaleTo={0.85} onPress={() => { feel('light', 'pop'); onPick(e); }} style={[styles.pickBtn, mine === e && styles.pickOn]} accessibilityLabel={`Réagir ${e}`}>
+          <Text style={{ fontSize: 24 }}>{e}</Text>
+          <Text style={styles.icTxt}>{count(e)}</Text>
+        </Press>
+      ))}
+    </Animated.View>
   );
 }
 
@@ -479,7 +547,7 @@ function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; 
               >
                 <TabFade x={lay[i]?.x} w={lay[i]?.w} tx={tx} boxW={boxW}>
                   {c.id === 'flash' ? <LiveDot size={7} /> : null}
-                  <Text style={[styles.rubTxt, c.id === 'flash' && flashFresh && i !== api.ri && { color: C.coral }, i === api.ri && styles.rubOn]}>{c.name}</Text>
+                  <Text style={[styles.rubTxt, c.extra && { opacity: 0.55 }, c.id === 'flash' && flashFresh && i !== api.ri && { color: C.coral }, i === api.ri && styles.rubOn]}>{c.name}</Text>
                 </TabFade>
                 {i === api.ri ? <View style={styles.rubDot} /> : null}
               </Pressable>
@@ -538,6 +606,13 @@ const styles = StyleSheet.create({
   readTxt: { color: '#fff', fontFamily: F.semi, fontSize: 15 },
   ic: { width: 46, height: 48, alignItems: 'center', justifyContent: 'center', gap: 1 },
   icTxt: { color: C.text2, fontFamily: F.semi, fontSize: 10 },
+  icRow: { flexDirection: 'row', alignItems: 'center', gap: 7, height: 44 },
+  footTxt: { color: C.text2, fontFamily: F.semi, fontSize: 14 },
+  ring: { position: 'absolute', width: 34, height: 34, borderRadius: 17, borderWidth: 2 },
+  spark: { position: 'absolute', width: 5, height: 5, borderRadius: 3 },
+  picker: { position: 'absolute', right: 0, bottom: 56, flexDirection: 'row', gap: 2, padding: 6, borderRadius: 22, backgroundColor: 'rgba(30,24,64,0.96)', borderWidth: 1, borderColor: C.line },
+  pickBtn: { width: 46, alignItems: 'center', paddingVertical: 4, borderRadius: 14 },
+  pickOn: { backgroundColor: 'rgba(123,92,255,0.35)' },
   sources: { color: C.text3, fontFamily: F.regular, fontSize: 11 },
   adCta: { height: 46, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center' },
   head: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 22, gap: 10 },

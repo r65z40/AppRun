@@ -10,6 +10,7 @@ import { C, F, DRAWER_MS } from './theme';
 import type { Article, Comment } from './types';
 import { summaryOf } from './edition';
 import { Icon, Press } from './ui';
+import { ReactBtn } from './Feed';
 import { feel } from './feel';
 import { todayLabel, yearLabel } from './dates';
 
@@ -66,8 +67,10 @@ export function Sheet({ open, onClose, H, children, bg, header }: {
   );
 }
 
-export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComments, commentCount }: {
+export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComments, commentCount, emojiMode }: {
   a: Article | null; open: boolean; onClose: () => void; H: number; reaction: number; onReact: (v: 1 | -1) => void; onComments: () => void; commentCount: number;
+  /** Commentaires remplacés par les emoji : pas de bouton commentaires. */
+  emojiMode?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const heads = ['Contexte', 'Ce qui change', 'Et après'];
@@ -98,14 +101,14 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
             </View>
           </ScrollView>
           <View style={[styles.foot, { paddingBottom: Math.max(18, insets.bottom + 6) }]}>
-            <Press style={styles.footBtn} onPress={() => onReact(1)} accessibilityLabel="J'aime">
-              <Icon name="up" size={20} fill={reaction === 1 ? C.violet : 'none'} />
-              <Text style={styles.footTxt}>{a.likes + (reaction === 1 ? 1 : 0)}</Text>
-            </Press>
-            <Press style={styles.footBtn} onPress={onComments} accessibilityLabel="Commentaires">
-              <Icon name="cmt" size={20} />
-              <Text style={styles.footTxt}>{commentCount}</Text>
-            </Press>
+            <ReactBtn row icon="up" n={a.likes + (reaction === 1 ? 1 : 0)} on={reaction === 1} color={C.violet} onPress={() => onReact(1)} label="J'aime" />
+            <ReactBtn row icon="down" on={reaction === -1} color={C.coral} onPress={() => onReact(-1)} label="Je n'aime pas" />
+            {emojiMode ? null : (
+              <Press style={styles.footBtn} onPress={onComments} accessibilityLabel="Commentaires">
+                <Icon name="cmt" size={20} />
+                <Text style={styles.footTxt}>{commentCount}</Text>
+              </Press>
+            )}
             <Press style={styles.footBtn} onPress={() => feel('light')} accessibilityLabel="Partager">
               <Icon name="share" size={20} />
             </Press>
@@ -203,6 +206,7 @@ function CommentRow({ c, fresh, onVote, onFlag, onBlock }: { c: Comment; fresh: 
       <View style={styles.cmtTop}>
         <View style={[styles.av, { backgroundColor: c.color }]}><Text style={styles.avTxt}>{c.who[0].toUpperCase()}</Text></View>
         <Text style={styles.who}>{c.who}</Text>
+        {c.premium ? <View style={styles.prem}><Text style={styles.premTxt}>PREMIUM</Text></View> : null}
         <Text style={styles.ago}>{c.ago}</Text>
       </View>
       <Text style={styles.cmtTxt}>{c.text}</Text>
@@ -255,6 +259,8 @@ const styles = StyleSheet.create({
   av: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   avTxt: { color: '#fff', fontFamily: F.black, fontSize: 11 },
   who: { color: '#fff', fontFamily: F.semi, fontSize: 13 },
+  prem: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2, backgroundColor: 'rgba(200,107,250,0.25)', borderWidth: 1, borderColor: 'rgba(200,170,255,0.45)' },
+  premTxt: { color: '#e6d8ff', fontFamily: F.semi, fontSize: 9, letterSpacing: 1.2 },
   ago: { color: C.text3, fontFamily: F.regular, fontSize: 12 },
   cmtTxt: { color: '#fff', fontFamily: F.regular, fontSize: 15, lineHeight: 21, paddingLeft: 34 },
   cmtAct: { flexDirection: 'row', gap: 18, paddingLeft: 34, alignItems: 'center' },

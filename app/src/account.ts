@@ -10,7 +10,7 @@ const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 export const accountsOn = !!(URL && KEY);
 
 type Session = { access: string; refresh: string; exp: number; uid: string; email: string };
-export type Me = { uid: string; email: string; pseudo: string | null };
+export type Me = { uid: string; email: string; pseudo: string | null; premium: boolean; prefs: Record<string, unknown> };
 
 /* ---------- Stockage de la session ---------- */
 const SKEY = 'titre.session';
@@ -28,6 +28,10 @@ const store = {
     } catch {}
   },
 };
+
+/** Petit stockage local (ce qui doit survivre à la fermeture de l'app, rien de secret). */
+export const getLocal = (k: string) => store.get(k);
+export const setLocal = (k: string, v: string | null) => store.set(v, k);
 
 /* ---------- État partagé ---------- */
 let session: Session | null = null;
@@ -104,8 +108,8 @@ async function api<T = unknown>(path: string, init: { method?: string; body?: un
 
 async function loadMe() {
   if (!session) { me = null; return emit(); }
-  const rows = await api<{ pseudo: string | null }[]>(`profiles?select=pseudo&id=eq.${session.uid}`).catch(() => []);
-  me = { uid: session.uid, email: session.email, pseudo: rows[0]?.pseudo ?? null };
+  const rows = await api<{ pseudo: string | null; premium: boolean; prefs: Record<string, unknown> | null }[]>(`profiles?select=pseudo,premium,prefs&id=eq.${session.uid}`).catch(() => []);
+  me = { uid: session.uid, email: session.email, pseudo: rows[0]?.pseudo ?? null, premium: !!rows[0]?.premium, prefs: rows[0]?.prefs ?? {} };
   emit();
 }
 
@@ -180,15 +184,35 @@ export async function setPseudo(p: string) {
 /** Les infos de la vraie base ont un identifiant UUID ; celles de la démo, non. */
 export const isLive = (id: string) => accountsOn && /^[0-9a-f-]{36}$/.test(id);
 
-export async function myLikes(): Promise<string[]> {
-  if (!session) return [];
-  const rows = await api<{ article_id: string }[]>(`reactions?select=article_id&user_id=eq.${session.uid}&value=eq.1`).catch(() => []);
-  return rows.map((r) => r.article_id);
+/** Réglages du lecteur (rubriques, nombre d'infos, heure, goûts) : ils le suivent sur tous ses appareils. */
+export async function savePrefs(prefs: Record<string, unknown>) {
+  if (!session) return;
+  await api(`profiles?id=eq.${session.uid}`, { method: 'PATCH', body: { prefs } });
+  if (me) me = { ...me, prefs };
 }
 
-export async function like(articleId: string, on: boolean) {
-  if (on) await api('reactions?on_conflict=user_id,article_id', { method: 'POST', body: { user_id: session!.uid, article_id: articleId, value: 1 }, prefer: 'resolution=merge-duplicates' });
+/** Mes likes (1) et dislikes (-1), par info. */
+export async function myReactions(): Promise<Record<string, 1 | -1>> {
+  if (!session) return {};
+  const rows = await api<{ article_id: string; value: 1 | -1 }[]>(`reactions?select=article_id,value&user_id=eq.${session.uid}`).catch(() => []);
+  return Object.fromEntries(rows.map((r) => [r.article_id, r.value]));
+}
+
+export async function react(articleId: string, v: -1 | 0 | 1) {
+  if (v) await api('reactions?on_conflict=user_id,article_id', { method: 'POST', body: { user_id: session!.uid, article_id: articleId, value: v }, prefer: 'resolution=merge-duplicates' });
   else await api(`reactions?user_id=eq.${session!.uid}&article_id=eq.${articleId}`, { method: 'DELETE' });
+}
+
+/** Mes réactions emoji, par info. */
+export async function myEmojis(): Promise<Record<string, string>> {
+  if (!session) return {};
+  const rows = await api<{ article_id: string; emoji: string }[]>(`article_emojis?select=article_id,emoji&user_id=eq.${session.uid}`).catch(() => []);
+  return Object.fromEntries(rows.map((r) => [r.article_id, r.emoji]));
+}
+
+export async function setEmoji(articleId: string, emoji: string | null) {
+  if (emoji) await api('article_emojis?on_conflict=user_id,article_id', { method: 'POST', body: { user_id: session!.uid, article_id: articleId, emoji }, prefer: 'resolution=merge-duplicates' });
+  else await api(`article_emojis?user_id=eq.${session!.uid}&article_id=eq.${articleId}`, { method: 'DELETE' });
 }
 
 const COLORS = ['#7B5CFF', '#3D7BFF', '#C86BFA', '#4fb0ff', '#9a7bff', '#FF8A7A', '#5ad1b5'];
@@ -201,7 +225,7 @@ function ago(iso: string) {
   return h < 24 ? `il y a ${h} h` : `il y a ${Math.round(h / 24)} j`;
 }
 
-type Row = { id: string; text: string; pseudo: string; created_at: string; likes: number; dislikes: number; mine: number; own: boolean };
+type Row = { id: string; text: string; pseudo: string; created_at: string; likes: number; dislikes: number; mine: number; own: boolean; premium?: boolean };
 export async function loadComments(articleId: string): Promise<Comment[]> {
   const rows = await api<Row[]>('rpc/article_comments', { method: 'POST', body: { aid: articleId } });
   // L'app ajoute elle-même le vote du lecteur aux compteurs : on le retire des totaux reçus.
@@ -216,6 +240,7 @@ export async function loadComments(articleId: string): Promise<Comment[]> {
     mine: (r.mine as -1 | 0 | 1) ?? 0,
     order: i,
     own: r.own,
+    premium: !!r.premium,
   }));
 }
 

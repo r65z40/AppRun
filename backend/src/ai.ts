@@ -7,10 +7,14 @@ import { PHOTO_TAGS, PHOTO_TAG_LIST } from './photos.js';
 export const RUBRICS = {
   france: 'France : politique, société, justice, faits marquants en France',
   monde: 'Monde : international, diplomatie, conflits, élections étrangères',
-  eco: 'Éco : économie, emploi, entreprises, prix, budget',
-  tech: 'Tech : numérique, sciences, espace, santé, innovation',
+  eco: 'Économie : emploi, entreprises, prix, budget, consommation',
+  tech: 'High-tech : numérique, intelligence artificielle, smartphones, jeux vidéo, réseaux sociaux, cybersécurité',
+  science: 'Sciences : recherche, espace, découvertes, archéologie',
+  sante: 'Santé : médecine, hôpital, maladies, alimentation, bien-être',
+  ecologie: 'Écologie : climat, environnement, biodiversité, énergie, catastrophes naturelles',
   sport: 'Sport : résultats, compétitions, transferts',
-  culture: 'Culture : cinéma, musique, livres, expositions, patrimoine',
+  culture: 'Culture : cinéma, séries, musique, livres, expositions, patrimoine',
+  people: 'People : célébrités, télé, divertissement, familles royales',
 } as const;
 export type RubricId = keyof typeof RUBRICS;
 const RUBRIC_IDS = Object.keys(RUBRICS) as [RubricId, ...RubricId[]];
@@ -67,7 +71,8 @@ Règles :
 Rubriques :
 ${Object.entries(RUBRICS).map(([k, v]) => `- ${k} : ${v}`).join('\n')}`;
 
-export async function selectStories(items: Item[], perRubric: number): Promise<Story[]> {
+/** already : titres déjà publiés dans l'édition du jour (mises à jour au fil de la journée). */
+export async function selectStories(items: Item[], perRubric: number, already: string[] = []): Promise<Story[]> {
   if (MOCK) return mockSelect(items, perRubric);
   const list = items
     .map((i) => `[${i.n}] (${i.source}) ${i.title}${i.description ? ' — ' + i.description.slice(0, 280) : ''}`)
@@ -81,7 +86,7 @@ export async function selectStories(items: Item[], perRubric: number): Promise<S
       + (cfg.minSources() > 1 ? `\n\nNe retiens que les sujets annoncés par au moins ${cfg.minSources()} médias différents.` : '')
       + editorialNotes(),
     output_config: { effort: EFFORT(), format: betaZodOutputFormat(Selection) },
-    messages: [{ role: 'user', content: `Dépêches du jour :\n\n${list}` }],
+    messages: [{ role: 'user', content: `${already.length ? `Déjà dans l'édition du jour (ne reprends pas ces sujets, sauf fait nouveau important) :\n${already.map((t) => '- ' + t).join('\n')}\n\n` : ''}Dépêches du jour :\n\n${list}` }],
   }));
   if (res.stop_reason === 'refusal') throw new Error('Sélection refusée par le modèle');
   const out = res.parsed_output;
@@ -184,7 +189,11 @@ function guessRubric(t: string): RubricId {
   const s = t.toLowerCase();
   if (/match|ligue|coupe|champion|but |tennis|rugby|football|jo /.test(s)) return 'sport';
   if (/film|festival|musée|album|livre|expo|concert/.test(s)) return 'culture';
-  if (/ia |numérique|appli|fusée|satellite|science|santé|vaccin/.test(s)) return 'tech';
+  if (/climat|pollution|biodiversité|écolog|énergie|canicule|inondation/.test(s)) return 'ecologie';
+  if (/santé|vaccin|hôpital|médecin|maladie|cancer/.test(s)) return 'sante';
+  if (/fusée|satellite|science|chercheur|découverte|espace/.test(s)) return 'science';
+  if (/ia |numérique|appli|smartphone|jeu vidéo|cyber/.test(s)) return 'tech';
+  if (/star|chanteu|acteur|actrice|people|téléréalité/.test(s)) return 'people';
   if (/prix|inflation|emploi|bourse|entreprise|budget|chômage|euros/.test(s)) return 'eco';
   if (/usa|états-unis|chine|ukraine|russie|onu|ue |europe|allemagne|brésil/.test(s)) return 'monde';
   return 'france';

@@ -30,7 +30,7 @@ VIDE=${DB/titre_test/titre_vide}
 psql "$VIDE" -v ON_ERROR_STOP=1 -q -f test/supabase-stub.sql
 DATABASE_URL="$VIDE" npx tsx src/install.ts
 DATABASE_URL="$VIDE" npx tsx src/install.ts
-psql "$VIDE" -tAc "select case when count(*) = 10 then 'OK  base vide installée toute seule (9 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
+psql "$VIDE" -tAc "select case when count(*) = 11 then 'OK  base vide installée toute seule (10 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
 psql "$VIDE" -tAc "select case when count(*) >= 10 then 'OK  sources de départ présentes' else 'ÉCHEC  sources absentes' end from sources"
 
 echo "--- Pilote automatique (réglage par défaut) : l'édition se publie seule"
@@ -51,3 +51,25 @@ echo "--- Rattrapages automatiques : une seule édition par jour"
 psql "$VIDE" -qc "delete from app_settings where key = 'ENGINE_PAUSED'"
 DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --once >/dev/null
 psql "$VIDE" -tAc "select case when summary = 'Édition du jour déjà faite.' then 'OK  rattrapage ignoré quand l’édition du jour existe' else 'ÉCHEC  rattrapage : ' || coalesce(summary, '?') end from engine_runs where kind = 'edition' order by started_at desc limit 1"
+
+echo "--- Mises à jour au fil de la journée"
+# Le plafond de 3 cartes ci-dessus a laissé des dépêches de côté : la mise à jour n'en prend que les importantes (1 carte au plus, un quart du plafond).
+DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --update >/dev/null
+psql "$VIDE" -tAc "select case when (select summary from engine_runs where kind = 'edition' order by started_at desc limit 1) like 'Mise à jour : %' and count(*) = 4
+  and not exists (select r from articles, unnest(raw_item_ids) r group by r having count(*) > 1)
+  then 'OK  mise à jour : une carte importante ajoutée, aucun sujet repris' else 'ÉCHEC  mise à jour (' || count(*) || ' cartes)' end from articles"
+psql "$VIDE" -qc "insert into app_settings (key, value) values ('LIVE_MIN_IMPORTANCE', '10')"
+DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --update >/dev/null
+psql "$VIDE" -tAc "select case when count(*) = 4 then 'OK  seuil d''importance des mises à jour respecté' else 'ÉCHEC  seuil ignoré (' || count(*) || ' cartes)' end from articles"
+psql "$VIDE" -qc "insert into app_settings (key, value) values ('LIVE_UPDATES', '0')"
+DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --update >/dev/null
+psql "$VIDE" -tAc "select case when summary like '%coupées%' then 'OK  mises à jour coupées dans les réglages' else 'ÉCHEC  réglage LIVE_UPDATES ignoré' end from engine_runs where kind = 'edition' order by started_at desc limit 1"
+
+echo "--- App lecteur : rubriques, emoji, messages, badge Premium"
+psql "$VIDE" -tAc "select case when count(*) >= 10 and bool_or(id = 'ecologie') and bool_or(id = 'people') then 'OK  ' || count(*) || ' rubriques, dont Écologie et People' else 'ÉCHEC  rubriques' end from rubrics"
+psql "$VIDE" -tAc "select case when public.app_config()->>'comments_mode' = 'comments' then 'OK  commentaires ouverts par défaut' else 'ÉCHEC  app_config' end"
+psql "$VIDE" -qc "insert into app_settings (key, value) values ('COMMENTS_MODE', 'emoji')"
+psql "$VIDE" -tAc "select case when public.app_config()->>'comments_mode' = 'emoji' then 'OK  mode emoji transmis à l''app' else 'ÉCHEC  mode emoji' end"
+psql "$VIDE" -tAc "select case when exists (select 1 from information_schema.routines r join information_schema.parameters p on p.specific_name = r.specific_name where r.routine_name = 'article_comments' and p.parameter_name = 'premium') then 'OK  badge Premium renvoyé avec les commentaires' else 'ÉCHEC  badge Premium' end"
+psql "$VIDE" -qc "insert into app_messages (title, audience) values ('Bienvenue', 'premium'), ('Ancien', 'all')" -c "update app_messages set active = false where title = 'Ancien'"
+psql "$VIDE" -qtAc "set role anon; select case when count(*) = 1 then 'OK  messages d''accueil : seuls les actifs sont publics' else 'ÉCHEC  messages d''accueil' end from app_messages"

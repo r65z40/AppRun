@@ -7,7 +7,10 @@
  *   5. publication automatique (réglage par défaut, AUTO_PUBLISH=0 pour tout relire avant) ;
  *      les cartes encore en défaut restent « À relire » dans le back office.
  *
- * Usage : npm run engine -- [--date 2026-11-22] [--fixtures test/feeds] [--per-rubric 8]
+ * --update (passages de la journée) : ajoute à l'édition déjà en ligne les sujets nouveaux et importants
+ * des 4 dernières heures, sans reprendre ceux déjà traités. Sans édition du jour, la construit en entier.
+ *
+ * Usage : npm run engine -- [--date 2026-11-22] [--fixtures test/feeds] [--per-rubric 8] [--update]
  */
 import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
@@ -54,12 +57,19 @@ async function edition() {
   }
 
   const ed = await q<{ status: string }>('select status from editions where date = $1', [DATE]);
+  // Mise à jour de la journée : seulement si l'édition du jour existe déjà, sinon on la construit (rattrapage).
+  const UPDATE = args.includes('--update') && !!ed[0] && ed[0].status !== 'building';
+  if (UPDATE && !cfg.liveUpdates()) {
+    log('Mises à jour de la journée coupées (Réglages).');
+    return J.finish('ok', 'Mises à jour de la journée coupées dans les réglages.');
+  }
+  if (UPDATE) log(`Mise à jour de la journée : sujets nouveaux d'importance ${cfg.liveMinImportance()}/10 au moins.`);
   // --once (passages automatiques) : une seule édition par jour, même si GitHub lance plusieurs rattrapages.
   if (args.includes('--once') && ed[0] && ed[0].status !== 'building') {
     log('Édition du jour déjà faite : rattrapage inutile.');
     return J.finish('ok', 'Édition du jour déjà faite.');
   }
-  if (ed[0]?.status === 'published' && !args.includes('--force')) {
+  if (ed[0]?.status === 'published' && !args.includes('--force') && !UPDATE) {
     log('Édition déjà publiée : rien à faire (ajoutez --force pour compléter).');
     return J.finish('ok', 'Édition déjà publiée, rien à faire.');
   }
@@ -71,17 +81,18 @@ async function edition() {
   // Fenêtre : les WINDOW_H dernières heures, jusqu'à maintenant (ou jusqu'au lendemain 6 h pour une date passée).
   const until = new Date(new Date(`${DATE}T06:00:00+01:00`).getTime() + 86400e3);
   const end = until > new Date() ? new Date() : until;
+  const hours = UPDATE ? 4 : WINDOW_H;
   const raws = await q<Raw>(
     `select r.id, r.title, r.description, r.link, r.published_at, s.name as source
        from raw_items r join sources s on s.id = r.source_id
       where coalesce(r.published_at, r.fetched_at) between $1 and $2
       order by coalesce(r.published_at, r.fetched_at) desc limit 400`,
-    [FIXTURES ? new Date(0) : new Date(end.getTime() - WINDOW_H * 3600e3), FIXTURES ? new Date('2100-01-01') : end], // flux d'exemple : dates figées
+    [FIXTURES ? new Date(0) : new Date(end.getTime() - hours * 3600e3), FIXTURES ? new Date('2100-01-01') : end], // flux d'exemple : dates figées
   );
   // Ne pas réécrire un sujet déjà traité dans cette édition.
   const done = new Set((await q<{ id: string }>('select unnest(raw_item_ids)::text as id from articles where edition_date = $1 and status <> $2', [DATE, 'rejected'])).map((r) => r.id));
   const fresh = raws.filter((r) => !done.has(r.id));
-  log(`   ${fetched} titres lus, ${raws.length} publiés dans les ${WINDOW_H} dernières heures, dont ${fresh.length} pas encore traités`);
+  log(`   ${fetched} titres lus, ${raws.length} publiés dans les ${hours} dernières heures, dont ${fresh.length} pas encore traités`);
   if (!fresh.length) return J.finish('ok', `${fetched} titres lus, rien de nouveau à traiter.`, { fetched, window: raws.length, items: 0 });
 
   const items: Item[] = fresh.map((r, k) => ({
@@ -93,20 +104,24 @@ async function edition() {
   }));
 
   log('2/4 Choix des sujets');
-  const proposed = await selectStories(items, PER_RUBRIC);
+  const already = UPDATE ? await q<{ title: string; essential: boolean }>('select title, essential from articles where edition_date = $1 and status <> $2', [DATE, 'rejected']) : [];
+  const proposed = await selectStories(items, PER_RUBRIC, already.map((a) => a.title));
+  // Mise à jour : plus exigeante (importance minimale), et pas plus d'un quart du plafond de cartes par passage.
+  const minImp = UPDATE ? Math.max(cfg.minImportance(), cfg.liveMinImportance()) : cfg.minImportance();
+  const cap = UPDATE ? Math.max(1, Math.ceil(cfg.maxCards() / 4)) : cfg.maxCards();
   // Réglages de la rédaction : importance et nombre de médias minimum, essentiels et total plafonnés.
   const mediaCount = (s: Story) => new Set(s.item_numbers.map((n) => items[n - 1]?.source).filter(Boolean)).size;
   const dropped: { label: string; why: string }[] = [];
-  let ess = 0;
+  let ess = already.filter((a) => a.essential).length;
   const stories = proposed
     .filter((s) => {
-      if (s.importance < cfg.minImportance()) return dropped.push({ label: s.label, why: `importance ${s.importance} < ${cfg.minImportance()}` }), false;
+      if (s.importance < minImp) return dropped.push({ label: s.label, why: `importance ${s.importance} < ${minImp}` }), false;
       if (mediaCount(s) < cfg.minSources()) return dropped.push({ label: s.label, why: `${mediaCount(s)} média(s) < ${cfg.minSources()}` }), false;
       return true;
     })
     .sort((a, b) => Number(b.essential) - Number(a.essential) || b.importance - a.importance)
     .map((s) => (s.essential && ++ess > cfg.maxEssential() ? { ...s, essential: false } : s))
-    .filter((s, k) => (k < cfg.maxCards() ? true : (dropped.push({ label: s.label, why: `plafond de ${cfg.maxCards()} cartes` }), false)));
+    .filter((s, k) => (k < cap ? true : (dropped.push({ label: s.label, why: `plafond de ${cap} cartes` }), false)));
   J.details.dropped = dropped;
   log(`   ${proposed.length} sujets proposés par l'IA, ${stories.length} gardés selon les réglages, sur ${items.length} titres`);
   J.details.stories = stories.map((s) => ({
@@ -171,13 +186,19 @@ async function edition() {
 
   log('4/4 Édition');
   const stats = { fetched, window: raws.length, items: items.length, proposed: proposed.length, stories: stories.length, written, flagged, fixed, failed, model: model(), ai: { ...usage } };
+  const summary = `${UPDATE ? 'Mise à jour : ' : ''}${fetched} titres lus, ${items.length} à traiter, ${stories.length} sujets retenus, ${written} cartes écrites (${fixed} corrigées par l'IA, ${flagged} à relire, ${failed} échecs).`;
+  if (UPDATE) {
+    // L'édition reste telle quelle (statut et statistiques du matin) : seules les nouvelles cartes s'ajoutent.
+    log(`Terminé : ${summary}`);
+    if (failed && !written) process.exitCode = 1;
+    return J.finish(failed && !written ? 'error' : 'ok', summary, stats);
+  }
   // L'édition passe en ligne dès qu'au moins une carte l'est (sinon elle attend la relecture).
   const live = AUTO_PUBLISH && (await q<{ n: number }>(`select count(*)::int as n from articles where edition_date = $1 and status = 'published'`, [DATE]))[0].n > 0;
   await q(
     `update editions set status = $2, stats = $3, published_at = case when $2 = 'published' then now() else published_at end where date = $1`,
     [DATE, live ? 'published' : failed && !written ? 'building' : 'ready', JSON.stringify(stats)], // tout a échoué : le prochain essai refera l'édition
   );
-  const summary = `${fetched} titres lus, ${items.length} à traiter, ${stories.length} sujets retenus, ${written} cartes écrites (${fixed} corrigées par l'IA, ${flagged} à relire, ${failed} échecs).`;
   log(`Terminé : ${summary} ${live ? 'Édition publiée automatiquement.' : 'En attente de validation dans le back office.'}`);
   await J.finish(failed && !written ? 'error' : 'ok', summary, stats);
   if (failed && !written) process.exitCode = 1; // le workflow GitHub échoue et prévient l'équipe

@@ -8,12 +8,12 @@ import { DeviceMotion } from 'expo-sensors';
 import { useFonts, Archivo_400Regular, Archivo_600SemiBold, Archivo_900Black } from '@expo-google-fonts/archivo';
 import { C } from './src/theme';
 import { RUBRICS } from './src/content';
-import { buildColumns, seedComments } from './src/edition';
+import { buildColumns, rubricOf, seedComments } from './src/edition';
 import { Feed } from './src/Feed';
 import { SummarySheet, CommentsSheet } from './src/Sheets';
-import { Bravo, End, Onboarding, Settings, Splash, Toast, type OnbResult, type Prefs } from './src/Screens';
+import { Bravo, End, Onboarding, Settings, Splash, Toast, Welcome, type OnbResult, type Prefs } from './src/Screens';
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
-import { loadEdition, loadFlashes, remoteConfigured } from './src/remote';
+import { loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, type AppMessage } from './src/remote';
 import { Account } from './src/Account';
 import * as acc from './src/account';
 import { isArticle, type Article, type Card, type Comment } from './src/types';
@@ -21,6 +21,8 @@ import { isArticle, type Article, type Card, type Comment } from './src/types';
 type Phase = 'splash' | 'onb' | 'feed';
 type Overlay = null | 'bravo' | 'end' | 'settings';
 type AccountAsk = { reason: string | null; then?: () => void };
+/** Empreinte de l'édition chargée : change quand des infos arrivent ou que l'ordre bouge. */
+const editionSig = () => RUBRICS.map((r) => r.items.map((a) => a.id).join(',')).join('|');
 
 const DWELL_MS = 1200; // une info compte comme lue après ~1 s à l'écran
 
@@ -53,9 +55,35 @@ function Main() {
   const [splashDone, setSplashDone] = useState(false);
   // Base branchée mais aucune édition publiée : on le dit, pour ne pas confondre la démo avec le vrai contenu.
   const demoNote = useRef(false);
-  useEffect(() => { loadEdition().then((d) => { demoNote.current = !d && remoteConfigured; }).finally(() => setLoaded(true)); }, []);
-  useEffect(() => { if (loaded && splashDone && phase === 'splash') setPhase('onb'); }, [loaded, splashDone]);
-  const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded]);
+  const [commentsMode, setCommentsMode] = useState<'comments' | 'emoji'>('comments');
+  useEffect(() => {
+    loadEdition().then((d) => { demoNote.current = !d && remoteConfigured; }).finally(() => setLoaded(true));
+    loadConfig().then((c) => c && setCommentsMode(c.commentsMode));
+  }, []);
+  // Lecteur connecté qui a déjà ses réglages : on saute la présentation.
+  useEffect(() => {
+    if (!loaded || !splashDone || phase !== 'splash') return;
+    const saved = acc.currentMe()?.prefs as Partial<Prefs> | undefined;
+    if (saved?.active?.length) {
+      setP((x) => ({ ...x, ...pickSaved(saved) }));
+      setLimit(saved.quota ?? 8);
+      setPhase('feed');
+    } else setPhase('onb');
+  }, [loaded, splashDone]);
+  // L'édition se complète au fil de la journée : rechargée toutes les 10 minutes et au retour dans l'app.
+  const [edVer, setEdVer] = useState(0);
+  useEffect(() => {
+    if (!remoteConfigured) return;
+    const refresh = () => {
+      const before = editionSig();
+      loadEdition().then((d) => d && editionSig() !== before && setEdVer((v) => v + 1));
+      loadConfig().then((c) => c && setCommentsMode(c.commentsMode));
+    };
+    const t = setInterval(refresh, 600000);
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && refresh());
+    return () => { clearInterval(t); sub.remove(); };
+  }, []);
+  const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded, edVer]);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 8, sound: true, haptic: true, parallax: true, premium: false, time: '7 h 30', adsPersonalized: false });
 
@@ -69,19 +97,22 @@ function Main() {
     const sub = AppState.addEventListener('change', (s) => s === 'active' && refresh());
     return () => { clearInterval(t); sub.remove(); };
   }, []);
-  const cols = useMemo(() => buildColumns(p.active, p.quota, p.premium), [p.active, p.quota, p.premium, flashVer]);
+  // Compte lecteur
+  const me = acc.useMe();
+  const premium = p.premium || !!me?.premium;
+  const cols = useMemo(() => buildColumns(p.active, p.quota, premium, p.taste), [p.active, p.quota, premium, p.taste, flashVer, edVer]);
   const [ri, setRi] = useState(0);
   const [idx, setIdx] = useState<Record<string, number>>({});
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
   const [limit, setLimit] = useState(8);
   const [reactions, setReactions] = useState<Record<string, -1 | 0 | 1>>({});
+  const [myEmoji, setMyEmoji] = useState<Record<string, string>>({});
+  const [welcome, setWelcome] = useState<AppMessage | null>(null);
   const [comments, setComments] = useState<Record<string, Comment[]>>({});
   const [summary, setSummary] = useState<Article | null>(null);
   const [cmts, setCmts] = useState<Article | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [loadingCmts, setLoadingCmts] = useState(false);
-  // Compte lecteur
-  const me = acc.useMe();
   const [account, setAccount] = useState<AccountAsk | null>(null);
   useEffect(() => { acc.restore(); }, []);
   /** Lance l'action si le lecteur est connecté (avec un pseudo si besoin), sinon ouvre « Mon compte » puis la lance. */
@@ -91,24 +122,62 @@ function Main() {
     feel('light');
     setAccount({ reason, then });
   };
-  // Mes likes : chargés à la connexion. Les compteurs reçus incluent déjà mon like, l'app l'ajoute elle-même.
-  const likedBase = useRef(new Set<string>());
+  // Mes likes, dislikes et emoji : chargés à la connexion (et quand l'édition se recharge).
+  // Les compteurs reçus incluent déjà mon like et mon emoji : on les retire, l'app les ajoute elle-même.
   useEffect(() => {
     if (!me) {
       setReactions({});
+      setMyEmoji({});
       return;
     }
-    acc.myLikes().then((ids) => {
-      const all = RUBRICS.flatMap((r) => r.items);
-      ids.forEach((id) => {
-        if (likedBase.current.has(id)) return;
-        likedBase.current.add(id);
+    const all = RUBRICS.flatMap((r) => r.items);
+    acc.myReactions().then((m) => {
+      Object.entries(m).forEach(([id, v]) => {
         const a = all.find((x) => x.id === id);
-        if (a) a.likes = Math.max(0, a.likes - 1);
+        if (a && v === 1) a.likes = Math.max(0, a.likes - 1);
       });
-      setReactions((r) => ({ ...r, ...Object.fromEntries(ids.map((id) => [id, 1 as const])) }));
+      setReactions(m);
     });
-  }, [me?.uid, loaded]);
+    acc.myEmojis().then((m) => {
+      Object.entries(m).forEach(([id, e]) => {
+        const a = all.find((x) => x.id === id);
+        if (a?.emojis?.[e]) a.emojis[e] = Math.max(0, a.emojis[e] - 1);
+      });
+      setMyEmoji(m);
+    });
+  }, [me?.uid, loaded, edVer]);
+  // Réglages du lecteur connecté : repris à la connexion, enregistrés à chaque changement.
+  useEffect(() => {
+    const saved = me?.prefs as Partial<Prefs> | undefined;
+    if (saved?.active?.length) setP((x) => ({ ...x, ...pickSaved(saved) }));
+  }, [me?.uid]);
+  const syncedUid = useRef<string | null>(null);
+  useEffect(() => {
+    if (!me || phase !== 'feed') return;
+    const saved = pickSaved(me.prefs as Partial<Prefs>);
+    // Juste après la connexion, les réglages enregistrés priment : on attend qu'ils soient appliqués.
+    if (syncedUid.current !== me.uid) { syncedUid.current = me.uid; if (saved.active) return; }
+    const next = { active: p.active, quota: p.quota, time: p.time, taste: p.taste ?? {} };
+    if (JSON.stringify(next) !== JSON.stringify({ taste: {}, ...saved })) acc.savePrefs(next).catch(() => {});
+  }, [me?.uid, phase, p.active, p.quota, p.time, p.taste]);
+  // Message de l'équipe à l'ouverture : le plus récent qui s'adresse à ce lecteur et qu'il n'a pas encore vu.
+  useEffect(() => {
+    if (phase !== 'feed') return;
+    let alive = true;
+    Promise.all([loadMessages(), acc.getLocal('titre.seenMessages')]).then(([list, raw]) => {
+      const seenIds: string[] = raw ? JSON.parse(raw) : [];
+      const m = acc.currentMe();
+      const fits = (x: AppMessage) => x.audience === 'all' || (x.audience === 'premium' && premium) || (x.audience === 'free' && !premium) || (x.audience === 'members' && !!m) || (x.audience === 'guests' && !m);
+      const msg = list.find((x) => fits(x) && !seenIds.includes(x.id));
+      if (alive && msg) setTimeout(() => alive && setWelcome(msg), 900);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [phase, me?.uid]);
+  const closeWelcome = () => {
+    const id = welcome?.id;
+    setWelcome(null);
+    if (id) acc.getLocal('titre.seenMessages').then((raw) => acc.setLocal('titre.seenMessages', JSON.stringify([...(raw ? JSON.parse(raw) : []), id].slice(-50))));
+  };
   const readMs = useRef(0);
   const shownAt = useRef(Date.now());
   const bravoShown = useRef(false);
@@ -213,20 +282,33 @@ function Main() {
     }
   }, [seen, limit, phase, overlay]);
 
+  /** Like (1) ou dislike (-1) ; un second appui annule. Le goût de la rubrique suit, pour ordonner l'édition. */
   const onReact = (a: Article, v: 1 | -1) => {
-    if (!acc.isLive(a.id)) {
-      setReactions((r) => ({ ...r, [a.id]: r[a.id] === v ? 0 : v }));
-      feel(v === 1 ? 'light' : 'select', v === 1 ? 'pop' : 'thud');
-      return;
-    }
-    withAccount('Créez un compte gratuit pour aimer les infos et commenter.', () => {
-      const on = reactions[a.id] !== 1;
-      setReactions((r) => ({ ...r, [a.id]: on ? 1 : 0 }));
-      feel(on ? 'light' : 'select', on ? 'pop' : 'thud');
-      acc.like(a.id, on).catch((e) => {
-        setReactions((r) => ({ ...r, [a.id]: on ? 0 : 1 }));
-        showToast(e instanceof acc.UserError ? e.message : 'Like non enregistré. Réessayez.');
+    const apply = () => {
+      const prev = reactions[a.id] ?? 0;
+      const next: -1 | 0 | 1 = prev === v ? 0 : v;
+      setReactions((r) => ({ ...r, [a.id]: next }));
+      const rub = rubricOf(a)?.id;
+      if (rub) setP((x) => ({ ...x, taste: { ...x.taste, [rub]: (x.taste?.[rub] ?? 0) + next - prev } }));
+      feel(next === 1 ? 'medium' : next === -1 ? 'light' : 'select', next === 1 ? 'pop' : next === -1 ? 'thud' : null);
+      return { prev, next };
+    };
+    if (!acc.isLive(a.id)) return void apply();
+    withAccount('Créez un compte gratuit pour réagir aux infos et commenter.', () => {
+      const { prev, next } = apply();
+      acc.react(a.id, next).catch((e) => {
+        setReactions((r) => ({ ...r, [a.id]: prev }));
+        showToast(e instanceof acc.UserError ? e.message : 'Réaction non enregistrée. Réessayez.');
       });
+    });
+  };
+  const onEmoji = (a: Article, e: string | null) => {
+    const prev = myEmoji[a.id] ?? null;
+    const set = (v: string | null) => setMyEmoji((m) => { const n = { ...m }; if (v) n[a.id] = v; else delete n[a.id]; return n; });
+    if (!acc.isLive(a.id)) return set(e);
+    withAccount('Créez un compte gratuit pour réagir aux infos.', () => {
+      set(e);
+      acc.setEmoji(a.id, e).catch(() => { set(prev); showToast('Réaction non enregistrée. Réessayez.'); });
     });
   };
   const commentsOf = (a: Article) => comments[a.id] ?? (acc.isLive(a.id) ? [] : seedComments());
@@ -312,12 +394,13 @@ function Main() {
     setP((x) => ({ ...x, active: r.active.length ? r.active : x.active, quota: r.quota, time: r.time, adsPersonalized: r.adsPersonalized, premium: !!r.premium }));
     setLimit(r.quota);
     setPhase('feed');
+    if (r.account) setTimeout(() => setAccount({ reason: 'Votre compte gratuit : une édition qui apprend de vos likes et dislikes, sur tous vos appareils.' }), 500);
   };
 
   const onSave = (np: Prefs) => {
     // On revient sur la même carte si elle existe encore dans le nouveau fil.
     const prev = current;
-    const next = buildColumns(np.active, np.quota, np.premium);
+    const next = buildColumns(np.active, np.quota, np.premium || !!me?.premium, np.taste);
     let nri = Math.min(ri, next.length - 1);
     const nidx: Record<string, number> = {};
     if (prev) {
@@ -364,7 +447,7 @@ function Main() {
     <View style={{ flex: 1, backgroundColor: C.night }}>
       {phase === 'feed' ? (
         <Feed
-          key={cols.map((c) => c.id).join('|') + (p.premium ? 'p' : '')}
+          key={cols.map((c) => c.id).join('|') + (premium ? 'p' : '')}
           W={W}
           H={H}
           cols={cols}
@@ -387,6 +470,9 @@ function Main() {
           onRead={openRead}
           onComments={openComments}
           onReact={onReact}
+          emojiMode={commentsMode === 'emoji'}
+          myEmoji={myEmoji}
+          onEmoji={onEmoji}
           onToast={showToast}
           onSettings={() => { feel('light'); setOverlay('settings'); }}
         />
@@ -401,6 +487,7 @@ function Main() {
         onReact={(v) => summary && onReact(summary, v)}
         onComments={() => { if (summary) { const a = summary; setSummary(null); setTimeout(() => openComments(a), 250); } }}
         commentCount={summary ? commentCount(summary) : 0}
+        emojiMode={commentsMode === 'emoji'}
       />
       <CommentsSheet
         a={cmts}
@@ -449,6 +536,7 @@ function Main() {
         />
       ) : null}
 
+      {welcome && phase === 'feed' && !overlay ? <Welcome title={welcome.title} body={welcome.body} onClose={closeWelcome} /> : null}
       {phase === 'onb' ? <Onboarding W={W} onDone={onOnb} /> : null}
       {phase === 'splash' ? <Splash onDone={() => setSplashDone(true)} /> : null}
 
@@ -457,6 +545,17 @@ function Main() {
   );
 }
 
+
+/** Les réglages qui suivent le lecteur d'un appareil à l'autre. */
+function pickSaved(s: Partial<Prefs> | undefined): Partial<Prefs> {
+  if (!s) return {};
+  const o: Partial<Prefs> = {};
+  if (Array.isArray(s.active) && s.active.length) o.active = s.active;
+  if (typeof s.quota === 'number') o.quota = s.quota;
+  if (typeof s.time === 'string') o.time = s.time;
+  if (s.taste && typeof s.taste === 'object') o.taste = s.taste;
+  return o;
+}
 
 function Framed({ children }: { children: React.ReactNode }) {
   const { width } = useWindowDimensions();

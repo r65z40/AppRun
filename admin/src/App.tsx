@@ -1,8 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { api, ENGINE_URL, type AuditEntry, type Dashboard, type Reader, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type Reader, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'dashboard' | 'readers' | 'audit' | 'edition' | 'flash' | 'engine' | 'sources' | 'moderation' | 'team' | 'settings';
-const PAGES: [Page, string][] = [['dashboard', 'Tableau de bord'], ['edition', 'Édition'], ['flash', 'Dernière minute'], ['engine', 'Moteur'], ['sources', 'Sources'], ['moderation', 'Modération'], ['readers', 'Lecteurs'], ['team', 'Équipe'], ['audit', 'Journal'], ['settings', 'Réglages']];
+type Page = 'dashboard' | 'readers' | 'audit' | 'edition' | 'flash' | 'messages' | 'engine' | 'sources' | 'moderation' | 'team' | 'settings';
+const PAGES: [Page, string][] = [['dashboard', 'Tableau de bord'], ['edition', 'Édition'], ['flash', 'Dernière minute'], ['messages', 'Messages'], ['engine', 'Moteur'], ['sources', 'Sources'], ['moderation', 'Modération'], ['readers', 'Lecteurs'], ['team', 'Équipe'], ['audit', 'Journal'], ['settings', 'Réglages']];
 const LIMITS = { title: 60, key: 140, fact: 90, summary: 280 };
 const SUMMARY_HEADS = ['Contexte', 'Ce qui change', 'Et après'];
 
@@ -58,6 +58,7 @@ export default function App() {
         {page === 'dashboard' && allowed(me.role, page) && <DashboardPage go={setPage} />}
         {page === 'edition' && allowed(me.role, page) && <EditionPage say={say} />}
         {page === 'flash' && allowed(me.role, page) && <FlashPage say={say} />}
+        {page === 'messages' && allowed(me.role, page) && <MessagesPage say={say} />}
         {page === 'engine' && allowed(me.role, page) && <EnginePage />}
         {page === 'sources' && allowed(me.role, page) && <SourcesPage say={say} />}
         {page === 'moderation' && <ModerationPage say={say} />}
@@ -507,7 +508,7 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
       </header>
       <div className={`status-bar ${paused ? 'off' : ''}`}>
         <b>{paused ? 'Moteur en pause' : auto ? 'Pilote automatique : l’IA publie seule' : 'Relecture : l’IA prépare, vous publiez'}</b>
-        <span className="muted small">{paused ? 'Ni édition ni Dernière minute tant que la pause est active.' : 'Édition chaque matin à 5 h 30, Dernière minute toutes les 10 minutes de 6 h à 23 h.'}</span>
+        <span className="muted small">{paused ? 'Ni édition ni Dernière minute tant que la pause est active.' : 'Édition chaque matin à 5 h 30, complétée toutes les heures de 9 h à 22 h ; Dernière minute toutes les 10 minutes de 6 h à 23 h.'}</span>
       </div>
 
       <section className="panel settings">
@@ -542,12 +543,23 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
       </section>
 
       <section className="panel settings">
+        <h2>Édition : mises à jour de la journée</h2>
+        {Toggle({ k: 'LIVE_UPDATES', label: 'Compléter l’édition au fil de la journée', help: "Toutes les heures de 9 h à 22 h, l'IA lit les dépêches des 4 dernières heures et ajoute les sujets nouveaux et importants, sans reprendre ceux déjà publiés. Dans l'app, les infos les plus importantes passent toujours en tête. Coût : un choix de sujets par heure, plus une carte par sujet ajouté.", def: true })}
+        {Pick({ k: 'LIVE_MIN_IMPORTANCE', label: 'Importance minimum pour une mise à jour', help: "Plus haut = moins d'ajouts, seulement les sujets qui comptent vraiment (et moins de coût). Au plus un quart du plafond de cartes par passage.", def: '6', options: nums(range(3, 10), ' sur 10') })}
+      </section>
+
+      <section className="panel settings">
         <h2>Dernière minute</h2>
         {Toggle({ k: 'FLASH_ENABLED', label: 'Activée', help: 'Le moteur cherche les infos majeures toutes les 10 minutes, de 6 h à 23 h.', def: true })}
         {Toggle({ k: 'FLASH_AUTO_PUBLISH', label: 'Publier sans relecture', help: 'Sinon, les infos arrivent masquées et vous les mettez en ligne depuis la page Dernière minute.', def: true })}
         {Pick({ k: 'FLASH_MIN_IMPORTANCE', label: 'Importance minimum', help: 'Seuil pour publier une info en Dernière minute (sur 10).', def: '8', options: nums(range(6, 10), ' sur 10') })}
         {Pick({ k: 'FLASH_MIN_SOURCES', label: 'Médias minimum', help: 'Nombre de médias différents qui doivent annoncer le fait.', def: '2', options: nums([1, 2, 3, 4]) })}
         {Pick({ k: 'FLASH_MAX_PER_DAY', label: 'Infos par jour, au plus', help: 'Au-delà, le moteur arrête de publier jusqu’au lendemain.', def: '12', options: nums([3, 5, 8, 12, 20, 30, 50]) })}
+      </section>
+
+      <section className="panel settings">
+        <h2>Réactions des lecteurs</h2>
+        {Pick({ k: 'COMMENTS_MODE', label: 'Sous chaque info', help: "Emoji : les commentaires disparaissent de l'app (ceux déjà écrits sont gardés, pas affichés) et chaque lecteur choisit une réaction parmi ❤️ 😂 😮 😢 😡 👏. Les likes et dislikes restent dans les deux cas.", def: 'comments', options: [['comments', 'Commentaires'], ['emoji', 'Réactions emoji seulement']] })}
       </section>
 
       <section className="panel settings">
@@ -562,6 +574,61 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
         {Key({ k: "UNSPLASH_ACCESS_KEY", label: "Clé Unsplash (photos)", help: "Facultatif. Une vraie photo libre de droits par article, créditée à son auteur ; sans clé, les photos d'ambiance de l'app. Collez l'« Access Key ».", link: ['https://unsplash.com/oauth/applications/new', 'Créer une clé gratuite'] })}
         {Key({ k: "PEXELS_API_KEY", label: "Clé Pexels (ancienne)", help: "Seulement si vous en avez déjà une : Pexels ne délivre plus de nouvelles clés. Utilisée si Unsplash ne trouve rien.", link: ['https://www.pexels.com/api/', 'Pexels'] })}
       </section>
+    </>
+  );
+}
+
+/* ---------------- Messages à l'ouverture de l'app ---------------- */
+const emptyMsg = { title: '', body: '', audience: 'all' as Audience, days: '' };
+function MessagesPage({ say }: { say: (m: string) => void }) {
+  const [list, setList] = useState<AppMessage[]>([]);
+  const [form, setForm] = useState(emptyMsg);
+  const load = () => api.messages().then(setList).catch((e) => say(e instanceof Error ? e.message : 'Lecture impossible'));
+  useEffect(() => { load(); }, []);
+  const live = (m: AppMessage) => m.active && (!m.ends_at || new Date(m.ends_at) > new Date());
+  return (
+    <>
+      <header className="head">
+        <div>
+          <div className="eyebrow">Messages</div>
+          <h1>Message à l'ouverture de l'app</h1>
+          <p className="muted">Une carte s'affiche une seule fois pour chaque lecteur, à sa prochaine ouverture de l'app. Choisissez à qui elle s'adresse.</p>
+        </div>
+      </header>
+      <form className="panel addform" onSubmit={async (e) => {
+        e.preventDefault();
+        const days = Number(form.days);
+        await api.saveMessage({ title: form.title.trim(), body: form.body.trim(), audience: form.audience, active: true, ends_at: days > 0 ? new Date(Date.now() + days * 86400e3).toISOString() : null })
+          .then(() => { say('Message en ligne'); setForm(emptyMsg); load(); })
+          .catch((err) => say(err instanceof Error ? err.message : 'Enregistrement impossible'));
+      }}>
+        <h2>Nouveau message</h2>
+        <label>Titre <Count v={form.title} max={80} /><input value={form.title} maxLength={80} onChange={(e) => setForm({ ...form, title: e.target.value })} required placeholder="Nouveau : les réactions emoji" /></label>
+        <label>Texte <Count v={form.body} max={400} /><textarea value={form.body} maxLength={400} rows={3} onChange={(e) => setForm({ ...form, body: e.target.value })} /></label>
+        <div className="row3">
+          <label>Pour qui<select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value as Audience })}>{Object.entries(AUDIENCES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+          <label>Pendant<select value={form.days} onChange={(e) => setForm({ ...form, days: e.target.value })}><option value="">Jusqu'à ce que je l'arrête</option>{[1, 3, 7, 14, 30].map((d) => <option key={d} value={d}>{d} jour{d > 1 ? 's' : ''}</option>)}</select></label>
+          <span />
+        </div>
+        <div><button className="btn primary">Mettre en ligne</button></div>
+      </form>
+      {list.length ? (
+        <div className="flashes">
+          {list.map((m) => (
+            <div key={m.id} className={`flash panel ${live(m) ? '' : 'off'}`}>
+              <div className="flash-body">
+                <div className="muted small">{AUDIENCES[m.audience]} · {ago(m.created_at)}{m.ends_at ? ` · jusqu'au ${new Date(m.ends_at).toLocaleDateString('fr-FR')}` : ''}{live(m) ? null : <span className="pill rejected" style={{ marginLeft: 8 }}>Arrêté</span>}</div>
+                <b>{m.title}</b>
+                {m.body ? <p>{m.body}</p> : null}
+              </div>
+              <div className="flash-actions">
+                {live(m) ? <button className="btn sm" onClick={async () => { await api.saveMessage({ id: m.id, active: false }); load(); say('Message arrêté'); }}>Arrêter</button> : null}
+                <button className="btn sm ghost" onClick={async () => { await api.deleteMessage(m.id); load(); say('Message supprimé'); }}>Supprimer</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : <p className="muted">Aucun message pour l'instant.</p>}
     </>
   );
 }

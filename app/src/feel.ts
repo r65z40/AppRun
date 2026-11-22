@@ -20,8 +20,8 @@ export const prefs = { sound: true, haptic: true };
 
 export async function initFeel() {
   try {
-    // Les sons respectent le mode silencieux du téléphone.
-    await setAudioModeAsync({ playsInSilentMode: false });
+    // Les sons respectent le mode silencieux du téléphone et se mêlent à la musique en cours sans la couper.
+    await setAudioModeAsync({ playsInSilentMode: false, interruptionMode: 'mixWithOthers' });
   } catch {}
   (Object.keys(SOURCES) as Sound[]).forEach((k) => {
     try {

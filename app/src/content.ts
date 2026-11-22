@@ -15,6 +15,17 @@ export const PHOTOS = {
   lampe: require('../assets/photos/lampe.jpg'),
 };
 
+/** Toutes les rubriques proposées (remplacée par la liste de la base quand elle est branchée). */
+export const RUBRIC_LIST: { id: string; name: string }[] = [
+  { id: 'france', name: 'France' }, { id: 'monde', name: 'Monde' }, { id: 'eco', name: 'Économie' },
+  { id: 'tech', name: 'High-tech' }, { id: 'science', name: 'Sciences' }, { id: 'sante', name: 'Santé' },
+  { id: 'ecologie', name: 'Écologie' }, { id: 'sport', name: 'Sport' }, { id: 'culture', name: 'Culture' },
+  { id: 'people', name: 'People' },
+];
+
+/** Réactions emoji proposées quand l'équipe remplace les commentaires (même liste que la base). */
+export const EMOJIS = ['❤️', '😂', '😮', '😢', '😡', '👏'];
+
 export const RUBRICS: Rubric[] = [
  {
   "id": "france",
@@ -297,7 +308,7 @@ export const RUBRICS: Rubric[] = [
  },
  {
   "id": "tech",
-  "name": "Tech & Science",
+  "name": "High-tech",
   "items": [
    {
     "id": "tech-0",

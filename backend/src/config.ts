@@ -32,6 +32,10 @@ export const cfg = {
   publishFlagged: () => on('PUBLISH_FLAGGED', false),
   publishMinImportance: () => num('PUBLISH_MIN_IMPORTANCE', 1, 1, 10),
 
+  // Mises à jour de l'édition au fil de la journée
+  liveUpdates: () => on('LIVE_UPDATES', true),
+  liveMinImportance: () => num('LIVE_MIN_IMPORTANCE', 6, 1, 10),
+
   // Dernière minute
   flashEnabled: () => on('FLASH_ENABLED', true),
   flashAutoPublish: () => on('FLASH_AUTO_PUBLISH', true),
@@ -51,6 +55,7 @@ export function snapshot(kind: 'edition' | 'flash') {
         ...common, fenetre_h: cfg.windowHours(), par_rubrique: cfg.perRubric(), cartes_max: cfg.maxCards(), essentiels_max: cfg.maxEssential(),
         importance_min: cfg.minImportance(), medias_min: cfg.minSources(), pilote_auto: cfg.autoPublish(), autocorrection: cfg.autoFix(),
         publier_alertes: cfg.publishFlagged(), importance_min_publication: cfg.publishMinImportance(),
+        mises_a_jour: cfg.liveUpdates(), importance_min_mise_a_jour: cfg.liveMinImportance(),
       }
     : {
         ...common, active: cfg.flashEnabled(), publication_auto: cfg.flashAutoPublish(), importance_min: cfg.flashMinImportance(),

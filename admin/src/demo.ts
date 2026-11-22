@@ -1,5 +1,5 @@
 // Données fictives : le back office fonctionne sans Supabase pour qu'on puisse l'essayer.
-import type { Api, Article, AuditEntry, Dashboard, Comment, EngineRun, Setting, Edition, Flash, Profile, Report, Source } from './data';
+import type { Api, AppMessage, Article, AuditEntry, Dashboard, Comment, EngineRun, Setting, Edition, Flash, Profile, Report, Source } from './data';
 
 const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 const yday = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date(Date.now() - 86400e3));
@@ -58,6 +58,9 @@ const fl = (min: number, title: string, sentence: string, srcs: string[], extra:
   sources: srcs.map((s) => ({ source: s, url: `https://exemple.test/${s.toLowerCase().replace(/\W+/g, '-')}` })),
   published_at: new Date(Date.now() - min * 60000).toISOString(), created_at: new Date(Date.now() - min * 60000).toISOString(), ...extra,
 });
+let messages: AppMessage[] = [
+  { id: 'm1', title: 'Nouveau : réagissez avec un emoji', body: 'Touchez le visage sous une info pour choisir votre réaction.', audience: 'all', active: false, ends_at: null, created_at: new Date(Date.now() - 86400e3).toISOString() },
+];
 let flashes: Flash[] = [
   fl(12, 'Séisme de magnitude 6,1 au large de la Grèce', 'La secousse a été ressentie jusqu’à Athènes. Aucune victime signalée pour l’instant selon les autorités grecques.', ['franceinfo', 'RFI']),
   fl(74, 'La BCE baisse ses taux de 0,25 point', 'Le principal taux directeur passe à 1,75 %. C’est la troisième baisse depuis l’été.', ['Les Echos', 'Le Monde'], { rubric_id: 'eco', importance: 9 }),
@@ -144,6 +147,12 @@ export function demoApi(): Api {
       onStep(`Terminé : ${fresh.length} brouillons ajoutés${flagged ? `, dont ${flagged} à relire` : ''}.`);
     },
     runs: () => wait(runs),
+    messages: () => wait(messages),
+    async saveMessage(m) {
+      if (m.id) messages = messages.map((x) => (x.id === m.id ? { ...x, ...m } : x));
+      else messages = [{ id: `m${Date.now()}`, title: '', body: '', audience: 'all', active: true, ends_at: null, created_at: new Date().toISOString(), ...m }, ...messages];
+    },
+    async deleteMessage(id) { messages = messages.filter((x) => x.id !== id); },
     flashes: () => wait(flashes),
     async saveFlash(f) {
       if (f.id) flashes = flashes.map((x) => (x.id === f.id ? { ...x, ...f } : x));
