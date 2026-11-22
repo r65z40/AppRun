@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, DRAWER_MS } from './theme';
 import { GradButton, st } from './ui';
 import { feel } from './feel';
-import { resetPassword, setPseudo, signIn, signOut, signUp, useMe, UserError } from './account';
+import { blockedCount, resetPassword, setPseudo, signIn, signOut, signUp, unblockAll, useMe, UserError } from './account';
 
 const DRAWER = Easing.bezier(0.32, 0.72, 0, 1);
 type Mode = 'in' | 'up' | 'confirm' | 'pseudo' | 'me';
@@ -23,6 +23,8 @@ export function Account({ W, reason, onClose, onReady, onToast }: {
   const [pseudo, setPs] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState(0);
+  useEffect(() => { if (mode === 'me') blockedCount().then(setBlocked); }, [mode]);
   const x = useSharedValue(W);
   useEffect(() => { x.value = withTiming(0, { duration: DRAWER_MS, easing: DRAWER }); }, []);
   const a = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
@@ -112,6 +114,11 @@ export function Account({ W, reason, onClose, onReady, onToast }: {
                 <View style={[styles.row, { borderBottomWidth: 0 }]}><Text style={styles.rl}>Adresse</Text><Text style={styles.rv} numberOfLines={1}>{me.email}</Text></View>
               </View>
               <Pressable onPress={() => { setPs(me.pseudo ?? ''); setMode('pseudo'); }} hitSlop={8}><Text style={styles.link}>Changer de pseudo</Text></Pressable>
+              {blocked ? (
+                <Pressable onPress={() => run(async () => { await unblockAll(); setBlocked(0); onToast('Vous revoyez les commentaires de tout le monde.'); })} hitSlop={8}>
+                  <Text style={styles.link}>Débloquer {blocked > 1 ? `les ${blocked} comptes bloqués` : 'le compte bloqué'}</Text>
+                </Pressable>
+              ) : null}
               <Pressable onPress={() => { signOut(); feel('light'); onToast('Vous êtes déconnecté.'); leave(onClose); }} hitSlop={8}>
                 <Text style={[styles.link, { color: C.coral }]}>Se déconnecter</Text>
               </Pressable>

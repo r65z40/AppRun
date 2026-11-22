@@ -116,11 +116,11 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
   );
 }
 
-export function CommentsSheet({ a, open, onClose, H, comments, total, loading, onSend, onVote, onFlag, onDelete }: {
+export function CommentsSheet({ a, open, onClose, H, comments, total, loading, onSend, onVote, onFlag, onDelete, onBlock }: {
   a: Article | null; open: boolean; onClose: () => void; H: number; comments: Comment[]; total: number; loading?: boolean;
   /** Envoie le commentaire ; renvoie son id (pour l'animer) ou null si l'envoi n'a pas eu lieu. */
   onSend: (text: string) => Promise<string | null>;
-  onVote: (c: Comment, v: -1 | 0 | 1) => void; onFlag: (c: Comment) => void; onDelete: (c: Comment) => void;
+  onVote: (c: Comment, v: -1 | 0 | 1) => void; onFlag: (c: Comment) => void; onDelete: (c: Comment) => void; onBlock: (c: Comment) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [sort, setSort] = useState<'pert' | 'rec'>('pert');
@@ -163,7 +163,7 @@ export function CommentsSheet({ a, open, onClose, H, comments, total, loading, o
           {loading && !comments.length ? <Text style={[styles.voteTxt, { textAlign: 'center', paddingVertical: 30 }]}>Chargement…</Text> : null}
           {!loading && !comments.length ? <Text style={[styles.voteTxt, { textAlign: 'center', paddingVertical: 30, fontSize: 14 }]}>Aucun commentaire pour l’instant. Donnez le premier avis.</Text> : null}
           {list.map((c) => (
-            <CommentRow key={c.id} c={c} fresh={c.id === fresh} onVote={(v) => vote(c, v)} onFlag={() => (c.own ? onDelete(c) : onFlag(c))} />
+            <CommentRow key={c.id} c={c} fresh={c.id === fresh} onVote={(v) => vote(c, v)} onFlag={() => (c.own ? onDelete(c) : onFlag(c))} onBlock={() => onBlock(c)} />
           ))}
         </ScrollView>
         <View style={[styles.compose, { paddingBottom: Math.max(16, insets.bottom + 4) }]}>
@@ -192,7 +192,7 @@ export function CommentsSheet({ a, open, onClose, H, comments, total, loading, o
   );
 }
 
-function CommentRow({ c, fresh, onVote, onFlag }: { c: Comment; fresh: boolean; onVote: (v: 1 | -1) => void; onFlag: () => void }) {
+function CommentRow({ c, fresh, onVote, onFlag, onBlock }: { c: Comment; fresh: boolean; onVote: (v: 1 | -1) => void; onFlag: () => void; onBlock: () => void }) {
   const t = useSharedValue(fresh ? 60 : 0);
   useEffect(() => {
     if (fresh) t.value = withSpring(0, { duration: 500, dampingRatio: 0.8 });
@@ -215,7 +215,12 @@ function CommentRow({ c, fresh, onVote, onFlag }: { c: Comment; fresh: boolean; 
           <Icon name="down" size={15} color={c.mine === -1 ? C.coral : C.text2} fill={c.mine === -1 ? C.coral : 'none'} />
           <Text style={styles.voteTxt}>{c.dislikes + (c.mine === -1 ? 1 : 0)}</Text>
         </Pressable>
-        <Pressable onPress={onFlag} style={[styles.vote, { marginLeft: 'auto' }]} hitSlop={8}>
+        {c.own ? null : (
+          <Pressable onPress={onBlock} style={[styles.vote, { marginLeft: 'auto' }]} hitSlop={8} accessibilityLabel={`Ne plus voir les commentaires de ${c.who}`}>
+            <Text style={styles.voteTxt}>Bloquer</Text>
+          </Pressable>
+        )}
+        <Pressable onPress={onFlag} style={[styles.vote, c.own ? { marginLeft: 'auto' } : null]} hitSlop={8}>
           {c.own ? null : <Icon name="flag" size={15} color={C.text2} />}
           <Text style={styles.voteTxt}>{c.own ? 'Supprimer' : 'Signaler'}</Text>
         </Pressable>

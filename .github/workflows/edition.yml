@@ -11,10 +11,15 @@ on:
 
 concurrency: edition
 
+# issues : ouvrir un ticket (et donc un e-mail au propriétaire du dépôt) si le moteur plante.
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   engine:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: backend
@@ -27,6 +32,8 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
       - name: Construire l'édition
+        id: first
+        continue-on-error: true
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -35,3 +42,27 @@ jobs:
           AUTO_PUBLISH: ${{ vars.AUTO_PUBLISH }}
           TITRE_MODEL: ${{ vars.TITRE_MODEL }}
         run: npm run engine -- ${{ inputs.date && format('--date {0}', inputs.date) || '' }}
+      # Panne passagère (API saturée, média injoignable…) : on réessaie seul 10 minutes plus tard.
+      - name: Nouvel essai si le premier a échoué
+        if: steps.first.outcome == 'failure'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          AUTO_PUBLISH: ${{ vars.AUTO_PUBLISH }}
+          TITRE_MODEL: ${{ vars.TITRE_MODEL }}
+        run: sleep 600 && npm run engine -- ${{ inputs.date && format('--date {0}', inputs.date) || '' }}
+      - name: Prévenir l'équipe si le moteur plante
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: 'Moteur en panne : Édition du jour'
+        run: |
+          # Un seul ticket ouvert à la fois : on n'en recrée pas tant que le précédent n'est pas fermé.
+          if [ -z "$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number -q '.[].number')" ]; then
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" --body "Le passage du $(TZ=Europe/Paris date '+%d/%m à %H:%M') a échoué.
+
+          Ce qui s'est passé : $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          Le détail est aussi dans le back office, page Moteur. Fermez ce ticket une fois le problème réglé : le prochain plantage en ouvrira un nouveau."
+          fi

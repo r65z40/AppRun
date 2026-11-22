@@ -1,5 +1,5 @@
 // Données fictives : le back office fonctionne sans Supabase pour qu'on puisse l'essayer.
-import type { Api, Article, Comment, EngineRun, Setting, Edition, Flash, Profile, Report, Source } from './data';
+import type { Api, Article, AuditEntry, Dashboard, Comment, EngineRun, Setting, Edition, Flash, Profile, Report, Source } from './data';
 
 const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 const yday = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date(Date.now() - 86400e3));
@@ -99,6 +99,12 @@ const readers: Profile[] = [{ id: 'u0', pseudo: 'Camille_R', role: 'reader', pre
 
 const wait = <T>(v: T) => new Promise<T>((r) => setTimeout(() => r(structuredClone(v)), 120));
 let signed = false;
+const audit: AuditEntry[] = [
+  { at: at(7), who: 'IA / moteur', action: 'Commentaire masqué', target: '« Encore une grève, ils exagèrent vraiment tous ces… »', detail: 'IA : propos généralisant et agressif envers un groupe.' },
+  { at: at(7), who: 'IA / moteur', action: 'Commentaire rétabli', target: '« Les sources en un tap, c’est vraiment pratique. »', detail: 'IA : avis positif, aucun problème.' },
+  { at: at(95), who: 'redaction_matin', action: 'Info publiée', target: 'Inflation à 1,4 % sur un an', detail: null },
+  { at: at(300), who: 'fen', action: 'Réglage modifié', target: 'AUTO_PUBLISH', detail: '1' },
+];
 
 export function demoApi(): Api {
   return {
@@ -149,6 +155,25 @@ export function demoApi(): Api {
     async resolveReport(r, hide) { if (hide) comments = comments.map((c) => (c.id === r.comment_id ? { ...c, status: 'hidden' } : c)); reports = reports.map((x) => (x.comment_id === r.comment_id ? { ...x, resolved: true } : x)); },
     comments: () => wait(comments),
     async setComment(id, status) { comments = comments.map((c) => (c.id === id ? { ...c, status } : c)); },
+    async setBanned(id, ban) {
+      const p = readers.find((x) => x.id === id) ?? { id, pseudo: comments.find((c) => c.user_id === id)?.pseudo ?? null, role: 'reader' as const, premium: false, created_at: iso(20) };
+      if (!readers.includes(p)) readers.push(p);
+      p.banned = ban;
+      if (ban) comments = comments.map((c) => (c.user_id === id ? { ...c, status: 'hidden' } : c));
+    },
+    banned: () => wait(readers.filter((p) => p.banned)),
+    dashboard: () => wait<Dashboard>({
+      active_today: 1284, active_7: 4610, active_30: 9873, accounts: 742, accounts_7: 96, premium: 0, comments_7: 318, likes_7: 2240,
+      reports_open: reports.filter((r) => !r.resolved).length, banned: readers.filter((p) => p.banned).length, ai_today: 1.84, ai_7: 12.9, ai_30: 51.3,
+      last_runs: [{ kind: 'edition', status: 'ok', started_at: at(15 * 60), finished_at: at(15 * 60 - 6), summary: runs[2].summary }, { kind: 'flash', status: 'error', started_at: at(9), finished_at: at(8), summary: 'Échec : clé Claude refusée (exemple de panne)' }],
+    }),
+    uploadPhoto: async (file) => URL.createObjectURL(file),
+    topArticles: () => wait(articles.slice(0, 4).map((a, i) => ({ title: a.title, rubric_id: a.rubric_id, likes: 412 - i * 87, comments: 38 - i * 9 }))),
+    readers: (search) => wait([...team, ...readers, ...comments.map((c) => ({ id: c.user_id, pseudo: c.pseudo ?? null, role: 'reader' as const, premium: false, created_at: iso(40) } as Profile))]
+      .filter((p, i, all) => all.findIndex((x) => x.id === p.id) === i && (!search || p.pseudo?.toLowerCase().includes(search.toLowerCase())))
+      .map((p) => ({ ...p, banned: !!p.banned, email: `${(p.pseudo ?? 'lecteur').toLowerCase()}@exemple.fr`, last_seen: today, comments: comments.filter((c) => c.user_id === p.id).length, hidden: comments.filter((c) => c.user_id === p.id && c.status === 'hidden').length, reports: reports.filter((r) => comments.find((c) => c.id === r.comment_id)?.user_id === p.id).length }))),
+    async deleteUser(id) { comments = comments.filter((c) => c.user_id !== id); readers.splice(0, readers.length, ...readers.filter((p) => p.id !== id)); audit.unshift({ at: new Date().toISOString(), who: 'fen', action: 'Compte supprimé', target: id, detail: null }); },
+    audit: () => wait(audit),
     team: () => wait(team.filter((p) => p.role !== 'reader')),
     async setRole(id, role) {
       const r = readers.find((p) => p.id === id);

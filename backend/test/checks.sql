@@ -243,3 +243,141 @@ reset role;
 \else
 \echo ÉCHEC  clé Unsplash
 \endif
+
+-- Filtre d'insultes : insulte refusée (même déguisée), phrases proches acceptées.
+set request.jwt.claim.sub = '';
+update profiles set pseudo = 'paul' where id = '00000000-0000-0000-0000-000000000004';
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000004';
+\set ON_ERROR_STOP off
+insert into comments (article_id, user_id, text) values (:'aid', '00000000-0000-0000-0000-000000000004', 'Quel C0NNNARD ce ministre');
+\set ON_ERROR_STOP on
+insert into comments (article_id, user_id, text) values (:'aid', '00000000-0000-0000-0000-000000000004', 'Bonne connaissance du sujet');
+reset role;
+select count(*) filter (where text like 'Quel%') = 0 and count(*) filter (where text like 'Bonne%') = 1
+   and not public.has_insult('pique-nique, TGV, salopette, ordures ménagères, technique')
+   and public.has_insult('f1ls de PUTE') and public.has_insult('ta gueule !') as ok from comments \gset
+\if :ok
+\echo OK  insultes refusées (même déguisées), mots proches acceptés
+\else
+\echo ÉCHEC  filtre d’insultes
+\endif
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000ad';
+select public.set_setting('BANNED_WORDS', 'brocoli, navet');
+reset role;
+select public.has_insult('Espèce de navet') as ok \gset
+\if :ok
+\echo OK  mots interdits ajoutés dans les réglages
+\else
+\echo ÉCHEC  mots interdits des réglages
+\endif
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000004';
+\set ON_ERROR_STOP off
+update profiles set pseudo = 'gros_connard' where id = '00000000-0000-0000-0000-000000000004';
+\set ON_ERROR_STOP on
+reset role;
+select pseudo = 'paul' as ok from profiles where id = '00000000-0000-0000-0000-000000000004' \gset
+\if :ok
+\echo OK  pseudo insultant refusé
+\else
+\echo ÉCHEC  pseudo insultant
+\endif
+
+-- Blocage : paul bloque l'auteur d'un commentaire et ne le voit plus (les autres si).
+select id as lcid from comments where user_id = '00000000-0000-0000-0000-000000000001' and status = 'visible' and article_id = :'aid' limit 1 \gset
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000004';
+select public.block_author(:'lcid');
+select count(*) filter (where pseudo = 'lecteur') = 0 and count(*) filter (where pseudo = 'paul') = 1 as ok from article_comments(:'aid') \gset
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000003';
+select count(*) filter (where pseudo = 'lecteur') = 1 as ok2 from article_comments(:'aid') \gset
+reset role;
+\if :ok
+\if :ok2
+\echo OK  un lecteur bloqué disparaît pour celui qui bloque, pas pour les autres
+\else
+\echo ÉCHEC  blocage visible par tous
+\endif
+\else
+\echo ÉCHEC  blocage
+\endif
+
+-- Rôle Modération : modère et bannit, mais ne touche pas aux infos ; un banni ne commente plus.
+set request.jwt.claim.sub = '';
+update profiles set role = 'moderator', pseudo = 'modo' where id = '00000000-0000-0000-0000-000000000005';
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000005';
+update articles set title = 'modifié par la modération';
+select public.set_banned('00000000-0000-0000-0000-000000000004', true);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000004';
+\set ON_ERROR_STOP off
+insert into comments (article_id, user_id, text) values (:'aid', '00000000-0000-0000-0000-000000000004', 'Je reviens');
+update profiles set banned = false where id = '00000000-0000-0000-0000-000000000004';
+\set ON_ERROR_STOP on
+reset role;
+select (select count(*) = 0 from articles where title = 'modifié par la modération')
+   and (select banned from profiles where id = '00000000-0000-0000-0000-000000000004')
+   and (select count(*) = 0 from comments where user_id = '00000000-0000-0000-0000-000000000004' and (status = 'visible' or text = 'Je reviens')) as ok \gset
+\if :ok
+\echo OK  modération : bannissement sans accès aux infos, le banni ne commente plus et ne se débannit pas
+\else
+\echo ÉCHEC  rôle Modération ou bannissement
+\endif
+
+-- Tableau de bord : un appareil compté une fois par jour, coût de l'IA calculé, réservé à l'équipe.
+set role anon;
+select public.ping('appareil-test-1'), public.ping('appareil-test-1'), public.ping('appareil-test-2');
+reset role;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000002';
+select (d->>'active_today')::int = 2 and (d->>'ai_30')::numeric >= 0 and jsonb_array_length(d->'last_runs') = 2 and (d->>'banned')::int = 1 as ok from public.dashboard() d \gset
+reset role;
+select round(public.run_cost('{"model":"claude-opus-5-5","ai":{"input":1000000,"output":100000}}'), 2) = 6.00 as ok2 \gset
+\if :ok
+\if :ok2
+\echo OK  tableau de bord : lecteurs actifs, bannis, derniers passages et coût de l’IA
+\else
+\echo ÉCHEC  calcul du coût de l’IA
+\endif
+\else
+\echo ÉCHEC  tableau de bord
+\endif
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001';
+\set ON_ERROR_STOP off
+select public.dashboard() is null as leak \gset
+\set ON_ERROR_STOP on
+reset role;
+\if :{?leak}
+\echo ÉCHEC  tableau de bord lisible par un lecteur
+\else
+\echo OK  tableau de bord refusé aux lecteurs
+\endif
+
+-- Lecteurs : liste et suppression réservées aux administrateurs, jamais un administrateur supprimé.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000ad';
+select count(*) >= 6 and count(*) filter (where pseudo = 'paul' and banned) = 1 as ok from public.admin_users('') \gset
+reset role;
+insert into auth.users (id) values ('00000000-0000-0000-0000-000000000009');
+set role authenticated;
+select public.delete_user('00000000-0000-0000-0000-000000000009');
+\set ON_ERROR_STOP off
+select public.delete_user('00000000-0000-0000-0000-0000000000ad');
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000002';
+select count(*) as leak2 from public.admin_users('') \gset
+\set ON_ERROR_STOP on
+reset role;
+select :'ok'::boolean and not exists (select 1 from auth.users where id = '00000000-0000-0000-0000-000000000009')
+   and exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000ad') as ok \gset
+\if :ok
+\if :{?leak2}
+\echo ÉCHEC  liste des lecteurs visible par la rédaction
+\else
+\echo OK  lecteurs : liste et suppression réservées aux admins, admin jamais supprimé
+\endif
+\else
+\echo ÉCHEC  page Lecteurs
+\endif

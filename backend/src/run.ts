@@ -71,7 +71,7 @@ async function edition() {
        from raw_items r join sources s on s.id = r.source_id
       where coalesce(r.published_at, r.fetched_at) between $1 and $2
       order by coalesce(r.published_at, r.fetched_at) desc limit 400`,
-    [new Date(end.getTime() - WINDOW_H * 3600e3), FIXTURES ? new Date('2100-01-01') : end],
+    [FIXTURES ? new Date(0) : new Date(end.getTime() - WINDOW_H * 3600e3), FIXTURES ? new Date("2100-01-01") : end], // flux d’exemple : toutes dates
   );
   // Ne pas réécrire un sujet déjà traité dans cette édition.
   const done = new Set((await q<{ id: string }>('select unnest(raw_item_ids)::text as id from articles where edition_date = $1 and status <> $2', [DATE, 'rejected'])).map((r) => r.id));
@@ -175,6 +175,7 @@ async function edition() {
   const summary = `${fetched} titres lus, ${items.length} à traiter, ${stories.length} sujets retenus, ${written} cartes écrites (${fixed} corrigées par l'IA, ${flagged} à relire, ${failed} échecs).`;
   log(`Terminé : ${summary} ${live ? 'Édition publiée automatiquement.' : 'En attente de validation dans le back office.'}`);
   await J.finish(failed && !written ? 'error' : 'ok', summary, stats);
+  if (failed && !written) process.exitCode = 1; // le workflow GitHub échoue et prévient l'équipe
 }
 
 main()

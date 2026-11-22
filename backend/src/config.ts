@@ -38,6 +38,9 @@ export const cfg = {
   flashMinImportance: () => num('FLASH_MIN_IMPORTANCE', 8, 6, 10),
   flashMinSources: () => num('FLASH_MIN_SOURCES', 2, 1, 4),
   flashMaxPerDay: () => num('FLASH_MAX_PER_DAY', 12, 1, 50),
+
+  // Modération : l'IA tranche les commentaires signalés.
+  aiModeration: () => on('AI_MODERATION', true),
 };
 
 /** Photo des réglages utilisés, gardée dans le journal de chaque passage. */
