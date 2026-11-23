@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { api, sb, type Reader } from './data';
 
-export type Kind = 'premium' | 'reads' | 'manual' | 'team' | 'seniority' | 'early' | 'liked';
-export type Badge = { id: string; kind: Kind; label: string; description: string; icon: string; color: string; threshold: number; position: number; active: boolean };
+export type Kind = 'premium' | 'reads' | 'manual' | 'team' | 'seniority' | 'early' | 'liked' | 'streak' | 'early_bird' | 'explorer' | 'sharer' | 'event';
+export type Badge = { id: string; kind: Kind; label: string; description: string; icon: string; color: string; threshold: number; position: number; starts_at?: string | null; ends_at?: string | null; active: boolean };
 type Holder = { user_id: string; pseudo: string | null; email: string | null; granted_at: string };
 type Conf = { minutes_per_article: number; max_icons: number; color_pseudo: boolean };
 
@@ -18,7 +18,14 @@ export const KINDS: Record<Kind, [string, string | null]> = {
   seniority: ['Ancienneté', 'jours depuis l’inscription'],
   early: ['Pionniers', 'premiers comptes'],
   liked: ['Commentaires appréciés', 'likes reçus au moins'],
+  streak: ['Série de jours', 'jours d’affilée'],
+  early_bird: ['Lève-tôt (lu avant 8 h)', 'matins au moins'],
+  explorer: ['Explorateur', 'rubriques lues au moins'],
+  sharer: ['Partageur', 'infos partagées au moins'],
+  event: ['Événement (venu pendant une période)', null],
 };
+/** Types à paliers : seul le plus haut atteint s'affiche. */
+const TIERS: Kind[] = ['reads', 'seniority', 'liked', 'early', 'streak', 'early_bird', 'explorer', 'sharer'];
 const CONF: Conf = { minutes_per_article: 3, max_icons: 3, color_pseudo: true };
 const isHex = (v: string) => /^#[0-9a-f]{6}$/i.test(v);
 
@@ -34,7 +41,14 @@ let demo: Badge[] = [
   ['early', 'Pionnier', 'Parmi les 1 000 premiers comptes.', '🚀', '#FF8A7A', 1000, 20],
   ['seniority', 'Fidèle', 'Membre depuis plus d’un an.', '🎂', '#FF6B8A', 365, 21],
   ['liked', 'Plume appréciée', 'Ses commentaires ont reçu plus de 100 likes.', '✍️', '#7B5CFF', 100, 22],
-].map(([kind, label, description, icon, color, threshold, position], i) => ({ id: `b${i}`, kind, label, description, icon, color, threshold, position, active: true } as Badge));
+  ['streak', 'Série de 7 jours', 'Venu 7 jours d’affilée.', '🔥', '#FF8A3D', 7, 30],
+  ['streak', 'Série de 30 jours', 'Venu 30 jours d’affilée.', '⚡', '#FFB547', 30, 31],
+  ['streak', 'Série de 100 jours', 'Venu 100 jours d’affilée.', '💯', '#FF6B8A', 100, 32],
+  ['early_bird', 'Lève-tôt', 'A lu son édition avant 8 h, 20 matins.', '☀️', '#FFD166', 20, 33],
+  ['explorer', 'Explorateur', 'A lu des infos dans les 10 rubriques.', '🧭', '#5AD1B5', 10, 34],
+  ['sharer', 'Partageur', 'A partagé 10 infos.', '📣', '#4FB0FF', 10, 35],
+  ['event', 'Présent au lancement', 'Était là pendant les deux premiers mois.', '🎉', '#C86BFA', 0, 40],
+].map(([kind, label, description, icon, color, threshold, position], i) => ({ id: `b${i}`, kind, label, description, icon, color, threshold, position, active: true, ...(kind === 'event' ? { starts_at: '2026-11-23', ends_at: '2027-01-22' } : {}) } as Badge));
 let demoHolders: Record<string, Holder[]> = { b1: [{ user_id: 'u0', pseudo: 'Camille_R', email: 'camille@exemple.fr', granted_at: new Date().toISOString() }] };
 let demoConf = CONF;
 
@@ -128,7 +142,7 @@ function BadgeRow({ b, open, onOpen, say, reload }: { b: Badge; open: boolean; o
   const [d, setD] = useState(b);
   useEffect(() => setD(b), [b]);
   const unit = KINDS[d.kind][1];
-  const bad = !d.label.trim() || !d.icon.trim() || !isHex(d.color);
+  const bad = !d.label.trim() || !d.icon.trim() || !isHex(d.color) || (d.kind === 'event' && (!d.starts_at || !d.ends_at || d.ends_at < d.starts_at));
   const run = async (f: () => Promise<unknown>, msg: string) => {
     try { await f(); reload(); say(msg); } catch (e) { say(e instanceof Error ? e.message : 'Action impossible'); }
   };
@@ -137,7 +151,7 @@ function BadgeRow({ b, open, onOpen, say, reload }: { b: Badge; open: boolean; o
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 22, width: 40, height: 40, borderRadius: 20, display: 'grid', placeItems: 'center', background: `${d.color}38`, border: `1px solid ${d.color}99` }}>{d.icon}</span>
         <b style={{ color: d.color }}>{d.label || 'Sans nom'}</b>
-        <span className="muted small">{KINDS[d.kind][0]}{unit ? ` · ${d.threshold.toLocaleString('fr-FR')} ${unit}` : ''}{d.active ? '' : ' · désactivé'}</span>
+        <span className="muted small">{KINDS[d.kind][0]}{unit ? ` · ${d.threshold.toLocaleString('fr-FR')} ${unit}` : ''}{d.kind === 'event' ? ` · du ${d.starts_at ?? '?'} au ${d.ends_at ?? '?'}` : ''}{d.active ? '' : ' · désactivé'}</span>
         <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={onOpen}>{open ? 'Fermer' : 'Modifier'}</button>
       </div>
       {open ? (
@@ -155,10 +169,17 @@ function BadgeRow({ b, open, onOpen, say, reload }: { b: Badge; open: boolean; o
             {unit ? <label>Seuil ({unit})<input type="number" min={0} value={d.threshold} onChange={(e) => setD({ ...d, threshold: Math.max(0, Math.round(Number(e.target.value))) })} /></label> : <span />}
             <label>Ordre d’affichage<input type="number" value={d.position} onChange={(e) => setD({ ...d, position: Math.round(Number(e.target.value)) })} /></label>
           </div>
-          {d.kind === 'reads' || d.kind === 'seniority' || d.kind === 'liked' || d.kind === 'early' ? <p className="muted small">Paliers : un lecteur ne montre que le plus haut palier atteint de ce type (par exemple Érudit plutôt que Curieux).</p> : null}
+          {d.kind === 'event' ? (
+            <div className="row3">
+              <label>Du<input type="date" value={d.starts_at ?? ''} onChange={(e) => setD({ ...d, starts_at: e.target.value || null })} /></label>
+              <label>Au (inclus)<input type="date" value={d.ends_at ?? ''} onChange={(e) => setD({ ...d, ends_at: e.target.value || null })} /></label>
+              <span className="muted small" style={{ alignSelf: 'center' }}>Tout lecteur connecté qui ouvre l’app pendant ces dates le reçoit, et le garde.</span>
+            </div>
+          ) : null}
+          {TIERS.includes(d.kind) ? <p className="muted small">Paliers : un lecteur ne montre que le plus haut palier atteint de ce type (par exemple Érudit plutôt que Curieux).</p> : null}
           <label className="check"><input type="checkbox" checked={d.active} onChange={(e) => setD({ ...d, active: e.target.checked })} /> Actif (visible dans l’app)</label>
           <div className="btns">
-            <button className="btn primary sm" disabled={bad} onClick={() => run(() => data.save({ id: d.id, kind: d.kind, label: d.label.trim(), description: d.description.trim(), icon: d.icon.trim(), color: d.color, threshold: d.threshold, position: d.position, active: d.active }), 'Badge enregistré')}>Enregistrer</button>
+            <button className="btn primary sm" disabled={bad} onClick={() => run(() => data.save({ id: d.id, kind: d.kind, label: d.label.trim(), description: d.description.trim(), icon: d.icon.trim(), color: d.color, threshold: d.threshold, position: d.position, starts_at: d.starts_at ?? null, ends_at: d.ends_at ?? null, active: d.active }), 'Badge enregistré')}>Enregistrer</button>
             <button className="btn ghost sm" onClick={() => confirm(`Supprimer le badge « ${b.label} » ? Ceux qui l’ont reçu à la main le perdent.`) && run(() => data.remove(b.id), 'Badge supprimé')}>Supprimer</button>
           </div>
           {b.kind === 'manual' ? <Holders b={b} say={say} /> : null}

@@ -61,3 +61,19 @@ select case when views >= 1 then 'OK  nombre de lecteurs par info transmis à l'
   from article_stats where article_id = (select article_id from comments where text = 'Merci pour le résumé');
 select case when (public.app_config()->'recognition'->>'minutes_per_article')::int = 3 and not has_table_privilege('anon', 'user_reads', 'select') and not has_table_privilege('anon', 'user_badges', 'select')
   then 'OK  réglages de la reconnaissance transmis à l''app, lectures et statuts fermés au public' else 'ÉCHEC  réglages ou droits' end;
+
+-- Série, lève-tôt, explorateur, partageur, événement.
+update badges set threshold = 3 where label = 'Série de 7 jours';
+update badges set threshold = 1 where kind = 'explorer';
+update badges set threshold = 1 where kind = 'sharer';
+update badges set threshold = 1 where kind = 'early_bird';
+insert into visits (day, device, user_id) select current_date - i, 'telephone-lea', '00000000-0000-0000-0000-0000000000b1' from generate_series(0, 2) i;
+update user_reads set at = (current_date + time '06:30') at time zone 'Europe/Paris' where user_id = '00000000-0000-0000-0000-0000000000b1';
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000b1';
+select track('telephone-lea', (select jsonb_agg(jsonb_build_object('a', id, 'k', 'share')) from (select id from articles where title like 'Badge %' order by id limit 2) x));
+reset request.jwt.claim.sub;
+select case when b @> '[{"label":"Série de 7 jours"},{"label":"Lève-tôt"},{"label":"Explorateur"},{"label":"Partageur"},{"label":"Présent au lancement"}]'
+        and not b @> '[{"label":"Série de 30 jours"}]' and (select shares from user_stats where user_id = '00000000-0000-0000-0000-0000000000b1') = 2
+  then 'OK  série de jours, lève-tôt, explorateur, partageur (2 partages comptés) et badge d''événement'
+  else 'ÉCHEC  nouveaux badges : ' || b::text end
+  from (select badges_of('00000000-0000-0000-0000-0000000000b1') b) x;

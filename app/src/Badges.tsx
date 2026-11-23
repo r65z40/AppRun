@@ -1,8 +1,8 @@
 // Reconnaissance des lecteurs : icônes à côté du pseudo, et fiche ouverte en touchant le pseudo.
 // Les badges, leurs couleurs et les paliers se règlent dans le back office (Lecteurs > Reconnaissance).
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, SlideInUp, SlideOutUp, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSequence, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
 import { C, F, alpha } from './theme';
 import { RECOG, savedLabel } from './brand';
 import type { Badge, ReaderCard } from './types';
@@ -76,7 +76,58 @@ export function ReaderCardView({ who, card, onClose }: { who: string; card: Read
   );
 }
 
+/**
+ * Nouveau badge : une petite pastille descend du haut de l'écran, l'icône éclot avec quelques éclats,
+ * puis tout repart seul après 4 secondes. Un toucher la referme (ou ouvre Mon compte).
+ */
+export function BadgeToast({ badge, top, onDone, onOpen }: { badge: Badge; top: number; onDone: () => void; onOpen: () => void }) {
+  const reduce = useReducedMotion();
+  const pop = useSharedValue(reduce ? 1 : 0);
+  const burst = useSharedValue(reduce ? 1 : 0);
+  useEffect(() => {
+    if (!reduce) {
+      pop.value = withDelay(180, withSequence(withSpring(1.25, { duration: 320, dampingRatio: 0.5 }), withSpring(1, { duration: 380, dampingRatio: 0.7 })));
+      burst.value = withDelay(260, withTiming(1, { duration: 700, easing: Easing.out(Easing.cubic) }));
+    }
+    const t = setTimeout(onDone, 4200);
+    return () => clearTimeout(t);
+  }, [badge]);
+  const icon = useAnimatedStyle(() => ({ transform: [{ scale: pop.value }, { rotate: `${(1 - Math.min(pop.value, 1)) * -30}deg` }] }));
+  const ring = useAnimatedStyle(() => ({ opacity: burst.value < 1 ? 0.8 * (1 - burst.value) : 0, transform: [{ scale: 0.6 + burst.value * 1.4 }] }));
+  return (
+    <Animated.View entering={reduce ? FadeIn.duration(200) : SlideInUp.springify().damping(18)} exiting={reduce ? FadeOut.duration(200) : SlideOutUp.duration(260)} style={[s.toast, { top, borderColor: alpha(badge.color, 0.6) }]}>
+      <Pressable onPress={onOpen} style={s.toastIn} accessibilityRole="button" accessibilityLabel={`Nouveau badge : ${badge.label}. ${badge.description}`}>
+        <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+          <Animated.View pointerEvents="none" style={[s.burstRing, { borderColor: badge.color }, ring]} />
+          {Array.from({ length: 6 }, (_, i) => <Spark key={i} i={i} t={burst} color={i % 2 ? badge.color : '#fff'} />)}
+          <Animated.View style={[s.big, { backgroundColor: alpha(badge.color, 0.25), borderColor: alpha(badge.color, 0.7) }, icon]}>
+            <Text style={{ fontSize: 22 }}>{badge.icon}</Text>
+          </Animated.View>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={s.toastKick}>NOUVEAU BADGE</Text>
+          <Text style={[s.label, { color: badge.color }]} numberOfLines={1}>{badge.label}</Text>
+          {badge.description ? <Text style={s.desc} numberOfLines={1}>{badge.description}</Text> : null}
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+}
+function Spark({ i, t, color }: { i: number; t: SharedValue<number>; color: string }) {
+  const ang = (i / 6) * Math.PI * 2;
+  const st = useAnimatedStyle(() => {
+    const d = 10 + t.value * 22;
+    return { opacity: t.value > 0 && t.value < 1 ? 1 - t.value : 0, transform: [{ translateX: Math.cos(ang) * d }, { translateY: Math.sin(ang) * d }, { scale: 1 - t.value * 0.5 }] };
+  });
+  return <Animated.View pointerEvents="none" style={[s.spark, { backgroundColor: color }, st]} />;
+}
+
 const s = StyleSheet.create({
+  toast: { position: 'absolute', left: 16, right: 16, borderRadius: 22, borderWidth: 1, backgroundColor: alpha(C.night2, 0.96), zIndex: 50, shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 12 },
+  toastIn: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 10 },
+  toastKick: { color: C.text3, fontFamily: F.semi, fontSize: 10, letterSpacing: 1.6 },
+  burstRing: { position: 'absolute', width: 44, height: 44, borderRadius: 22, borderWidth: 2 },
+  spark: { position: 'absolute', width: 5, height: 5, borderRadius: 3 },
   dot: { borderRadius: 999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   big: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
