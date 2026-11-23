@@ -6,18 +6,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, DRAWER_MS } from './theme';
 import { GradButton, st } from './ui';
 import { feel } from './feel';
-import { blockedCount, resetPassword, setPseudo, signIn, signOut, signUp, unblockAll, useMe, UserError } from './account';
+import { blockedCount, resendConfirm, resetPassword, setPseudo, signIn, signOut, signUp, unblockAll, updatePassword, useMe, UserError } from './account';
 
 const DRAWER = Easing.bezier(0.32, 0.72, 0, 1);
-type Mode = 'in' | 'up' | 'confirm' | 'pseudo' | 'me';
+type Mode = 'in' | 'up' | 'confirm' | 'pseudo' | 'me' | 'newpass' | 'sent';
 
 /** reason : pourquoi on demande un compte (« Connectez-vous pour commenter »). onReady : le lecteur est connecté avec un pseudo. */
-export function Account({ W, reason, onClose, onReady, onToast }: {
+export function Account({ W, reason, start, onClose, onReady, onToast }: {
   W: number; reason?: string | null; onClose: () => void; onReady?: () => void; onToast: (m: string) => void;
+  /** newpass : arrivée par le lien « mot de passe oublié » ; in : écran de connexion (lien périmé). */
+  start?: 'newpass' | 'in';
 }) {
   const insets = useSafeAreaInsets();
   const me = useMe();
-  const [mode, setMode] = useState<Mode>(me ? (me.pseudo ? 'me' : 'pseudo') : 'up');
+  const [mode, setMode] = useState<Mode>(start === 'newpass' ? 'newpass' : me ? (me.pseudo ? 'me' : 'pseudo') : start ?? 'up');
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [pseudo, setPs] = useState('');
@@ -32,7 +34,7 @@ export function Account({ W, reason, onClose, onReady, onToast }: {
 
   // Connecté avec un pseudo : l'action demandée peut reprendre.
   useEffect(() => {
-    if (me && !me.pseudo && mode !== 'pseudo') setMode('pseudo');
+    if (me && !me.pseudo && mode !== 'pseudo' && mode !== 'newpass') setMode('pseudo');
     if (me?.pseudo && (mode === 'in' || mode === 'up' || mode === 'pseudo')) {
       feel('success', 'ding');
       if (onReady) leave(onReady);
@@ -51,10 +53,20 @@ export function Account({ W, reason, onClose, onReady, onToast }: {
     if (mode === 'in') run(() => signIn(email, pw));
     else if (mode === 'up') run(async () => { if ((await signUp(email, pw)) === 'confirm') setMode('confirm'); });
     else if (mode === 'pseudo') run(() => setPseudo(pseudo));
+    else if (mode === 'newpass') run(async () => {
+      await updatePassword(pw);
+      setPw('');
+      feel('success', 'ding');
+      onToast('Mot de passe changé.');
+      setMode(me?.pseudo ? 'me' : 'pseudo');
+    });
   };
+  const forgot = () => email.includes('@')
+    ? run(async () => { await resetPassword(email); setMode('sent'); })
+    : setErr('Saisissez votre adresse, puis touchez « Mot de passe oublié ».');
 
-  const title = mode === 'me' ? 'Mon compte' : mode === 'pseudo' ? 'Votre pseudo' : mode === 'confirm' ? 'Vérifiez vos e-mails' : mode === 'in' ? 'Se connecter' : 'Créer un compte';
-  const can = mode === 'pseudo' ? pseudo.trim().length >= 2 : email.includes('@') && pw.length >= (mode === 'up' ? 8 : 1);
+  const title = mode === 'me' ? 'Mon compte' : mode === 'pseudo' ? 'Votre pseudo' : mode === 'confirm' || mode === 'sent' ? 'Vérifiez vos e-mails' : mode === 'newpass' ? 'Nouveau mot de passe' : mode === 'in' ? 'Se connecter' : 'Créer un compte';
+  const can = mode === 'pseudo' ? pseudo.trim().length >= 2 : mode === 'newpass' ? pw.length >= 8 : email.includes('@') && pw.length >= (mode === 'up' ? 8 : 1);
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: C.night }, a]}>
@@ -81,10 +93,13 @@ export function Account({ W, reason, onClose, onReady, onToast }: {
                 <Text style={styles.link}>{mode === 'up' ? 'J’ai déjà un compte' : 'Créer un compte'}</Text>
               </Pressable>
               {mode === 'in' ? (
-                <Pressable hitSlop={8} onPress={() => email.includes('@')
-                  ? run(async () => { await resetPassword(email); onToast('Lien envoyé : vérifiez vos e-mails.'); })
-                  : setErr('Saisissez votre adresse, puis touchez « Mot de passe oublié ».')}>
+                <Pressable hitSlop={8} onPress={forgot}>
                   <Text style={[styles.link, { color: C.text3 }]}>Mot de passe oublié</Text>
+                </Pressable>
+              ) : null}
+              {err?.startsWith('Confirmez') ? (
+                <Pressable hitSlop={8} onPress={() => run(async () => { await resendConfirm(email); setMode('confirm'); })}>
+                  <Text style={styles.link}>Renvoyer l’e-mail de confirmation</Text>
                 </Pressable>
               ) : null}
             </>
@@ -94,6 +109,29 @@ export function Account({ W, reason, onClose, onReady, onToast }: {
             <>
               <Text style={styles.p}>Nous avons envoyé un lien à <Text style={{ color: '#fff' }}>{email.trim()}</Text>. Ouvrez-le pour activer votre compte, puis revenez ici pour vous connecter.</Text>
               <GradButton label="J’ai confirmé, me connecter" onPress={() => { setErr(null); setMode('in'); }} />
+              {err ? <Text style={styles.err}>{err}</Text> : null}
+              <Pressable hitSlop={8} onPress={() => run(async () => { await resendConfirm(email); onToast('E-mail renvoyé.'); })}>
+                <Text style={[styles.link, { color: C.text3 }]}>Rien reçu ? Regardez dans les indésirables, ou renvoyez l’e-mail</Text>
+              </Pressable>
+            </>
+          ) : null}
+
+          {mode === 'sent' ? (
+            <>
+              <Text style={styles.p}>Si un compte existe avec <Text style={{ color: '#fff' }}>{email.trim()}</Text>, un lien vient d’y être envoyé. Ouvrez-le pour choisir un nouveau mot de passe (pensez aux indésirables).</Text>
+              <GradButton label="Retour à la connexion" onPress={() => { setErr(null); setMode('in'); }} />
+              {err ? <Text style={styles.err}>{err}</Text> : null}
+              <Pressable hitSlop={8} onPress={forgot}><Text style={[styles.link, { color: C.text3 }]}>Renvoyer le lien</Text></Pressable>
+            </>
+          ) : null}
+
+          {mode === 'newpass' ? (
+            <>
+              <Text style={styles.p}>{me ? 'Choisissez votre nouveau mot de passe.' : 'Le lien a expiré. Revenez à la connexion et touchez « Mot de passe oublié ».'}</Text>
+              {me ? <Field label="Nouveau mot de passe (8 caractères au moins)" value={pw} onChange={setPw} type="password" onSubmit={submit} /> : null}
+              {err ? <Text style={styles.err}>{err}</Text> : null}
+              {me ? <GradButton label="Enregistrer" onPress={submit} disabled={!can || busy} /> : <GradButton label="Retour à la connexion" onPress={() => { setErr(null); setMode('in'); }} />}
+              {busy ? <ActivityIndicator color="#fff" /> : null}
             </>
           ) : null}
 
@@ -114,6 +152,7 @@ export function Account({ W, reason, onClose, onReady, onToast }: {
                 <View style={[styles.row, { borderBottomWidth: 0 }]}><Text style={styles.rl}>Adresse</Text><Text style={styles.rv} numberOfLines={1}>{me.email}</Text></View>
               </View>
               <Pressable onPress={() => { setPs(me.pseudo ?? ''); setMode('pseudo'); }} hitSlop={8}><Text style={styles.link}>Changer de pseudo</Text></Pressable>
+              <Pressable onPress={() => { setErr(null); setPw(''); setMode('newpass'); }} hitSlop={8}><Text style={styles.link}>Changer de mot de passe</Text></Pressable>
               {blocked ? (
                 <Pressable onPress={() => run(async () => { await unblockAll(); setBlocked(0); onToast('Vous revoyez les commentaires de tout le monde.'); })} hitSlop={8}>
                   <Text style={styles.link}>Débloquer {blocked > 1 ? `les ${blocked} comptes bloqués` : 'le compte bloqué'}</Text>

@@ -81,6 +81,12 @@ export interface Api {
   needsAdmin(): Promise<boolean>;
   /** Crée un compte. Renvoie un message d'erreur, 'confirm' si l'adresse doit être confirmée, ou null. */
   signUp(email: string, password: string): Promise<string | null>;
+  /** Envoie le lien « mot de passe oublié ». Renvoie un message d'erreur ou null. */
+  resetPassword(email: string): Promise<string | null>;
+  /** Renvoie l'e-mail de confirmation d'inscription. */
+  resendConfirm(email: string): Promise<string | null>;
+  /** Change le mot de passe du compte connecté. */
+  updatePassword(password: string): Promise<string | null>;
   settings(): Promise<Setting[]>;
   setSetting(key: string, value: string): Promise<void>;
   signOut(): Promise<void>;
@@ -113,7 +119,8 @@ export interface Api {
   uploadPhoto(file: File): Promise<string>;
   team(): Promise<Profile[]>;
   setRole(id: string, role: Role): Promise<void>;
-  findProfile(pseudo: string): Promise<Profile | null>;
+  /** Par pseudo ou par adresse e-mail. */
+  findProfile(q: string): Promise<Profile | null>;
   createArticle(a: Partial<Article> & { edition_date: string; rubric_id: string }): Promise<void>;
   /** Démo : simule le moteur pas à pas. Vraie base : null (le moteur tourne sur GitHub). */
   runEngine?(onStep: (s: string) => void): Promise<void>;
@@ -130,6 +137,27 @@ const REPO = (import.meta.env.VITE_GITHUB_REPO as string | undefined) || 'r65z40
 export const ENGINE_URL = `https://github.com/${REPO}/actions/workflows/edition.yml`;
 export const FLASH_URL = `https://github.com/${REPO}/actions/workflows/flash.yml`;
 
+// Lien reçu par e-mail (mot de passe oublié, confirmation, lien périmé) : lu avant que Supabase ne nettoie l'adresse.
+const linkHash = new URLSearchParams(location.hash.slice(1));
+export const LINK = {
+  recovery: linkHash.get('type') === 'recovery',
+  error: linkHash.get('error_description') ? authFr(linkHash.get('error_description')!) : null,
+};
+/** Adresse de cette page (sans #) : les liens des e-mails y ramènent. */
+const here = () => location.origin + location.pathname;
+/** Messages d'erreur de connexion en français. */
+export function authFr(raw: string): string {
+  const m = raw.toLowerCase();
+  if (m.includes('invalid login')) return 'Adresse ou mot de passe incorrect.';
+  if (m.includes('not confirmed')) return 'Adresse pas encore confirmée : ouvrez le lien reçu par e-mail (pensez aux indésirables).';
+  if (m.includes('already registered')) return 'Un compte existe déjà avec cette adresse : connectez-vous.';
+  if (m.includes('same') && m.includes('password')) return 'Choisissez un mot de passe différent de l’ancien.';
+  if (m.includes('password')) return 'Mot de passe trop court ou trop simple : 8 caractères au moins.';
+  if (m.includes('expired') || m.includes('invalid') && m.includes('link') || m.includes('otp')) return 'Ce lien a expiré ou a déjà servi. Demandez-en un nouveau.';
+  if (m.includes('for security purposes') || m.includes('rate limit')) return 'Trop de demandes : patientez une minute avant de recommencer.';
+  if (m.includes('fetch') || m.includes('network')) return 'Pas de connexion. Réessayez.';
+  return raw;
+}
 const URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
@@ -157,16 +185,33 @@ function supabaseApi(sb: SupabaseClient): Api {
       return { id: data.user.id, email: data.user.email ?? '', role: (p.data?.role as Role) ?? 'reader' };
     },
     async signIn(email, password) {
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      return error ? 'Adresse ou mot de passe incorrect.' : null;
+      const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
+      return error ? authFr(error.message) : null;
+    },
+    async resetPassword(email) {
+      if (!/^\S+@\S+\.\S+$/.test(email.trim())) return 'Saisissez d’abord votre adresse e-mail.';
+      const { error } = await sb.auth.resetPasswordForEmail(email.trim(), { redirectTo: here() });
+      return error ? authFr(error.message) : null;
+    },
+    async resendConfirm(email) {
+      const { error } = await sb.auth.resend({ type: 'signup', email: email.trim(), options: { emailRedirectTo: here() } });
+      return error ? authFr(error.message) : null;
+    },
+    async updatePassword(password) {
+      if (password.length < 8) return 'Mot de passe trop court : 8 caractères au moins.';
+      const { error } = await sb.auth.updateUser({ password });
+      return error ? authFr(error.message) : null;
     },
     async needsAdmin() {
       const { data, error } = await sb.rpc('needs_admin');
       return !error && data === true;
     },
     async signUp(email, password) {
-      const { data, error } = await sb.auth.signUp({ email, password });
-      if (error) return error.message.includes('Password') ? 'Mot de passe trop court (6 caractères minimum).' : error.message;
+      if (password.length < 8) return 'Mot de passe trop court : 8 caractères au moins.';
+      const { data, error } = await sb.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: here() } });
+      if (error) return authFr(error.message);
+      // Adresse déjà inscrite : Supabase ne renvoie pas d'erreur et n'envoie rien.
+      if (data.user && data.user.identities?.length === 0) return 'Un compte existe déjà avec cette adresse : connectez-vous (ou « Mot de passe oublié »).';
       return data.session ? null : 'confirm';
     },
     settings: async () => ok(await sb.rpc('admin_settings')) as Setting[],
@@ -233,8 +278,12 @@ function supabaseApi(sb: SupabaseClient): Api {
     async setRole(id, role) {
       ok(await sb.from('profiles').update({ role }).eq('id', id));
     },
-    async findProfile(pseudo) {
-      return (ok(await sb.from('profiles').select('*').ilike('pseudo', pseudo).limit(1)) as Profile[])[0] ?? null;
+    async findProfile(q) {
+      if (q.includes('@')) {
+        const r = (ok(await sb.rpc('admin_users', { search: q, filter: 'all', page: 0 })) as Reader[]).find((x) => x.email?.toLowerCase() === q.toLowerCase());
+        return r ? { id: r.id, pseudo: r.pseudo ?? r.email, role: r.role, premium: r.premium, created_at: r.created_at } : null;
+      }
+      return (ok(await sb.from('profiles').select('*').ilike('pseudo', q).limit(1)) as Profile[])[0] ?? null;
     },
     async createArticle(a) {
       const { data } = await sb.auth.getUser();

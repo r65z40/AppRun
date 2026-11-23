@@ -5,19 +5,20 @@
 import { createHash } from 'node:crypto';
 import './settings.js';
 import { pool, q } from './db.js';
-import { brand, toTemplate } from './mail-template.js';
+import { brand, linkUrls, MAIL_DEFAULTS, toTemplate } from './mail-template.js';
 
 const env = (k: string) => (process.env[k] ?? '').trim();
 
-/** Ce qu'on envoie à Supabase : seulement les champs réglés (le reste garde le réglage actuel de Supabase). */
+/** Ce qu'on envoie à Supabase : modèles en français (ceux du back office, sinon ceux par défaut), expéditeur si complet. */
 export function authPatch(): Record<string, string> {
   const b = brand();
   const p: Record<string, string> = {};
-  const sub = (k: string) => env(k).replaceAll('{nom}', b.name);
-  if (env('MAIL_CONFIRM_SUBJECT')) p.mailer_subjects_confirmation = sub('MAIL_CONFIRM_SUBJECT');
-  if (env('MAIL_CONFIRM_BODY')) p.mailer_templates_confirmation_content = toTemplate(env('MAIL_CONFIRM_BODY'), 'Activer mon compte', b);
-  if (env('MAIL_RESET_SUBJECT')) p.mailer_subjects_recovery = sub('MAIL_RESET_SUBJECT');
-  if (env('MAIL_RESET_BODY')) p.mailer_templates_recovery_content = toTemplate(env('MAIL_RESET_BODY'), 'Choisir un nouveau mot de passe', b);
+  const val = (k: keyof typeof MAIL_DEFAULTS) => env(k) || MAIL_DEFAULTS[k];
+  const sub = (k: keyof typeof MAIL_DEFAULTS) => val(k).replaceAll('{nom}', b.name);
+  p.mailer_subjects_confirmation = sub('MAIL_CONFIRM_SUBJECT');
+  p.mailer_templates_confirmation_content = toTemplate(val('MAIL_CONFIRM_BODY'), 'Activer mon compte', b);
+  p.mailer_subjects_recovery = sub('MAIL_RESET_SUBJECT');
+  p.mailer_templates_recovery_content = toTemplate(val('MAIL_RESET_BODY'), 'Choisir un nouveau mot de passe', b);
   // Expéditeur personnalisé : Supabase demande un serveur d'envoi (SMTP) complet.
   if (env('SMTP_HOST') && env('SMTP_USER') && env('SMTP_PASS_KEY') && env('MAIL_SENDER_EMAIL')) {
     Object.assign(p, {
@@ -39,13 +40,23 @@ async function save(state: Record<string, unknown>) {
 
 async function main() {
   const patch = authPatch();
-  if (!Object.keys(patch).length) return console.log('E-mails : rien de réglé, Supabase garde ses modèles.');
+  const token = env('SUPABASE_ACCESS_TOKEN');
+  const ref = env('SUPABASE_URL').match(/^https?:\/\/([^.]+)\./)?.[1];
+  const urls = linkUrls(env('PAGES_URL'));
+  // Sans ces adresses autorisées, Supabase renverrait les liens des e-mails vers « localhost » : on les ajoute à sa liste.
+  if (token && ref && urls.length) {
+    const cur = await fetch(`https://api.supabase.com/v1/projects/${ref}/config/auth`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null) as { site_url?: string; uri_allow_list?: string } | null;
+    if (cur) {
+      const list = (cur.uri_allow_list ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+      patch.uri_allow_list = [...new Set([...list, ...urls])].join(',');
+      if (!cur.site_url || /localhost|127\.0\.0\.1/.test(cur.site_url)) patch.site_url = urls[0];
+    }
+  }
   const hash = createHash('sha256').update(JSON.stringify(patch)).digest('hex').slice(0, 16);
   let prev: { hash?: string; ok?: boolean } = {};
   try { prev = JSON.parse(env('MAIL_SYNCED') || '{}'); } catch {}
   if (prev.hash === hash && prev.ok) return console.log('E-mails : déjà à jour.');
-  const token = env('SUPABASE_ACCESS_TOKEN');
-  const ref = env('SUPABASE_URL').match(/^https?:\/\/([^.]+)\./)?.[1];
   if (!token || !ref) {
     await save({ hash, ok: false, at: new Date().toISOString(), error: 'Secret SUPABASE_ACCESS_TOKEN ou variable SUPABASE_URL manquant dans GitHub.' });
     return console.log('E-mails : SUPABASE_ACCESS_TOKEN ou SUPABASE_URL manquant, réglages pas encore appliqués.');
@@ -61,7 +72,7 @@ async function main() {
     return console.log(`E-mails : refusé par Supabase (${r.status}) ${msg}`);
   }
   await save({ hash, ok: true, at: new Date().toISOString(), smtp: !!patch.smtp_host });
-  console.log('E-mails : expéditeur et modèles appliqués dans Supabase.');
+  console.log('E-mails : modèles, expéditeur et adresses de retour appliqués dans Supabase.');
 }
 
 if (process.argv[1]?.endsWith('mail.ts')) {
