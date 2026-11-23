@@ -67,7 +67,7 @@ function Main() {
     const saved = acc.currentMe()?.prefs as Partial<Prefs> | undefined;
     if (saved?.active?.length) {
       setP((x) => ({ ...x, ...pickSaved(saved) }));
-      setLimit(saved.quota ?? 8);
+      setLimit(saved.quota ?? 24);
       setPhase('feed');
     } else setPhase('onb');
   }, [loaded, splashDone]);
@@ -86,7 +86,7 @@ function Main() {
   }, []);
   const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded, edVer]);
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 8, sound: true, haptic: true, parallax: true, premium: false, time: '7 h 30', adsPersonalized: false });
+  const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 24, sound: true, haptic: true, parallax: true, premium: false, time: '7 h 30', adsPersonalized: false });
 
   // Fil
   // Dernière minute et campagnes de pub : rechargées toutes les 3 minutes et au retour dans l'app.
@@ -105,7 +105,7 @@ function Main() {
   const [ri, setRi] = useState(0);
   const [idx, setIdx] = useState<Record<string, number>>({});
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
-  const [limit, setLimit] = useState(8);
+  const [limit, setLimit] = useState(24);
   const [reactions, setReactions] = useState<Record<string, -1 | 0 | 1>>({});
   const [myEmoji, setMyEmoji] = useState<Record<string, string>>({});
   const [welcome, setWelcome] = useState<AppMessage | null>(null);
