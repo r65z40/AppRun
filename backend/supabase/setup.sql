@@ -1863,11 +1863,17 @@ create policy article_topics_staff on public.article_topics for select using (pu
 revoke all on public.article_topics from anon;
 
 -- Mots-clés d'une info, par fréquence : une occurrence dans le titre compte double, 6 mots-clés au plus.
+-- Le texte de l'info est normalisé une seule fois (« materialized » : sinon une fois par mot-clé, ~300 ms par article,
+-- et l'installation de la base expirait). norm_text ne garde que des lettres et des espaces simples : un mot est compté
+-- « entouré d'espaces », par remplacement, sans expression régulière.
+create or replace function public.word_count(hay text, w text) returns int language sql immutable as $$
+  select (length(hay) - length(replace(hay, ' ' || w || ' ', ' '))) / (length(w) + 1);
+$$;
 create or replace function public.find_topics(title text, body text) returns text[]
 language sql stable security definer set search_path = public as $$
-  with t as (select ' ' || public.norm_text(title) || ' ' as ti, ' ' || public.norm_text(body) || ' ' as bo),
+  with t as materialized (select ' ' || replace(public.norm_text(title), ' ', '  ') || ' ' as ti, ' ' || replace(public.norm_text(body), ' ', '  ') || ' ' as bo),
   hits as (
-    select k.label, sum(2 * regexp_count(t.ti, '\m' || w || '\M') + regexp_count(t.bo, '\m' || w || '\M')) as n
+    select k.label, sum(2 * public.word_count(t.ti, replace(w, ' ', '  ')) + public.word_count(t.bo, replace(w, ' ', '  '))) as n
       from public.algo_keywords k, t,
            lateral (select distinct trim(public.norm_text(x)) as w from unnest(k.words || k.label) x) v
      where k.active and v.w <> ''
