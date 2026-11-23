@@ -8,6 +8,7 @@
     "test": "bash test/run-local.sh",
     "flash": "tsx src/flash.ts",
     "sources": "tsx src/sources.ts",
+    "mail": "tsx src/mail.ts",
     "setup-sql": "bash scripts/setup-sql.sh",
     "install-db": "tsx src/install.ts"
   },

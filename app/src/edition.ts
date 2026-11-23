@@ -1,5 +1,6 @@
 import { FLASHES, RUBRICS } from './content';
 import { pickAds } from './ads';
+import { RULES } from './brand';
 import type { Article, Column, Comment, Tag } from './types';
 import type { Pick } from './algo';
 
@@ -59,13 +60,14 @@ export function buildColumns(active: string[], quota: number, premium: boolean, 
   }
 
   const edCards: Column['cards'] = [...picked];
-  // Version gratuite : une pub après la 3e info, puis une toutes les six (§4.6). Premium les retire.
+  // Version gratuite : une pub après la 3e info, puis une toutes les six (§4.6), réglable dans le back office. Premium les retire.
   // Les pubs viennent des campagnes en cours ; sans campagne, aucune carte sponsorisée.
   if (!premium) {
-    const ads = pickAds(Math.max(0, Math.ceil((edCards.length - 3) / 6)), active, adsPersonalized);
+    const { ad_first: first, ad_every: every } = RULES;
+    const ads = pickAds(Math.max(0, Math.ceil((edCards.length - first) / every)), active, adsPersonalized);
     ads.forEach((c, n) => {
       // Jamais de pub juste après un sujet sensible (drame, attentat…) : elle glisse après l'info suivante.
-      let at = 3 + n * 7;
+      let at = first + n * (every + 1);
       while (at < edCards.length && (edCards[at - 1] as Article).sensitive) at++;
       edCards.splice(at, 0, { ad: true, id: `ad-${n}-${c.id}`, c });
     });

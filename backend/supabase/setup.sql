@@ -2325,7 +2325,134 @@ begin
 end $$;
 revoke all on function public.compose_edition(uuid, text, text[], int, boolean) from public, anon, authenticated;
 
--- ===== supabase/migrations/0018_moteur_sources.sql
+-- ===== supabase/migrations/0017_identite.sql
+-- Personnalisation de l'app depuis le back office (page « Personnalisation ») :
+-- identité (nom, logo, couleurs, police), textes de l'app, notification du matin et e-mails des comptes.
+-- Chaque groupe est un réglage JSON ; l'app le lit au démarrage et garde ses valeurs par défaut si rien n'est réglé.
+
+insert into public.setting_keys (key) values
+  ('BRAND'), ('APP_TEXTS'), ('NOTIFICATIONS'),
+  ('MAIL_SENDER_NAME'), ('MAIL_SENDER_EMAIL'),
+  ('SMTP_HOST'), ('SMTP_PORT'), ('SMTP_USER'), ('SMTP_PASS_KEY'),
+  ('MAIL_CONFIRM_SUBJECT'), ('MAIL_CONFIRM_BODY'), ('MAIL_RESET_SUBJECT'), ('MAIL_RESET_BODY')
+on conflict do nothing;
+
+-- (bloc commun) set_setting : les modèles d'e-mails et les textes de l'app peuvent dépasser 2 000 caractères.
+create or replace function public.set_setting(k text, v text)
+returns void language plpgsql security definer set search_path = public as $$
+declare lim int := case when k like 'MAIL_%_BODY' or k = 'APP_TEXTS' then 10000 else 2000 end;
+begin
+  if not public.is_admin() then raise exception 'Réservé aux administrateurs'; end if;
+  if not exists (select 1 from public.setting_keys where key = k) then
+    raise exception 'Réglage inconnu : %', k;
+  end if;
+  if char_length(coalesce(v, '')) > lim then raise exception 'Valeur trop longue (% caractères au plus)', lim; end if;
+  if coalesce(trim(v), '') = '' then
+    delete from public.app_settings where key = k;
+  else
+    insert into public.app_settings (key, value, updated_at, updated_by) values (k, trim(v), now(), auth.uid())
+    on conflict (key) do update set value = excluded.value, updated_at = now(), updated_by = auth.uid();
+  end if;
+  insert into public.audit_log (actor, action, target, detail)
+  values (auth.uid(), 'Réglage modifié', k, case when k like '%_KEY' then 'clé remplacée' else left(coalesce(trim(v), ''), 200) end);
+end $$;
+-- (fin du bloc commun)
+
+-- Lit un réglage JSON ; un contenu abîmé est ignoré (l'app garde alors ses valeurs par défaut).
+create or replace function public.setting_json(k text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare v text;
+begin
+  select value into v from public.app_settings where key = k;
+  if v is null then return null; end if;
+  return v::jsonb;
+exception when others then
+  return null;
+end $$;
+revoke all on function public.setting_json(text) from public, anon, authenticated;
+
+-- Réglages publics lus par l'app (rien de secret) : on y ajoute l'identité, les textes et la notification.
+create or replace function public.app_config() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'comments_mode', coalesce((select value from public.app_settings where key = 'COMMENTS_MODE'), 'comments'),
+    'brand', public.setting_json('BRAND'),
+    'texts', public.setting_json('APP_TEXTS'),
+    'notifications', public.setting_json('NOTIFICATIONS')
+  );
+$$;
+grant execute on function public.app_config() to anon, authenticated;
+
+-- ===== supabase/migrations/0018_reglages_app.sql
+-- Tout ce qui restait écrit en dur devient réglable dans le back office (Personnalisation > Règles de l'app,
+-- Messages compte et Premium ; Réglages > Modération). Chaque réglage vide garde la valeur d'origine.
+
+insert into public.setting_keys (key) values ('APP_RULES'), ('NUDGES'), ('COMMENT_RATE'), ('REPORTS_TO_HIDE')
+on conflict do nothing;
+
+-- Entier réglé dans le back office, borné ; sinon la valeur par défaut.
+create or replace function public.setting_int(k text, def int, lo int, hi int) returns int
+language plpgsql stable security definer set search_path = public as $$
+declare v int;
+begin
+  select value::int into v from public.app_settings where key = k;
+  return greatest(lo, least(hi, coalesce(v, def)));
+exception when others then
+  return def;
+end $$;
+revoke all on function public.setting_int(text, int, int, int) from public, anon, authenticated;
+
+-- Garde-fous des commentaires : le nombre de commentaires par minute se règle (5 par défaut).
+create or replace function public.guard_comment() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.is_staff() then return new; end if;
+  if exists (select 1 from public.profiles where id = new.user_id and banned) then
+    raise exception 'Votre compte ne peut plus commenter';
+  end if;
+  if not exists (select 1 from public.profiles where id = new.user_id and pseudo is not null) then
+    raise exception 'Choisissez un pseudo avant de commenter';
+  end if;
+  if not exists (select 1 from public.articles where id = new.article_id and status = 'published') then
+    raise exception 'Cette info n''est plus en ligne';
+  end if;
+  if public.has_insult(new.text) then
+    raise exception 'Ce commentaire contient un mot interdit. Reformulez sans insulte.';
+  end if;
+  if (select count(*) from public.comments where user_id = new.user_id and created_at > now() - interval '1 minute')
+     >= public.setting_int('COMMENT_RATE', 5, 1, 60) then
+    raise exception 'Doucement : attendez un instant avant de commenter à nouveau';
+  end if;
+  new.text := trim(new.text);
+  return new;
+end $$;
+
+-- Masquage automatique : au N-ième signalement (3 par défaut, 0 = jamais).
+create or replace function public.auto_hide_reported() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare n int := public.setting_int('REPORTS_TO_HIDE', 3, 0, 50);
+begin
+  if n > 0 and (select count(*) from public.reports where comment_id = new.comment_id and not resolved) >= n then
+    update public.comments set status = 'hidden' where id = new.comment_id and status = 'visible';
+  end if;
+  return new;
+end $$;
+
+-- Réglages publics lus par l'app : on ajoute les règles de l'app et les messages compte / Premium.
+create or replace function public.app_config() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'comments_mode', coalesce((select value from public.app_settings where key = 'COMMENTS_MODE'), 'comments'),
+    'brand', public.setting_json('BRAND'),
+    'texts', public.setting_json('APP_TEXTS'),
+    'notifications', public.setting_json('NOTIFICATIONS'),
+    'rules', public.setting_json('APP_RULES'),
+    'nudges', public.setting_json('NUDGES')
+  );
+$$;
+grant execute on function public.app_config() to anon, authenticated;
+
+-- ===== supabase/migrations/0019_moteur_sources.sql
 -- Cœur des infos plus rapide et plus fiable : lecture des flux conditionnelle (rien n'est retéléchargé
 -- si le média n'a rien publié), suivi de chaque source, mise à l'écart automatique d'une source morte,
 -- ménage des vieilles dépêches, définitions des rubriques données à l'IA modifiables dans le back office.

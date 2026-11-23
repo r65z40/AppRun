@@ -4,7 +4,8 @@ import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, Pressable, 
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { C, F, DRAWER_MS } from './theme';
+import { C, F, DRAWER_MS, alpha } from './theme';
+import { BRAND, RULES, TEXTS } from './brand';
 import { AppIcon, GradButton } from './ui';
 import { feel } from './feel';
 import { isPremium, loadPlans, mySubscription, redeemCode, reloadMe, useMe, type MySub, type Plan } from './account';
@@ -20,7 +21,7 @@ const DEMO_PLANS: Plan[] = [
   { id: 'mensuel', name: 'Mensuel', period: 'month', price_cents: 299, currency: 'EUR', trial_days: 7, apple_product_id: null, google_product_id: null, highlight: null },
 ];
 const PER = { month: '/mois', year: '/an', lifetime: ' une fois' } as const;
-const SOURCE: Record<string, string> = { app_store: 'App Store', play_store: 'Google Play', web: 'paiement en ligne', gift: 'offert par TITRE', code: 'code promo', promo: 'offert par TITRE' };
+const SOURCE: Record<string, string> = { app_store: 'App Store', play_store: 'Google Play', web: 'paiement en ligne', gift: `offert par ${BRAND.name}`, code: 'code promo', promo: `offert par ${BRAND.name}` };
 const euros = (c: number, cur = 'EUR') => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: cur }).format(c / 100);
 const day = (iso: string) => new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(iso));
 const productOf = (p: Plan) => (Platform.OS === 'ios' ? p.apple_product_id : p.google_product_id);
@@ -82,7 +83,7 @@ export function Premium({ W, onClose, onToast, onNeedAccount, demo, demoOn, onDe
     if (!plan) return;
     const id = productOf(plan);
     if (!storeOn || !id) return setErr(Platform.OS === 'web'
-      ? 'L’abonnement se prend dans l’app TITRE sur iPhone ou Android. Vous avez un code ? Touchez « J’ai un code ».'
+      ? `L’abonnement se prend dans l’app ${BRAND.name} sur iPhone ou Android. Vous avez un code ? Touchez « J’ai un code ».`
       : 'L’abonnement n’est pas encore disponible sur cet appareil.');
     run('buy', async () => {
       if ((await buy(id)) !== 'ok') return;
@@ -117,7 +118,7 @@ export function Premium({ W, onClose, onToast, onNeedAccount, demo, demoOn, onDe
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: C.night }, a]}>
-      <LinearGradient colors={['rgba(200,107,250,0.30)', 'rgba(61,123,255,0.10)', 'rgba(14,11,31,0)']} style={[StyleSheet.absoluteFill, { height: '55%' }]} />
+      <LinearGradient colors={['rgba(200,107,250,0.30)', alpha(C.blue, 0.10), alpha(C.night, 0)]} style={[StyleSheet.absoluteFill, { height: '55%' }]} />
       <View style={[styles.head, { paddingTop: insets.top + 18 }]}>
         <View style={{ flex: 1 }} />
         <Pressable onPress={() => leave(onClose)} hitSlop={12}><Text style={styles.close}>Fermer</Text></Pressable>
@@ -126,12 +127,12 @@ export function Premium({ W, onClose, onToast, onNeedAccount, demo, demoOn, onDe
         <ScrollView contentContainerStyle={{ paddingHorizontal: 26, paddingBottom: Math.max(30, insets.bottom + 16), gap: 18 }} keyboardShouldPersistTaps="handled">
           <View style={{ alignItems: 'center', gap: 14, paddingVertical: 6 }}>
             <AppIcon size={72} />
-            <Text style={styles.h}>{active ? 'Premium actif' : 'TITRE Premium'}</Text>
-            <Text style={[styles.p, { textAlign: 'center' }]}>{active ? 'Merci de soutenir TITRE.' : 'L’actu qui compte, sans aucune interruption.'}</Text>
+            <Text style={styles.h}>{active ? 'Premium actif' : `${BRAND.name} Premium`}</Text>
+            <Text style={[styles.p, { textAlign: 'center' }]}>{active ? `Merci de soutenir ${BRAND.name}.` : TEXTS.premium_pitch}</Text>
           </View>
 
           <View style={styles.rows}>
-            {['Zéro pub dans votre fil', 'Le badge Premium à côté de votre pseudo', 'Vous soutenez TITRE directement'].map((t, i, l) => (
+            {RULES.premium_benefits.map((b) => b.replaceAll('{nom}', BRAND.name)).map((t, i, l) => (
               <View key={t} style={[styles.row, i === l.length - 1 && { borderBottomWidth: 0 }]}>
                 <Text style={styles.check}>✓</Text><Text style={styles.rl}>{t}</Text>
               </View>
@@ -216,11 +217,11 @@ function Line({ label, value, last }: { label: string; value: string; last?: boo
 const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 26, paddingBottom: 4 },
   h: { color: '#fff', fontFamily: F.black, fontSize: 30, lineHeight: 32 },
-  close: { color: '#cfd9ff', fontFamily: F.semi, fontSize: 14 },
+  close: { color: C.link, fontFamily: F.semi, fontSize: 14 },
   p: { color: C.text2, fontFamily: F.regular, fontSize: 15, lineHeight: 22 },
   small: { color: C.text3, fontFamily: F.regular, fontSize: 12, lineHeight: 18, textAlign: 'center' },
   err: { color: C.coral, fontFamily: F.semi, fontSize: 14, lineHeight: 20, textAlign: 'center' },
-  link: { color: '#cfd9ff', fontFamily: F.semi, fontSize: 14, textAlign: 'center', paddingVertical: 4 },
+  link: { color: C.link, fontFamily: F.semi, fontSize: 14, textAlign: 'center', paddingVertical: 4 },
   legal: { color: C.text3, fontFamily: F.regular, fontSize: 12, textDecorationLine: 'underline' },
   rows: { borderRadius: 18, backgroundColor: C.surface, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderColor: C.line },
@@ -228,7 +229,7 @@ const styles = StyleSheet.create({
   rv: { color: C.text2, fontFamily: F.regular, fontSize: 14 },
   check: { color: C.pink, fontFamily: F.black, fontSize: 15 },
   plan: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 18, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.surface, paddingHorizontal: 16, paddingVertical: 15 },
-  planOn: { borderColor: C.violet, backgroundColor: 'rgba(123,92,255,0.16)' },
+  planOn: { borderColor: C.violet, backgroundColor: alpha(C.violet, 0.16) },
   radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: C.text3, alignItems: 'center', justifyContent: 'center' },
   radioOn: { borderColor: '#fff' },
   dot: { width: 11, height: 11, borderRadius: 6, backgroundColor: '#fff' },

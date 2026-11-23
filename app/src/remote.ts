@@ -1,6 +1,7 @@
 // Lecture de la vraie édition du jour dans Supabase (API REST publique, lecture seule).
 // Sans configuration ou sans réseau, l'app garde le contenu de démonstration.
 import { FLASHES, PHOTOS, RUBRICS, RUBRIC_LIST } from './content';
+import { C } from './theme';
 import type { Article, Flash, Rubric } from './types';
 
 const URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -93,7 +94,7 @@ export async function loadEdition(timeoutMs = 4000): Promise<string | null> {
       }),
     })).filter((r) => r.items.length);
     // Les infos sans photo prennent un dégradé de la palette.
-    const grads = [['#7B5CFF', '#3D7BFF', '#C86BFA', '#1a1440'], ['#3D7BFF', '#7B5CFF', '#4fb0ff', '#120e2a']];
+    const grads = [[C.violet, C.blue, C.pink, C.night2], [C.blue, C.violet, C.sky, C.night3]];
     next.forEach((r, i) => r.items.forEach((a) => { if (!a.photo) a.grad = grads[i % 2]; }));
     RUBRICS.splice(0, RUBRICS.length, ...next);
     return date;

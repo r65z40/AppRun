@@ -3,11 +3,14 @@ import { Pressable, StyleSheet, Text, View, type PressableProps, type StyleProp,
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing } from 'react-native-reanimated';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
 import { C, F, GRAD, GRAD3 } from './theme';
+import { BRAND } from './brand';
 
 /* ---------- Icônes (traits fins, style Lucide) ---------- */
-type IconName = 'up' | 'down' | 'cmt' | 'share' | 'flag' | 'book' | 'gear' | 'send' | 'smile';
+type IconName = 'up' | 'down' | 'cmt' | 'share' | 'flag' | 'book' | 'gear' | 'send' | 'smile' | 'close';
 const PATHS: Record<IconName, string> = {
+  close: 'M18 6 6 18M6 6l12 12',
   up: 'M7 10v11H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3zm0 0 4-8a3 3 0 0 1 3 3v4h5.5a2 2 0 0 1 2 2.3l-1.4 8a2 2 0 0 1-2 1.7H7',
   down: 'M17 14V3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-3zm0 0-4 8a3 3 0 0 1-3-3v-4H4.5a2 2 0 0 1-2-2.3l1.4-8a2 2 0 0 1 2-1.7H17',
   cmt: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z',
@@ -39,6 +42,8 @@ export function Glyph({ size = 40 }: { size?: number }) {
 }
 export function AppIcon({ size = 64, glass = false }: { size?: number; glass?: boolean }) {
   const r = size * 0.27;
+  // Logo réglé dans le back office (Personnalisation > Identité) à la place de l'icône dessinée.
+  if (BRAND.logo) return <Image source={{ uri: BRAND.logo }} contentFit="cover" style={{ width: size, height: size, borderRadius: r }} accessibilityLabel={BRAND.name} />;
   if (glass)
     return (
       <View style={{ width: size, height: size, borderRadius: r, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' }}>

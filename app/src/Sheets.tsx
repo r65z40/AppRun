@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, TextInput, View, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
-import Animated, { Easing, interpolate, Extrapolation, useAnimatedStyle, useSharedValue, withTiming, withSpring, type SharedValue } from 'react-native-reanimated';
+import Animated, { Easing, interpolate, Extrapolation, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withTiming, withSpring, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { C, F, DRAWER_MS } from './theme';
+import { C, F, DRAWER_MS, GRAD3, alpha } from './theme';
+import { BRAND } from './brand';
 import type { Article, Comment } from './types';
-import { summaryOf } from './edition';
+import { rubricOf, summaryOf } from './edition';
 import { Icon, Press } from './ui';
 import { ReactBtn } from './Feed';
 import { feel } from './feel';
@@ -17,10 +18,12 @@ import { todayLabel, yearLabel } from './dates';
 const DRAWER = Easing.bezier(0.32, 0.72, 0, 1);
 
 /** Volet du bas : il suit le doigt, se ferme à la distance OU à la vitesse, le voile suit le volet. */
-export function Sheet({ open, onClose, H, children, bg, header }: {
+export function Sheet({ open, onClose, H, children, bg, header, full }: {
   open: boolean; onClose: () => void; H: number; children: React.ReactNode; bg: Article | null; header: React.ReactNode;
+  /** Plein écran (lecture d'un article) : l'en-tête flotte au-dessus du contenu au lieu de le pousser. */
+  full?: boolean;
 }) {
-  const h = H * 0.9;
+  const h = full ? H : H * 0.9;
   const y = useSharedValue(h);
   const [mounted, setMounted] = useState(open);
   useEffect(() => {
@@ -52,16 +55,17 @@ export function Sheet({ open, onClose, H, children, bg, header }: {
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(8,6,20,0.55)' }, scrim]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Fermer" />
       </Animated.View>
-      <Animated.View style={[styles.sheet, { height: h }, sheet]}>
+      <Animated.View style={[styles.sheet, full && styles.full, { height: h }, sheet]}>
         {bg?.photo ? <Image source={bg.photo} style={StyleSheet.absoluteFill} blurRadius={40} contentFit="cover" /> : null}
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(14,11,31,0.82)' }]} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: alpha(C.night, full ? 0.92 : 0.82) }]} />
+        {full ? children : null}
         <GestureDetector gesture={pan}>
-          <View>
-            <View style={styles.grab}><View style={styles.grabBar} /></View>
+          <View style={full ? styles.float : null}>
+            {full ? null : <View style={styles.grab}><View style={styles.grabBar} /></View>}
             {header}
           </View>
         </GestureDetector>
-        {children}
+        {full ? null : children}
       </Animated.View>
     </View>
   );
@@ -77,26 +81,60 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
   const insets = useSafeAreaInsets();
   const heads = ['Contexte', 'Ce qui change', 'Et après'];
   const endSent = useRef<string | null>(null);
+  // Lecture plein écran : grande photo en haut (nette), titre posé dessus, le texte remonte par-dessus en défilant.
+  const heroH = Math.round(H * 0.46);
+  const sy = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler({
+    onScroll: (e) => { sy.value = e.contentOffset.y; },
+    // Tirer vers le bas depuis le haut de l'article le ferme aussi.
+    onEndDrag: (e) => { if (e.contentOffset.y < -90) scheduleOnRN(onClose); },
+  });
+  const heroStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: sy.value > 0 ? sy.value * 0.5 : sy.value },
+      { scale: sy.value < 0 ? 1 + -sy.value / heroH : 1 },
+    ],
+  }));
+  // La barre du haut se teinte quand le texte passe dessous.
+  const barStyle = useAnimatedStyle(() => ({ opacity: interpolate(sy.value, [heroH - 140, heroH - 60], [0, 1], Extrapolation.CLAMP) }));
+  useEffect(() => { if (open) sy.value = 0; }, [open, a?.id]);
   return (
-    <Sheet open={open} onClose={onClose} H={H} bg={a} header={
-      <View style={styles.sheetHead}>
-        <Text style={styles.logo}>TITRE</Text>
-        <Pressable onPress={onClose} hitSlop={12}><Text style={styles.close}>Fermer</Text></Pressable>
+    <Sheet open={open} onClose={onClose} H={H} bg={a} full header={
+      <View style={{ paddingTop: insets.top + 14 }}>
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: alpha(C.night, 0.94), borderBottomWidth: 1, borderColor: C.line }, barStyle]} />
+        <View style={styles.readBar}>
+          <Text style={styles.readBrand} numberOfLines={1}>{BRAND.name}</Text>
+          <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Fermer">
+            <Icon name="close" size={18} />
+          </Pressable>
+        </View>
       </View>
     }>
       {a ? (
         <>
-          <ScrollView
+          <Animated.ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={{ paddingHorizontal: 30, paddingBottom: 30 }}
-            scrollEventThrottle={250}
+            contentContainerStyle={{ paddingBottom: 30 }}
+            onScroll={onScroll}
+            scrollEventThrottle={16}
             // Résumé lu jusqu'en bas (80 %) : un signal fort pour l'algorithme, envoyé une fois.
-            onScroll={({ nativeEvent: e }) => {
+            onMomentumScrollEnd={({ nativeEvent: e }) => {
               if (a && endSent.current !== a.id && e.contentOffset.y + e.layoutMeasurement.height >= e.contentSize.height * 0.8) { endSent.current = a.id; onSignal('summary_end'); }
             }}
           >
-            <Text style={styles.h2}>{a.title.toUpperCase()}</Text>
-            <Text style={styles.date}>{todayLabel()} {yearLabel()} · lecture 1 min</Text>
+            <View style={{ height: heroH, overflow: 'visible' }}>
+              <Animated.View style={[StyleSheet.absoluteFill, heroStyle]}>
+                {a.photo ? <Image source={a.photo} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} />
+                  : <LinearGradient colors={(a.grad as [string, string, ...string[]]) ?? GRAD3} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />}
+                <LinearGradient colors={[alpha(C.night, 0.55), alpha(C.night, 0), alpha(C.night, 0.35), C.night]} locations={[0, 0.3, 0.62, 1]} style={StyleSheet.absoluteFill} />
+              </Animated.View>
+              <View style={styles.heroText}>
+                {rubricOf(a)?.name ? <Text style={styles.kick}>{rubricOf(a).name.toUpperCase()}</Text> : null}
+                <Text style={styles.h2}>{a.title.toUpperCase()}</Text>
+                <Text style={styles.date}>{todayLabel()} {yearLabel()} · {a.hour} · lecture 1 min</Text>
+              </View>
+            </View>
+            <View style={{ paddingHorizontal: 30, paddingTop: 22, backgroundColor: C.night }}>
             {summaryOf(a).map((t, i) => (
               <View key={i} style={{ marginBottom: 26 }}>
                 <Text style={styles.blkH}>{heads[i].toUpperCase()}</Text>
@@ -110,7 +148,8 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
               ))}
               {a.credit ? <Text style={[styles.srcLink, { color: C.text3, fontSize: 12, marginTop: 8 }]}>Photo : {a.credit}</Text> : null}
             </View>
-          </ScrollView>
+            </View>
+          </Animated.ScrollView>
           <View style={[styles.foot, { paddingBottom: Math.max(18, insets.bottom + 6) }]}>
             <ReactBtn row icon="up" n={a.likes + (reaction === 1 ? 1 : 0)} on={reaction === 1} color={C.violet} onPress={() => onReact(1)} label="J'aime" />
             <ReactBtn row icon="down" on={reaction === -1} color={C.coral} onPress={() => onReact(-1)} label="Je n'aime pas" />
@@ -223,7 +262,7 @@ function CommentRow({ c, fresh, onVote, onFlag, onBlock }: { c: Comment; fresh: 
       <Text style={styles.cmtTxt}>{c.text}</Text>
       <View style={styles.cmtAct}>
         <Pressable onPress={() => onVote(1)} style={styles.vote} hitSlop={8} accessibilityLabel="J'aime ce commentaire">
-          <Icon name="up" size={15} color={c.mine === 1 ? '#c9bcff' : C.text2} fill={c.mine === 1 ? C.violet : 'none'} />
+          <Icon name="up" size={15} color={c.mine === 1 ? C.soft : C.text2} fill={c.mine === 1 ? C.violet : 'none'} />
           <Text style={styles.voteTxt}>{c.likes + (c.mine === 1 ? 1 : 0)}</Text>
         </Pressable>
         <Pressable onPress={() => onVote(-1)} style={styles.vote} hitSlop={8} accessibilityLabel="Je n'aime pas ce commentaire">
@@ -249,15 +288,22 @@ const styles = StyleSheet.create({
   grab: { paddingTop: 10, paddingBottom: 4, alignItems: 'center' },
   grabBar: { width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 26, paddingTop: 6, paddingBottom: 14 },
-  logo: { color: '#b9a8ff', fontFamily: F.black, fontSize: 19 },
-  close: { color: '#cfd9ff', fontFamily: F.semi, fontSize: 14 },
-  h2: { color: '#fff', fontFamily: F.black, fontSize: 26, lineHeight: 27, marginTop: 6 },
-  date: { color: C.text2, fontFamily: F.regular, fontSize: 13, marginTop: 8, marginBottom: 28 },
-  blkH: { color: '#c4b5ff', fontFamily: F.black, fontSize: 11, letterSpacing: 1.8, marginBottom: 10 },
+  logo: { color: C.soft, fontFamily: F.black, fontSize: 19 },
+  close: { color: C.link, fontFamily: F.semi, fontSize: 14 },
+  full: { borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTopWidth: 0 },
+  float: { position: 'absolute', top: 0, left: 0, right: 0 },
+  readBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 10 },
+  readBrand: { color: '#fff', fontFamily: F.black, fontSize: 17, letterSpacing: -0.2, textShadowColor: 'rgba(0,0,0,0.35)', textShadowRadius: 8 },
+  closeBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.38)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
+  heroText: { position: 'absolute', left: 30, right: 30, bottom: 0 },
+  kick: { color: C.soft2, fontFamily: F.black, fontSize: 11, letterSpacing: 1.8, marginBottom: 8 },
+  h2: { color: '#fff', fontFamily: F.black, fontSize: 30, lineHeight: 31, textShadowColor: 'rgba(0,0,0,0.35)', textShadowRadius: 12 },
+  date: { color: C.text2, fontFamily: F.regular, fontSize: 13, marginTop: 10 },
+  blkH: { color: C.soft, fontFamily: F.black, fontSize: 11, letterSpacing: 1.8, marginBottom: 10 },
   blkP: { color: 'rgba(255,255,255,0.9)', fontFamily: F.regular, fontSize: 17, lineHeight: 27 },
   srcList: { borderTopWidth: 1, borderColor: C.line, paddingTop: 14, gap: 12 },
   lbl: { color: C.text3, fontFamily: F.semi, fontSize: 11, letterSpacing: 1.6 },
-  srcLink: { color: '#cfe0ff', fontFamily: F.regular, fontSize: 14 },
+  srcLink: { color: C.link, fontFamily: F.regular, fontSize: 14 },
   foot: { flexDirection: 'row', alignItems: 'center', gap: 26, paddingHorizontal: 30, paddingTop: 12, borderTopWidth: 1, borderColor: C.line },
   footBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, height: 44 },
   footTxt: { color: C.text2, fontFamily: F.semi, fontSize: 14 },
@@ -271,13 +317,13 @@ const styles = StyleSheet.create({
   avTxt: { color: '#fff', fontFamily: F.black, fontSize: 11 },
   who: { color: '#fff', fontFamily: F.semi, fontSize: 13 },
   prem: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2, backgroundColor: 'rgba(200,107,250,0.25)', borderWidth: 1, borderColor: 'rgba(200,170,255,0.45)' },
-  premTxt: { color: '#e6d8ff', fontFamily: F.semi, fontSize: 9, letterSpacing: 1.2 },
+  premTxt: { color: C.soft2, fontFamily: F.semi, fontSize: 9, letterSpacing: 1.2 },
   ago: { color: C.text3, fontFamily: F.regular, fontSize: 12 },
   cmtTxt: { color: '#fff', fontFamily: F.regular, fontSize: 15, lineHeight: 21, paddingLeft: 34 },
   cmtAct: { flexDirection: 'row', gap: 18, paddingLeft: 34, alignItems: 'center' },
   vote: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 28 },
   voteTxt: { color: C.text2, fontFamily: F.regular, fontSize: 12 },
-  compose: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 18, paddingTop: 12, borderTopWidth: 1, borderColor: C.line, backgroundColor: 'rgba(14,11,31,0.6)' },
+  compose: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 18, paddingTop: 12, borderTopWidth: 1, borderColor: C.line, backgroundColor: alpha(C.night, 0.6) },
   input: { height: 46, borderRadius: 15, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, color: '#fff', fontFamily: F.regular, fontSize: 15, paddingLeft: 14, paddingRight: 46 },
   count: { position: 'absolute', right: 12, color: C.text3, fontFamily: F.regular, fontSize: 11 },
   send: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },

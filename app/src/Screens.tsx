@@ -3,7 +3,9 @@ import { ScrollView, StyleSheet, Text, View, Pressable, type NativeScrollEvent, 
 import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { C, F, GRAD, GRAD3, DRAWER_MS } from './theme';
+import { C, F, GRAD, GRAD3, DRAWER_MS, alpha } from './theme';
+import { BRAND, NOTIF, RULES, TEXTS } from './brand';
+import { setNotif } from './notify';
 import { RUBRIC_LIST } from './content';
 import { accountsOn } from './account';
 import { CREDITS } from './edition';
@@ -30,7 +32,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
       <LinearGradient colors={GRAD3} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
         <Animated.View style={[{ alignItems: 'center', gap: 12 }, a]}>
           <AppIcon size={64} glass />
-          <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 72, letterSpacing: -2.5 }}>TITRE</Text>
+          <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 72, letterSpacing: -2.5 }}>{BRAND.name}</Text>
           <Text style={{ color: 'rgba(255,255,255,0.9)', fontFamily: F.regular, fontSize: 17 }}>{todayLabel()}</Text>
         </Animated.View>
       </LinearGradient>
@@ -40,30 +42,31 @@ export function Splash({ onDone }: { onDone: () => void }) {
 
 /* ---------- Première ouverture (§4.1) ---------- */
 /** premium : le lecteur veut voir l'offre Premium dès la fin de la présentation. */
-export type OnbResult = { active: string[]; quota: number; time: string; adsPersonalized: boolean; premium?: boolean; account?: boolean };
+export type OnbResult = { active: string[]; quota: number; time: string; adsPersonalized: boolean; premium?: boolean; account?: boolean; notif?: Promise<boolean> };
 export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) => void }) {
   const insets = useSafeAreaInsets();
   const [i, setI] = useState(0);
-  const [active, setActive] = useState<string[]>(['france', 'monde', 'eco', 'tech']);
-  const [quota, setQuota] = useState(24);
-  const [time, setTime] = useState('7 h 30');
+  const [active, setActive] = useState<string[]>([...RULES.default_rubrics]);
+  const [quota, setQuota] = useState(RULES.default_quota);
+  const [time, setTime] = useState(NOTIF.default_time);
   const [adsP, setAdsP] = useState(false);
+  const [notif, setNotifP] = useState<Promise<boolean> | undefined>(undefined);
   // Dernière étape (avec la vraie base) : proposer un compte pour une édition plus pertinente.
-  const N = accountsOn ? 6 : 5;
+  const N = (accountsOn ? 6 : 5) - (NOTIF.enabled ? 0 : 1);
   const x = useSharedValue(0);
   useEffect(() => {
     x.value = withTiming(-i * W, { duration: DRAWER_MS, easing: DRAWER });
   }, [i, W]);
   const track = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
   const next = () => { setI((k) => Math.min(N - 1, k + 1)); feel('light'); };
-  const finish = (ads: boolean, more: Partial<OnbResult> = {}) => onDone({ active, quota, time, adsPersonalized: ads, ...more });
+  const finish = (ads: boolean, more: Partial<OnbResult> = {}) => onDone({ active, quota, time, adsPersonalized: ads, notif, ...more });
   const toggle = (id: string) => { setActive((a) => (a.includes(id) ? a.filter((k) => k !== id) : [...a, id])); feel('select', 'tick'); };
   const step = (children: React.ReactNode) => (
     <View style={[styles.step, { width: W, paddingBottom: Math.max(30, insets.bottom + 16) }]}>{children}</View>
   );
   return (
     <Animated.View entering={FadeIn.duration(400)} exiting={FadeOut.duration(400)} style={[StyleSheet.absoluteFill, { backgroundColor: C.night }]}>
-      <LinearGradient colors={['rgba(123,92,255,0.28)', 'rgba(14,11,31,0)']} style={[StyleSheet.absoluteFill, { height: '60%' }]} />
+      <LinearGradient colors={[alpha(C.violet, 0.28), alpha(C.night, 0)]} style={[StyleSheet.absoluteFill, { height: '60%' }]} />
       <View style={[styles.onbTop, { paddingTop: insets.top + 14 }]}>
         <View style={{ flexDirection: 'row', gap: 6 }}>
           {Array.from({ length: N }, (_, k) => <Dot key={k} on={k === i} />)}
@@ -74,8 +77,8 @@ export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) =>
         <Animated.View style={[{ flexDirection: 'row', flex: 1, width: W * N }, track]}>
           {step(<>
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><AppIcon size={112} /></View>
-            <Text style={styles.h}>L'actu ultra résumée.</Text>
-            <Text style={styles.p}>Tout ce que vous devez savoir, sur ce qui vous intéresse. Avec 80 % de temps en moins qu'un média classique.</Text>
+            <Text style={styles.h}>{TEXTS.welcome_title}</Text>
+            <Text style={styles.p}>{TEXTS.welcome_text}</Text>
             <GradButton label="Commencer" onPress={next} />
           </>)}
           {step(<>
@@ -92,18 +95,18 @@ export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) =>
             <QuotaWheel value={quota} onChange={setQuota} />
             <GradButton label="Continuer" onPress={next} />
           </>)}
-          {step(<>
+          {NOTIF.enabled ? step(<>
             <View style={{ flex: 1 }} />
-            <Text style={styles.h}>Votre édition, chaque matin.</Text>
-            <Text style={styles.p}>Une seule notification par jour, quand l'édition est prête. Rien d'autre.</Text>
+            <Text style={styles.h}>{TEXTS.notif_title}</Text>
+            <Text style={styles.p}>{TEXTS.notif_text}</Text>
             <TimeChoice value={time} onChange={setTime} />
-            <GradButton label="Activer la notification" onPress={next} />
+            <GradButton label="Activer la notification" onPress={() => { setNotifP(setNotif(true, time, quota)); next(); }} />
             <SoftButton label="Plus tard" onPress={next} />
-          </>)}
+          </>) : null}
           {step(<>
             <View style={{ flex: 1 }} />
-            <Text style={styles.h}>Gratuit, grâce à quelques pubs.</Text>
-            <Text style={styles.p}>Une carte sponsorisée de temps en temps, jamais plus d'une toutes les six infos. Premium les retire toutes.</Text>
+            <Text style={styles.h}>{TEXTS.ads_title}</Text>
+            <Text style={styles.p}>{TEXTS.ads_text}</Text>
             <View style={styles.rows}>
               <Row label="Pubs selon mes centres d'intérêt" hint="Sinon, des pubs sans ciblage" last>
                 <Toggle label="Pubs selon mes centres d'intérêt" on={adsP} onPress={() => setAdsP(!adsP)} />
@@ -138,6 +141,8 @@ export type Prefs = {
   taste?: Record<string, number>;
   /** Édition personnalisée par l'algorithme (oui par défaut) ; non = la même édition pour tous. */
   perso?: boolean;
+  /** Notification du matin demandée sur cet appareil. */
+  notif?: boolean;
 };
 export function Settings({ W, prefs, onSave, onClose, account, onAccount, premium, onPremium, onResetTaste }: {
   W: number; prefs: Prefs; onSave: (p: Prefs) => void; onClose: () => void;
@@ -200,11 +205,17 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
             <Row label="Effet de profondeur" hint="La photo suit l'inclinaison du téléphone" last><Toggle label="Effet de profondeur" on={d.parallax} onPress={() => set('parallax', !d.parallax)} /></Row>
           </View>
         </View>
-        <View style={{ gap: 12 }}>
-          <Text style={st.label}>Notification</Text>
-          <Text style={[styles.p, { fontSize: 13 }]}>Votre édition est prête à {d.time}.</Text>
-          <TimeChoice value={d.time} onChange={(t) => set('time', t)} />
-        </View>
+        {NOTIF.enabled ? (
+          <View style={{ gap: 12 }}>
+            <Text style={st.label}>Notification</Text>
+            <View style={styles.rows}>
+              <Row label="Notification du matin" hint={d.notif ? `Votre édition est prête à ${d.time}.` : 'Coupée sur ce téléphone'} last>
+                <Toggle label="Notification du matin" on={!!d.notif} onPress={() => set('notif', !d.notif)} />
+              </Row>
+            </View>
+            {d.notif ? <TimeChoice value={d.time} onChange={(t) => set('time', t)} /> : null}
+          </View>
+        ) : null}
         <View style={{ gap: 12 }}>
           <Text style={st.label}>Compte</Text>
           <View style={styles.rows}>
@@ -221,9 +232,9 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
               </Row>
             ) : null}
           </View>
-          <LinearGradient colors={['rgba(200,107,250,0.28)', 'rgba(61,123,255,0.25)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.prem}>
+          <LinearGradient colors={['rgba(200,107,250,0.28)', alpha(C.blue, 0.25)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.prem}>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 16 }}>{premium ? 'Premium actif' : 'TITRE Premium'}</Text>
+              <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 16 }}>{premium ? 'Premium actif' : `${BRAND.name} Premium`}</Text>
               <Text style={[styles.p, { fontSize: 13 }]}>{premium ? 'Aucune pub dans votre fil.' : 'Zéro pub, sans engagement.'}</Text>
             </View>
             <SoftButton label={premium ? 'Gérer' : 'Découvrir'} onPress={() => { feel('light'); onPremium(); }} style={{ height: 38, borderRadius: 12 }} />
@@ -253,7 +264,7 @@ function Row({ label, hint, last, children }: { label: string; hint?: string; la
 }
 
 /* ---------- Nombre d'infos : carrousel de 4 en 4 ---------- */
-const QUOTAS = Array.from({ length: 15 }, (_, k) => (k + 1) * 4); // 4 à 60
+const QUOTAS = Array.from({ length: Math.floor(RULES.quota_max / 4) }, (_, k) => (k + 1) * 4); // de 4 en 4, jusqu'au maximum réglé
 const QW = 64; // largeur d'un cran
 export function QuotaWheel({ value, onChange }: { value: number; onChange: (q: number) => void }) {
   const ref = useRef<ScrollViewInstance>(null);
@@ -421,11 +432,11 @@ export function End({ n, realMs, allRead, left, onReread }: { n: number; realMs:
   const real = Math.max(realMs, n * 25000);
   return (
     <Animated.View entering={FadeIn.duration(900)} exiting={FadeOut.duration(400)} style={StyleSheet.absoluteFill}>
-      <LinearGradient colors={['#120e2a', C.night]} style={[StyleSheet.absoluteFill, { justifyContent: 'center', paddingHorizontal: 32, paddingTop: insets.top, paddingBottom: insets.bottom, gap: 24 }]}>
+      <LinearGradient colors={[C.night3, C.night]} style={[StyleSheet.absoluteFill, { justifyContent: 'center', paddingHorizontal: 32, paddingTop: insets.top, paddingBottom: insets.bottom, gap: 24 }]}>
         <View style={styles.moon} />
-        <Text style={styles.endH}>{allRead ? "C'est tout pour aujourd'hui." : 'Bonne journée.'}{'\n'}<Text style={{ color: '#b9a8ff' }}>À demain.</Text></Text>
+        <Text style={styles.endH}>{allRead ? TEXTS.end_title : 'Bonne journée.'}{'\n'}<Text style={{ color: C.soft }}>{TEXTS.end_bye}</Text></Text>
         <Text style={[styles.p, { fontSize: 17 }]}>
-          {allRead ? 'Vous avez lu toutes les infos du jour. ' : `Il reste ${left} infos aujourd'hui si vous changez d'avis. `}Prochaine édition {tomorrowLabel()} à 6 h 00.
+          {allRead ? 'Vous avez lu toutes les infos du jour. ' : `Il reste ${left} infos aujourd'hui si vous changez d'avis. `}Prochaine édition {tomorrowLabel()} à {RULES.next_edition}.
         </Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {[[String(n), 'infos lues'], [fmt(real).replace(/ \d+ s$/, ''), 'de lecture'], ['5 jours', "d'affilée"]].map(([b, s]) => (
@@ -463,7 +474,7 @@ export function fmtMin(min: number) {
 const styles = StyleSheet.create({
   step: { paddingHorizontal: 30, paddingTop: 20, gap: 18 },
   onbTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 26 },
-  close: { color: '#cfd9ff', fontFamily: F.semi, fontSize: 14 },
+  close: { color: C.link, fontFamily: F.semi, fontSize: 14 },
   h: { color: '#fff', fontFamily: F.black, fontSize: 34, lineHeight: 36, letterSpacing: -0.6 },
   p: { color: C.text2, fontFamily: F.regular, fontSize: 16, lineHeight: 24 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 4 },
@@ -477,10 +488,10 @@ const styles = StyleSheet.create({
   bravoH: { color: '#fff', fontFamily: F.black, fontSize: 48, letterSpacing: -1.5 },
   lead: { color: '#fff', fontFamily: F.regular, fontSize: 21, lineHeight: 28 },
   card: { borderRadius: 22, padding: 18, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, gap: 6 },
-  big: { color: '#cbb8ff', fontFamily: F.black, fontSize: 44 },
+  big: { color: C.soft, fontFamily: F.black, fontSize: 44 },
   day: { flex: 1, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  how: { color: '#cfd9ff', fontFamily: F.regular, fontSize: 13, textDecorationLine: 'underline' },
-  moon: { width: 64, height: 64, borderRadius: 32, borderWidth: 0, backgroundColor: 'transparent', shadowColor: '#cbbcff', borderLeftWidth: 14, borderBottomWidth: 6, borderColor: '#cbbcff', transform: [{ rotate: '-20deg' }] },
+  how: { color: C.link, fontFamily: F.regular, fontSize: 13, textDecorationLine: 'underline' },
+  moon: { width: 64, height: 64, borderRadius: 32, borderWidth: 0, backgroundColor: 'transparent', shadowColor: C.soft, borderLeftWidth: 14, borderBottomWidth: 6, borderColor: C.soft, transform: [{ rotate: '-20deg' }] },
   endH: { color: '#fff', fontFamily: F.black, fontSize: 42, lineHeight: 44, letterSpacing: -1 },
   stat: { flex: 1, borderRadius: 18, backgroundColor: C.surface, padding: 14 },
   statN: { color: '#fff', fontFamily: F.black, fontSize: 22 },
