@@ -45,7 +45,7 @@ export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) =>
   const insets = useSafeAreaInsets();
   const [i, setI] = useState(0);
   const [active, setActive] = useState<string[]>(['france', 'monde', 'eco', 'tech']);
-  const [quota, setQuota] = useState(8);
+  const [quota, setQuota] = useState(24);
   const [time, setTime] = useState('7 h 30');
   const [adsP, setAdsP] = useState(false);
   // Dernière étape (avec la vraie base) : proposer un compte pour une édition plus pertinente.
