@@ -46,6 +46,8 @@ revoke all on public.ad_stats from anon;
 grant select on public.ad_stats to authenticated;
 
 -- 3. Ce que l'app affiche : campagnes en cours, sans les prix. S'il y a un sponsor exclusif, lui seul.
+-- (Refaite par 0025 avec d'autres colonnes : on la supprime d'abord pour que ce fichier puisse repasser.)
+drop function if exists public.live_ads();
 create or replace function public.live_ads()
 returns table (id uuid, advertiser text, title text, body text, cta text, url text, image_url text, rubrics text[], weight int)
 language sql stable security definer set search_path = public as $$
@@ -62,12 +64,14 @@ $$;
 grant execute on function public.live_ads() to anon, authenticated;
 
 -- 4. L'app compte un affichage ou un clic (anonyme : aucune donnée sur le lecteur).
+-- (plpgsql : vérifiée à l'exécution, ce fichier repasse même après 0025 qui change la clé de ad_stats.)
 create or replace function public.ad_hit(cid uuid, click boolean default false) returns void
-language sql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public as $$
+begin
   insert into public.ad_stats (campaign_id, day, views, clicks)
   select c.id, (now() at time zone 'Europe/Paris')::date, case when click then 0 else 1 end, case when click then 1 else 0 end
     from public.ad_campaigns c where c.id = cid
   on conflict (campaign_id, day) do update
     set views = public.ad_stats.views + excluded.views, clicks = public.ad_stats.clicks + excluded.clicks;
-$$;
+end $$;
 grant execute on function public.ad_hit(uuid, boolean) to anon, authenticated;

@@ -55,6 +55,9 @@ export const RULES = {
   /** Première pub après la N-ième info, puis une toutes les N infos (version gratuite). */
   ad_first: 3,
   ad_every: 6,
+  /** Dernière minute et autres rubriques : une pub toutes les N infos (0 = jamais). */
+  flash_ad_every: 5,
+  rubric_ad_every: 0,
   /** Heure annoncée sur l'écran de fin de journée. */
   next_edition: '6 h 00',
   /** Réactions proposées en mode emoji. */
@@ -158,6 +161,8 @@ function applyRules(r: Record<string, unknown>, g: Record<string, unknown>) {
   const dq = int(r.default_quota, 4, RULES.quota_max); if (dq) RULES.default_quota = dq - (dq % 4) || 4;
   const af = int(r.ad_first, 1, 20); if (af) RULES.ad_first = af;
   const ae = int(r.ad_every, 2, 30); if (ae) RULES.ad_every = ae;
+  // 0 = aucune pub à cet endroit
+  for (const k of ['flash_ad_every', 'rubric_ad_every'] as const) { const v = r[k] === 0 ? 0 : int(r[k], 2, 30); if (v !== null) RULES[k] = v; }
   if (typeof r.next_edition === 'string' && /^([01]?\d|2[0-3]) h [0-5]\d$/.test(r.next_edition)) RULES.next_edition = r.next_edition;
   const em = strs(r.emojis, 8, 8); if (em.length >= 2) RULES.emojis = em;
   const pb = strs(r.premium_benefits, 6); if (pb.length) RULES.premium_benefits = pb;
