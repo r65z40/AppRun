@@ -17,10 +17,19 @@ export const RUBRICS = {
   people: 'People : célébrités, télé, divertissement, familles royales',
 } as const;
 export type RubricId = keyof typeof RUBRICS;
+/** Définitions des rubriques données à l'IA : celles du back office (IA > Rubriques) si elles existent. */
+const hints: Record<string, string> = Object.fromEntries(Object.entries(RUBRICS));
+export function setRubricHints(rows: { id: string; name: string; ai_hint: string | null }[]) {
+  for (const r of rows) if (r.id in RUBRICS && r.ai_hint?.trim()) hints[r.id] = `${r.name} : ${r.ai_hint.trim()}`;
+}
+const rubricList = () => RUBRIC_IDS.map((k) => `- ${k} : ${hints[k]}`).join('\n');
 const RUBRIC_IDS = Object.keys(RUBRICS) as [RubricId, ...RubricId[]];
 
 /** Une info brute telle que le moteur la donne à l'IA (titre + chapô de chaque média). */
-export type Item = { n: number; source: string; title: string; description: string; publishedAt: string | null };
+export type Item = { n: number; source: string; title: string; description: string; publishedAt: string | null; hint?: string | null };
+/** « (Le Monde · sante) » : la rubrique du flux aide l'IA à classer. */
+const from = (i: Item) => `(${i.source}${i.hint ? ' · ' + i.hint : ''})`;
+const today = () => new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'full', timeStyle: 'short' }).format(new Date());
 
 // Lu à l'usage : le réglage peut venir du back office, chargé au démarrage.
 export const model = () => process.env.TITRE_MODEL || 'claude-opus-5-5';
@@ -68,34 +77,46 @@ Règles :
 - Préfère les sujets confirmés par plusieurs médias. Une rumeur isolée n'est pas un sujet.
 - « essential » : au plus MAX_ESSENTIAL sujets, ceux qu'une personne bien informée doit absolument connaître aujourd'hui.
 - Au plus PER_RUBRIC sujets par rubrique, les plus importants d'abord.
+- Une dépêche ne va que dans un seul sujet.
+- Les annonces de direct, vidéos, podcasts et diaporamas ne comptent que s'ils apportent un fait nouveau.
 - « sensitive » : vrai pour un sujet triste ou choquant (mort, attentat, accident grave, violence, drame humain, maladie grave). Il ne change pas l'importance : il évite seulement que l'app pousse ce sujet parce qu'il attire les clics.
 
+Entre parenthèses : le média, et la rubrique de son flux quand il en a une (un indice, pas une obligation).
+
 Rubriques :
-${Object.entries(RUBRICS).map(([k, v]) => `- ${k} : ${v}`).join('\n')}`;
+RUBRIC_LIST`;
 
 /** already : titres déjà publiés dans l'édition du jour (mises à jour au fil de la journée). */
 export async function selectStories(items: Item[], perRubric: number, already: string[] = []): Promise<Story[]> {
   if (MOCK) return mockSelect(items, perRubric);
   const list = items
-    .map((i) => `[${i.n}] (${i.source}) ${i.title}${i.description ? ' — ' + i.description.slice(0, 280) : ''}`)
+    .map((i) => `[${i.n}] ${from(i)} ${i.title}${i.description ? ' — ' + i.description.slice(0, 280) : ''}`)
     .join('\n');
   const res = track(await api().beta.messages.parse({
     model: model(),
     max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    system: SELECT_SYSTEM.replace('PER_RUBRIC', String(perRubric)).replace('MAX_ESSENTIAL', String(cfg.maxEssential()))
+    system: SELECT_SYSTEM.replace('RUBRIC_LIST', rubricList()).replace('PER_RUBRIC', String(perRubric)).replace('MAX_ESSENTIAL', String(cfg.maxEssential()))
       + (cfg.minSources() > 1 ? `\n\nNe retiens que les sujets annoncés par au moins ${cfg.minSources()} médias différents.` : '')
       + editorialNotes(),
     output_config: { effort: EFFORT(), format: betaZodOutputFormat(Selection) },
-    messages: [{ role: 'user', content: `${already.length ? `Déjà dans l'édition du jour (ne reprends pas ces sujets, sauf fait nouveau important) :\n${already.map((t) => '- ' + t).join('\n')}\n\n` : ''}Dépêches du jour :\n\n${list}` }],
+    messages: [{ role: 'user', content: `${already.length ? `Déjà dans l'édition du jour (ne reprends pas ces sujets, sauf fait nouveau important) :\n${already.map((t) => '- ' + t).join('\n')}\n\n` : ''}Nous sommes le ${today()}.\n\nDépêches :\n\n${list}` }],
   }));
   if (res.stop_reason === 'refusal') throw new Error('Sélection refusée par le modèle');
   const out = res.parsed_output;
   if (!out) throw new Error(`Sélection illisible (stop_reason=${res.stop_reason})`);
+  return cleanStories(out.stories, items);
+}
+
+/** Numéros valables seulement, et chaque dépêche dans un seul sujet (le plus important) : pas deux cartes sur le même fait. */
+export function cleanStories(stories: Story[], items: Item[]): Story[] {
   const valid = new Set(items.map((i) => i.n));
-  return out.stories
-    .map((s) => ({ ...s, item_numbers: s.item_numbers.filter((n) => valid.has(n)), importance: clamp(s.importance, 1, 10) }))
+  const taken = new Set<number>();
+  return stories
+    .map((s) => ({ ...s, importance: clamp(s.importance, 1, 10) }))
+    .sort((a, b) => b.importance - a.importance)
+    .map((s) => ({ ...s, item_numbers: [...new Set(s.item_numbers)].filter((n) => valid.has(n) && !taken.has(n) && (taken.add(n), true)) }))
     .filter((s) => s.item_numbers.length > 0);
 }
 
@@ -160,6 +181,11 @@ export async function writeCard(story: Story, items: Item[], fix?: string[]): Pr
 export function checkCard(c: CardOut, items: Item[]): string[] {
   const issues: string[] = [];
   if (c.title.length > 70) issues.push(`titre trop long (${c.title.length})`);
+  if (/[.!?]$/.test(c.title.trim())) issues.push('ponctuation en fin de titre');
+  if (!c.key_sentence.trim()) issues.push('phrase clé vide');
+  if ([c.summary.context, c.summary.change, c.summary.next].some((x) => !x.trim())) issues.push('résumé incomplet');
+  if ([c.summary.context, c.summary.change, c.summary.next].some((x) => x.length > 340)) issues.push('résumé trop long');
+  if (new Set(c.facts.map((f) => norm(f.text))).size < c.facts.length) issues.push('deux faits identiques');
   if (c.key_sentence.length > 170) issues.push('phrase clé trop longue');
   if (c.facts.length !== 3) issues.push(`${c.facts.length} faits au lieu de 3`);
   const nums = new Set(items.map((i) => i.n));
@@ -240,7 +266,7 @@ const Flashes = z.object({
 export type FlashOut = z.infer<typeof Flashes>['flashes'][number];
 
 const FLASH_SYSTEM = `Tu tiens la rubrique « Dernière minute » de TITRE, une app d'actu ultra résumée.
-On te donne les dépêches publiées par plusieurs médias ces deux dernières heures, et les infos déjà publiées aujourd'hui dans la rubrique.
+On te donne les dépêches publiées par plusieurs médias ces dernières heures, et les infos déjà publiées aujourd'hui dans la rubrique.
 Retiens UNIQUEMENT les faits nouveaux et vraiment importants pour toute la France : catastrophe, attentat, décision politique majeure, résultat d'élection, décès d'une personnalité de premier plan, événement international grave, annonce économique de grande ampleur, résultat sportif historique.
 
 Règles :
@@ -252,7 +278,7 @@ Règles :
 
 export async function selectFlashes(items: Item[], published: string[]): Promise<FlashOut[]> {
   if (MOCK) return mockFlashes(items, published);
-  const list = items.map((i) => `[${i.n}] (${i.source}) ${i.title}${i.description ? ' — ' + i.description.slice(0, 240) : ''}`).join('\n');
+  const list = items.map((i) => `[${i.n}] ${from(i)} ${i.title}${i.description ? ' — ' + i.description.slice(0, 240) : ''}`).join('\n');
   const res = track(await api().beta.messages.parse({
     model: model(),
     max_tokens: 8000,
@@ -262,7 +288,7 @@ export async function selectFlashes(items: Item[], published: string[]): Promise
     output_config: { effort: 'low', format: betaZodOutputFormat(Flashes) },
     messages: [{
       role: 'user',
-      content: `Déjà publié aujourd'hui :\n${published.length ? published.map((t) => '- ' + t).join('\n') : '(rien)'}\n\nDépêches des deux dernières heures :\n\n${list}`,
+      content: `Nous sommes le ${today()}.\n\nDéjà publié aujourd'hui :\n${published.length ? published.map((t) => '- ' + t).join('\n') : '(rien)'}\n\nDépêches récentes :\n\n${list}`,
     }],
   }));
   if (res.stop_reason === 'refusal') throw new Error('Dernière minute refusée par le modèle');

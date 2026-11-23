@@ -26,7 +26,14 @@ export type Article = {
   created_at: string;
 };
 export type Edition = { date: string; status: 'building' | 'ready' | 'published'; published_at: string | null; stats: Record<string, unknown> };
-export type Source = { id: string; name: string; url: string; rubric_hint: string | null; active: boolean; last_fetch_at: string | null; last_error: string | null };
+export type Source = {
+  id: string; name: string; url: string; rubric_hint: string | null; active: boolean; last_fetch_at: string | null; last_error: string | null;
+  /** Suivi du moteur (migration 0018) : titres au dernier passage, dernière dépêche, échecs d'affilée, mise à l'écart automatique. */
+  last_count?: number | null; last_item_at?: string | null; fail_count?: number; disabled_reason?: string | null; etag?: string | null; last_modified?: string | null;
+  /** Statistiques : titres reçus en 24 h, cartes écrites en 7 jours. */
+  items_24h?: number; cards_7d?: number;
+};
+export type RubricHint = { id: string; name: string; ai_hint: string | null };
 export type Role = 'reader' | 'moderator' | 'editor' | 'admin';
 export type Profile = { id: string; pseudo: string | null; role: Role; premium: boolean; banned?: boolean; suspended_until?: string | null; ban_reason?: string | null; created_at: string };
 export type Comment = { id: string; article_id: string; user_id: string; text: string; status: 'visible' | 'hidden'; created_at: string; article_title?: string; pseudo?: string | null };
@@ -97,6 +104,10 @@ export interface Api {
   setEdition(date: string, status: Edition['status']): Promise<void>;
   sources(): Promise<Source[]>;
   saveSource(s: Partial<Source> & { id?: string }): Promise<void>;
+  deleteSource(id: string): Promise<void>;
+  /** Rubriques et ce que l'IA range dans chacune. */
+  rubrics(): Promise<RubricHint[]>;
+  saveRubricHint(id: string, ai_hint: string): Promise<void>;
   reports(): Promise<Report[]>;
   resolveReport(r: Report, hide: boolean): Promise<void>;
   comments(): Promise<Comment[]>;
@@ -136,6 +147,7 @@ export interface Api {
 const REPO = (import.meta.env.VITE_GITHUB_REPO as string | undefined) || 'r65z40/AppRun';
 export const ENGINE_URL = `https://github.com/${REPO}/actions/workflows/edition.yml`;
 export const FLASH_URL = `https://github.com/${REPO}/actions/workflows/flash.yml`;
+export const SOURCES_URL = `https://github.com/${REPO}/actions/workflows/sources.yml`;
 
 // Lien reçu par e-mail (mot de passe oublié, confirmation, lien périmé) : lu avant que Supabase ne nettoie l'adresse.
 const linkHash = new URLSearchParams(location.hash.slice(1));
@@ -227,12 +239,21 @@ function supabaseApi(sb: SupabaseClient): Api {
       ok(await sb.from('articles').update(patch).eq('id', id));
     },
     async saveArticles(patches) {
-      for (const p of patches) ok(await sb.from('articles').update(p.patch).eq('id', p.id));
+      // En parallèle : une sélection de 30 cartes se publie d'un coup.
+      (await Promise.all(patches.map((p) => sb.from('articles').update(p.patch).eq('id', p.id)))).forEach(ok);
     },
     async setEdition(date, status) {
       ok(await sb.from('editions').update({ status, published_at: status === 'published' ? new Date().toISOString() : null }).eq('date', date));
     },
-    sources: async () => sb.from('sources').select('*').order('name').then(ok<Source[]>),
+    async sources() {
+      const list = ok(await sb.from('sources').select('*').order('name')) as Source[];
+      const { data } = await sb.rpc('source_stats'); // absente avant la migration 0018 : pas de statistiques
+      const st = new Map(((data ?? []) as { source_id: string; items_24h: number; cards_7d: number }[]).map((x) => [x.source_id, x]));
+      return list.map((x) => ({ ...x, items_24h: st.get(x.id)?.items_24h, cards_7d: st.get(x.id)?.cards_7d }));
+    },
+    async deleteSource(id) { ok(await sb.from('sources').delete().eq('id', id)); },
+    rubrics: async () => sb.from('rubrics').select('id, name, ai_hint').order('position').then(ok<RubricHint[]>),
+    async saveRubricHint(id, ai_hint) { ok(await sb.from('rubrics').update({ ai_hint: ai_hint.trim() || null }).eq('id', id)); },
     async saveSource(s) {
       if (s.id) ok(await sb.from('sources').update(s).eq('id', s.id));
       else ok(await sb.from('sources').insert(s));

@@ -1,5 +1,5 @@
 // Données fictives : le back office fonctionne sans Supabase pour qu'on puisse l'essayer.
-import type { Api, AppMessage, Article, AuditEntry, Dashboard, Comment, EngineRun, Setting, Edition, Flash, Profile, Report, Source } from './data';
+import { RUBRICS, type Api, type AppMessage, type Article, type AuditEntry, type Dashboard, type Comment, type EngineRun, type Setting, type Edition, type Flash, type Profile, type Report, type RubricHint, type Source } from './data';
 
 const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 const yday = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date(Date.now() - 86400e3));
@@ -43,7 +43,9 @@ let sources: Source[] = [
   ['franceinfo', 'https://www.francetvinfo.fr/titres.rss', null, null], ['Le Monde', 'https://www.lemonde.fr/rss/une.xml', null, null],
   ['Les Echos', 'https://syndication.lesechos.fr/rss/rss_une.xml', 'eco', null], ['Numerama', 'https://www.numerama.com/feed/', 'tech', null],
   ['L’Équipe', 'https://dwh.lequipe.fr/api/edito/rss?path=/', 'sport', null], ['RFI', 'https://www.rfi.fr/fr/rss', 'monde', 'HTTP 404'],
-].map(([name, url, rubric_hint, last_error], i) => ({ id: `s${i}`, name: name!, url: url!, rubric_hint, active: true, last_fetch_at: iso(4), last_error }));
+].map(([name, url, rubric_hint, last_error], i) => ({ id: `s${i}`, name: name!, url: url!, rubric_hint, active: true, last_fetch_at: iso(4), last_error,
+  last_count: last_error ? null : 20 + i * 7, last_item_at: last_error ? null : iso(1 + i), fail_count: last_error ? 3 : 0, items_24h: last_error ? 0 : 18 + i * 5, cards_7d: last_error ? 0 : 4 + i * 3 }));
+let rubricHints: RubricHint[] | null = null; // rempli à la première lecture (RUBRICS vient de data.ts, chargé après ce fichier)
 let comments: Comment[] = [
   ['Enfin une info claire, sans titre racoleur.', 'Camille_R', 'a1', 'visible'], ['Les sources en un tap, c’est vraiment pratique.', 'nico.dlt', 'a5', 'visible'],
   ['Encore une grève, ils exagèrent vraiment tous ces…', 'anonyme42', 'a1', 'visible'], ['Lu dans le métro en 30 secondes, parfait.', 'Inès', 'a4', 'visible'],
@@ -162,6 +164,9 @@ export function demoApi(): Api {
       else flashes = [fl(0, '', '', [], { manual: true, model: null, id: `f${Date.now()}`, ...f }), ...flashes];
     },
     sources: () => wait(sources),
+    async deleteSource(id) { sources = sources.filter((x) => x.id !== id); },
+    rubrics: () => wait((rubricHints ??= Object.entries(RUBRICS).map(([id, name]) => ({ id, name, ai_hint: null })))),
+    async saveRubricHint(id, ai_hint) { rubricHints = (rubricHints ?? []).map((r) => (r.id === id ? { ...r, ai_hint: ai_hint.trim() || null } : r)); },
     async saveSource(s) { sources = s.id ? sources.map((x) => (x.id === s.id ? { ...x, ...s } : x)) : [...sources, { id: `s${Date.now()}`, name: '', url: '', rubric_hint: null, active: true, last_fetch_at: null, last_error: null, ...s }]; },
     reports: () => wait(reports.filter((r) => !r.resolved).map((r) => ({ ...r, comment: comments.find((c) => c.id === r.comment_id) }))),
     async resolveReport(r, hide) { if (hide) comments = comments.map((c) => (c.id === r.comment_id ? { ...c, status: 'hidden' } : c)); reports = reports.map((x) => (x.comment_id === r.comment_id ? { ...x, resolved: true } : x)); },

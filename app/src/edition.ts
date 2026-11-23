@@ -108,6 +108,3 @@ export const seedComments = (): Comment[] =>
     mine: 0,
     order: i,
   }));
-
-export const CREDITS =
-  'Quai de gare : Eutah Mizushima (Unsplash) · Route enneigée : Ali Inay (Unsplash) · Vagues : Sarah Bürvenich (Unsplash) · Fjord : Jeff Sheldon (Unsplash) · Façade : Roman Kraft (Unsplash) · Chaîne de vélo : NonNerd (CC0) · Bâtiment blanc : Julien Moreau (Unsplash) · Sommet : Namphuong Van (Unsplash) · Route de montagne : Barry Marsh (domaine public) · Reliure : Cornettesax (CC0) · Lampe : LoMit (CC BY-SA 4.0, floutée)';
