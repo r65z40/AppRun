@@ -682,6 +682,11 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
   const paused = get('ENGINE_PAUSED') === '1';
   const auto = get('AUTO_PUBLISH') ? get('AUTO_PUBLISH') === '1' : true;
   const noKey = admin && st.list && !get('ANTHROPIC_API_KEY');
+  const aiOff = get('AI_OFF') === '1';
+  const [spend, setSpend] = useState<{ today: number; month: number } | null>(null);
+  useEffect(() => { if (admin) api.aiSpend().then(setSpend).catch(() => {}); }, []);
+  const capDay = Number(get('AI_BUDGET_DAY') || 0), capMonth = Number(get('AI_BUDGET_MONTH') || 0);
+  const overBudget = !!spend && ((capDay > 0 && spend.today >= capDay) || (capMonth > 0 && spend.month >= capMonth));
   return (
     <>
       <header className="head">
@@ -696,9 +701,9 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
         </div>
       </header>
       {admin && st.list ? (
-        <div className={`status-bar ${paused || noKey ? 'off' : ''}`}>
-          <b>{noKey ? 'Clé Claude manquante' : paused ? 'Moteur en pause' : auto ? 'Pilote automatique : l’IA publie seule' : 'Relecture : l’IA prépare, vous publiez'}</b>
-          <span className="muted small">{noKey ? 'Collez-la dans l’onglet Clés, sinon le moteur ne peut rien écrire.' : paused ? 'Ni édition ni Dernière minute tant que la pause est active.' : 'Édition chaque matin à 5 h 30, complétée toutes les heures de 9 h à 22 h ; Dernière minute toutes les 10 minutes de 6 h à 23 h.'}</span>
+        <div className={`status-bar ${paused || noKey || aiOff || overBudget ? 'off' : ''}`}>
+          <b>{aiOff ? 'IA coupée : aucune dépense' : overBudget ? 'Budget de l’IA atteint' : noKey ? 'Clé Claude manquante' : paused ? 'Moteur en pause' : auto ? 'Pilote automatique : l’IA publie seule' : 'Relecture : l’IA prépare, vous publiez'}</b>
+          <span className="muted small">{aiOff ? 'Plus aucun appel à Claude : ni édition, ni Dernière minute, ni modération par l’IA. Ce qui est en ligne reste visible.' : overBudget ? 'L’IA reprend quand le jour ou le mois change, ou si vous montez le plafond ci-dessous.' : noKey ? 'Collez-la dans l’onglet Clés, sinon le moteur ne peut rien écrire.' : paused ? 'Ni édition ni Dernière minute tant que la pause est active.' : 'Édition chaque matin à 5 h 30, complétée toutes les heures de 9 h à 22 h ; Dernière minute toutes les 10 minutes de 6 h à 23 h.'}</span>
         </div>
       ) : null}
       {steps ? (
@@ -713,6 +718,13 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
       {admin && !st.list && ['pilotage', 'edition', 'flash', 'keys'].includes(tab) ? <p className="muted">Chargement…</p> : null}
       {admin && st.list && tab === 'pilotage' ? (
         <>
+          <section className="panel settings">
+            <h2>Budget de l'IA</h2>
+            {spend ? <p className="small">Dépense estimée : <b>{usd(spend.today)}</b> aujourd'hui{capDay ? ` sur ${usd(capDay)}` : ''} · <b>{usd(spend.month)}</b> ce mois-ci{capMonth ? ` sur ${usd(capMonth)}` : ''}. <span className="muted">Estimation d'après les jetons utilisés ; la facture exacte est sur console.anthropic.com.</span></p> : null}
+            {st.Toggle({ k: 'AI_OFF', label: 'Couper l’IA', help: "Arrêt total : plus aucun appel à Claude, donc plus aucune dépense. Le moteur ne publie plus rien de nouveau, ce qui est en ligne reste visible.", def: false })}
+            {st.Pick({ k: 'AI_BUDGET_DAY', label: 'Plafond par jour', help: "Au-delà, l'IA s'arrête jusqu'au lendemain. Les cartes déjà écrites restent ; les sujets suivants attendent.", def: '0', options: [['0', 'Sans limite'], ...[1, 2, 3, 5, 10, 20, 50, 100].map((n) => [String(n), `${n} $`] as [string, string])] })}
+            {st.Pick({ k: 'AI_BUDGET_MONTH', label: 'Plafond par mois', help: "Au-delà, l'IA s'arrête jusqu'au 1er du mois suivant.", def: '0', options: [['0', 'Sans limite'], ...[10, 25, 50, 100, 200, 300, 500, 1000, 2000].map((n) => [String(n), `${n} $`] as [string, string])] })}
+          </section>
           <section className="panel settings">
             <h2>Pilotage</h2>
             {st.Toggle({ k: 'ENGINE_PAUSED', label: 'Mettre le moteur en pause', help: "Arrêt d'urgence : plus aucune édition ni Dernière minute. Ce qui est déjà en ligne reste visible.", def: false })}
@@ -780,6 +792,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
           <section className="panel settings">
             <h2>Clés</h2>
             {st.Key({ k: "ANTHROPIC_API_KEY", label: "Clé Claude", help: "Pour choisir les sujets et écrire les cartes. Elle commence par sk-ant-.", link: ['https://console.anthropic.com/settings/keys', 'Créer une clé'] })}
+            <DispatchKey st={st} />
             {st.Key({ k: "UNSPLASH_ACCESS_KEY", label: "Clé Unsplash (photos)", help: "Facultatif. Une vraie photo libre de droits par article, créditée à son auteur ; sans clé, les photos d'ambiance de l'app. Collez l'« Access Key ».", link: ['https://unsplash.com/oauth/applications/new', 'Créer une clé gratuite'] })}
             {st.Key({ k: "PEXELS_API_KEY", label: "Clé Pexels (ancienne)", help: "Seulement si vous en avez déjà une : Pexels ne délivre plus de nouvelles clés. Utilisée si Unsplash ne trouve rien.", link: ['https://www.pexels.com/api/', 'Pexels'] })}
           </section>
@@ -787,6 +800,18 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
       ) : null}
       {tab === 'sources' ? <SourcesPage say={say} /> : null}
       {tab === 'history' ? <EnginePage /> : null}
+    </>
+  );
+}
+
+/* Relance automatique : GitHub saute ses passages programmés, la base les déclenche elle-même. */
+function DispatchKey({ st }: { st: ReturnType<typeof useSettings> }) {
+  const [d, setD] = useState<{ cron: boolean; token: boolean; last: string | null } | null>(null);
+  useEffect(() => { api.dispatchStatus().then(setD).catch(() => {}); }, [st.get('GITHUB_DISPATCH_KEY')]);
+  return (
+    <>
+      {st.Key({ k: 'GITHUB_DISPATCH_KEY', label: 'Jeton GitHub (relance automatique)', help: "Recommandé. GitHub saute souvent ses passages programmés : avec ce jeton, la base lance elle-même l'édition, les mises à jour et la Dernière minute à l'heure. Créez un jeton « Fine-grained », dépôt AppRun seulement, permission « Actions : Read and write », puis collez-le ici.", link: ['https://github.com/settings/personal-access-tokens/new', 'Créer le jeton'] })}
+      {d ? <p className="muted small">{!d.cron ? 'Relance automatique indisponible sur cette base (extension pg_cron absente).' : !d.token ? 'Relance automatique en attente du jeton.' : d.last ? `Relance automatique active · dernier lancement ${ago(d.last)}.` : 'Relance automatique active · premier lancement dans les 10 minutes.'}</p> : null}
     </>
   );
 }

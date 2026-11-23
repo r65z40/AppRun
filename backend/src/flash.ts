@@ -9,7 +9,7 @@ import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
-import { model, checkFlash, selectFlashes, setRubricHints, usage, type Item } from './ai.js';
+import { AiStopped, budget, model, checkFlash, selectFlashes, setRubricHints, usage, type Item } from './ai.js';
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 import { moderate } from './moderate.js';
@@ -27,6 +27,7 @@ async function main() {
   try {
     await flash();
   } catch (e) {
+    if (e instanceof AiStopped) { log(e.message); return J.finish('ok', e.message, { model: model(), ai: { ...usage } }); }
     log(`Erreur : ${e instanceof Error ? e.message : e}`);
     await J.finish('error', `Échec : ${e instanceof Error ? e.message : e}`);
     throw e;
@@ -39,6 +40,7 @@ async function flash() {
   const ended = await q<{ n: number }>('select public.expire_premium() as n').catch(() => [{ n: 0 }]);
   if (ended[0]?.n) log(`Premium : ${ended[0].n} abonnement(s) arrivé(s) à échéance`);
   if (cfg.paused()) return J.finish('ok', 'Moteur en pause dans les réglages : rien fait.');
+  await budget.check(); // IA coupée ou budget atteint : arrêt propre (voir main), ni modération ni Dernière minute
   const mod = await moderate(log).catch((e) => { log(`Modération impossible : ${e instanceof Error ? e.message : e}`); return null; });
   if (mod?.ai) { J.details.moderation = mod.done; J.details.moderation_ai = mod.ai; }
   if (!cfg.flashEnabled()) return J.finish('ok', 'Dernière minute désactivée dans les réglages.');
