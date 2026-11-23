@@ -35,6 +35,9 @@ async function main() {
 
 async function flash() {
   J.details.config = snapshot('flash');
+  // Abonnements Premium arrivés à échéance (même moteur en pause : c'est de l'argent, pas du contenu).
+  const ended = await q<{ n: number }>('select public.expire_premium() as n').catch(() => [{ n: 0 }]);
+  if (ended[0]?.n) log(`Premium : ${ended[0].n} abonnement(s) arrivé(s) à échéance`);
   if (cfg.paused()) return J.finish('ok', 'Moteur en pause dans les réglages : rien fait.');
   const mod = await moderate(log).catch((e) => { log(`Modération impossible : ${e instanceof Error ? e.message : e}`); return null; });
   if (mod?.ai) { J.details.moderation = mod.done; J.details.moderation_ai = mod.ai; }

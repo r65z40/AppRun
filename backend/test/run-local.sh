@@ -13,6 +13,8 @@ DATABASE_URL="$DB" MOCK_AI=1 npx tsx src/flash.ts --fixtures test/feeds
 DATABASE_URL="$DB" MOCK_AI=1 npx tsx src/flash.ts --fixtures test/feeds
 echo "--- Vérifications"
 psql "$DB" -v ON_ERROR_STOP=1 -q -f test/checks.sql
+echo "--- Premium et abonnements"
+psql "$DB" -v ON_ERROR_STOP=1 -q -f test/premium.sql | grep -E "^(OK|ÉCHEC|f$)" | sed "s/^f$/ÉCHEC  vérification intermédiaire de test\/premium.sql/"
 
 echo "--- Modération autonome : l'IA tranche les signalements restants"
 psql "$DB" -qc "insert into reports (comment_id, user_id) select id, '00000000-0000-0000-0000-000000000001' from comments where text = 'c1'" \
@@ -31,7 +33,7 @@ VIDE=${DB/titre_test/titre_vide}
 psql "$VIDE" -v ON_ERROR_STOP=1 -q -f test/supabase-stub.sql
 DATABASE_URL="$VIDE" npx tsx src/install.ts
 DATABASE_URL="$VIDE" npx tsx src/install.ts
-psql "$VIDE" -tAc "select case when count(*) = 14 then 'OK  base vide installée toute seule (13 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
+psql "$VIDE" -tAc "select case when count(*) = 15 then 'OK  base vide installée toute seule (14 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
 psql "$VIDE" -tAc "select case when count(*) >= 10 then 'OK  sources de départ présentes' else 'ÉCHEC  sources absentes' end from sources"
 
 echo "--- Pilote automatique (réglage par défaut) : l'édition se publie seule"
