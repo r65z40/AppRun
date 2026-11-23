@@ -36,6 +36,12 @@ jobs:
           FLASH_AUTO_PUBLISH: ${{ vars.FLASH_AUTO_PUBLISH }}
           TITRE_MODEL: ${{ vars.TITRE_MODEL }}
         run: npm run flash
+      - name: Appliquer les e-mails réglés dans le back office
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+        run: npm run mail
       - name: Prévenir l'équipe si le moteur plante
         if: failure()
         env:

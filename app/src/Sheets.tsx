@@ -6,7 +6,8 @@ import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { C, F, DRAWER_MS } from './theme';
+import { C, F, DRAWER_MS, alpha } from './theme';
+import { BRAND } from './brand';
 import type { Article, Comment } from './types';
 import { summaryOf } from './edition';
 import { Icon, Press } from './ui';
@@ -54,7 +55,7 @@ export function Sheet({ open, onClose, H, children, bg, header }: {
       </Animated.View>
       <Animated.View style={[styles.sheet, { height: h }, sheet]}>
         {bg?.photo ? <Image source={bg.photo} style={StyleSheet.absoluteFill} blurRadius={40} contentFit="cover" /> : null}
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(14,11,31,0.82)' }]} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: alpha(C.night, 0.82) }]} />
         <GestureDetector gesture={pan}>
           <View>
             <View style={styles.grab}><View style={styles.grabBar} /></View>
@@ -80,7 +81,7 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
   return (
     <Sheet open={open} onClose={onClose} H={H} bg={a} header={
       <View style={styles.sheetHead}>
-        <Text style={styles.logo}>TITRE</Text>
+        <Text style={styles.logo}>{BRAND.name}</Text>
         <Pressable onPress={onClose} hitSlop={12}><Text style={styles.close}>Fermer</Text></Pressable>
       </View>
     }>
@@ -223,7 +224,7 @@ function CommentRow({ c, fresh, onVote, onFlag, onBlock }: { c: Comment; fresh: 
       <Text style={styles.cmtTxt}>{c.text}</Text>
       <View style={styles.cmtAct}>
         <Pressable onPress={() => onVote(1)} style={styles.vote} hitSlop={8} accessibilityLabel="J'aime ce commentaire">
-          <Icon name="up" size={15} color={c.mine === 1 ? '#c9bcff' : C.text2} fill={c.mine === 1 ? C.violet : 'none'} />
+          <Icon name="up" size={15} color={c.mine === 1 ? C.soft : C.text2} fill={c.mine === 1 ? C.violet : 'none'} />
           <Text style={styles.voteTxt}>{c.likes + (c.mine === 1 ? 1 : 0)}</Text>
         </Pressable>
         <Pressable onPress={() => onVote(-1)} style={styles.vote} hitSlop={8} accessibilityLabel="Je n'aime pas ce commentaire">
@@ -249,15 +250,15 @@ const styles = StyleSheet.create({
   grab: { paddingTop: 10, paddingBottom: 4, alignItems: 'center' },
   grabBar: { width: 40, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 26, paddingTop: 6, paddingBottom: 14 },
-  logo: { color: '#b9a8ff', fontFamily: F.black, fontSize: 19 },
-  close: { color: '#cfd9ff', fontFamily: F.semi, fontSize: 14 },
+  logo: { color: C.soft, fontFamily: F.black, fontSize: 19 },
+  close: { color: C.link, fontFamily: F.semi, fontSize: 14 },
   h2: { color: '#fff', fontFamily: F.black, fontSize: 26, lineHeight: 27, marginTop: 6 },
   date: { color: C.text2, fontFamily: F.regular, fontSize: 13, marginTop: 8, marginBottom: 28 },
-  blkH: { color: '#c4b5ff', fontFamily: F.black, fontSize: 11, letterSpacing: 1.8, marginBottom: 10 },
+  blkH: { color: C.soft, fontFamily: F.black, fontSize: 11, letterSpacing: 1.8, marginBottom: 10 },
   blkP: { color: 'rgba(255,255,255,0.9)', fontFamily: F.regular, fontSize: 17, lineHeight: 27 },
   srcList: { borderTopWidth: 1, borderColor: C.line, paddingTop: 14, gap: 12 },
   lbl: { color: C.text3, fontFamily: F.semi, fontSize: 11, letterSpacing: 1.6 },
-  srcLink: { color: '#cfe0ff', fontFamily: F.regular, fontSize: 14 },
+  srcLink: { color: C.link, fontFamily: F.regular, fontSize: 14 },
   foot: { flexDirection: 'row', alignItems: 'center', gap: 26, paddingHorizontal: 30, paddingTop: 12, borderTopWidth: 1, borderColor: C.line },
   footBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, height: 44 },
   footTxt: { color: C.text2, fontFamily: F.semi, fontSize: 14 },
@@ -271,13 +272,13 @@ const styles = StyleSheet.create({
   avTxt: { color: '#fff', fontFamily: F.black, fontSize: 11 },
   who: { color: '#fff', fontFamily: F.semi, fontSize: 13 },
   prem: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2, backgroundColor: 'rgba(200,107,250,0.25)', borderWidth: 1, borderColor: 'rgba(200,170,255,0.45)' },
-  premTxt: { color: '#e6d8ff', fontFamily: F.semi, fontSize: 9, letterSpacing: 1.2 },
+  premTxt: { color: C.soft2, fontFamily: F.semi, fontSize: 9, letterSpacing: 1.2 },
   ago: { color: C.text3, fontFamily: F.regular, fontSize: 12 },
   cmtTxt: { color: '#fff', fontFamily: F.regular, fontSize: 15, lineHeight: 21, paddingLeft: 34 },
   cmtAct: { flexDirection: 'row', gap: 18, paddingLeft: 34, alignItems: 'center' },
   vote: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 28 },
   voteTxt: { color: C.text2, fontFamily: F.regular, fontSize: 12 },
-  compose: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 18, paddingTop: 12, borderTopWidth: 1, borderColor: C.line, backgroundColor: 'rgba(14,11,31,0.6)' },
+  compose: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 18, paddingTop: 12, borderTopWidth: 1, borderColor: C.line, backgroundColor: alpha(C.night, 0.6) },
   input: { height: 46, borderRadius: 15, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, color: '#fff', fontFamily: F.regular, fontSize: 15, paddingLeft: 14, paddingRight: 46 },
   count: { position: 'absolute', right: 12, color: C.text3, fontFamily: F.regular, fontSize: 11 },
   send: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },

@@ -7,6 +7,8 @@ import { useSharedValue, withSpring } from 'react-native-reanimated';
 import { DeviceMotion } from 'expo-sensors';
 import { useFonts, Archivo_400Regular, Archivo_600SemiBold, Archivo_900Black } from '@expo-google-fonts/archivo';
 import { C } from './src/theme';
+import { NOTIF } from './src/brand';
+import { notifWanted, setNotif, syncNotif } from './src/notify';
 import { RUBRICS } from './src/content';
 import { buildColumns, rubricOf, seedComments } from './src/edition';
 import { adHit, loadAds } from './src/ads';
@@ -96,7 +98,11 @@ function Main() {
   }, []);
   const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded, edVer]);
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 8, sound: true, haptic: true, parallax: true, premium: false, time: '7 h 30', adsPersonalized: false });
+  const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 8, sound: true, haptic: true, parallax: true, premium: false, time: NOTIF.default_time, adsPersonalized: false });
+
+  // Notification du matin : état de cet appareil, puis reprogrammée à chaque ouverture (heure et textes du moment).
+  useEffect(() => { notifWanted().then((v) => setP((x) => ({ ...x, notif: v }))); }, []);
+  useEffect(() => { if (phase === 'feed') syncNotif(p.time, p.quota); }, [phase, p.time, p.quota]);
 
   // Fil
   // Dernière minute et campagnes de pub : rechargées toutes les 3 minutes et au retour dans l'app.
@@ -432,11 +438,13 @@ function Main() {
     setP((x) => ({ ...x, active: r.active.length ? r.active : x.active, quota: r.quota, time: r.time, adsPersonalized: r.adsPersonalized }));
     setLimit(r.quota);
     setPhase('feed');
+    r.notif?.then((v) => setP((x) => ({ ...x, notif: v })));
     if (r.account) setTimeout(() => setAccount({ reason: 'Votre compte gratuit : une édition qui apprend de vos likes et dislikes, sur tous vos appareils.' }), 500);
     else if (r.premium) setTimeout(() => setShowPremium(true), 500);
   };
 
   const onSave = (np: Prefs) => {
+    if (!!np.notif !== !!p.notif) setNotif(!!np.notif, np.time, np.quota).then((v) => setP((x) => ({ ...x, notif: v })));
     // On revient sur la même carte si elle existe encore dans le nouveau fil.
     const prev = current;
     // Premium ne se règle pas ici (volet Premium) : on garde la valeur actuelle.
@@ -635,7 +643,7 @@ function Framed({ children }: { children: React.ReactNode }) {
   const f = useFrame();
   if (!framed(width)) return <>{children}</>;
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#07051a' }}>
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.deep }}>
       <View style={{ width: f.width, height: f.height, borderRadius: 36, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}>{children}</View>
       <Text style={{ position: 'absolute', bottom: 8, color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>Version de test · sur téléphone, ajoutez-la à l'écran d'accueil</Text>
     </View>

@@ -102,3 +102,8 @@ Installez **Expo Go** sur l'iPhone et scannez le QR code affiché.
 - **Le moteur s'arrête avec « clé Claude manquante »** : collez la clé dans **IA > Clés**.
 - **Une source est en erreur** : la page IA > Sources affiche l'erreur. Désactivez la source ou remplacez l'adresse du flux.
 - **Les anciens secrets `ANTHROPIC_API_KEY`, `UNSPLASH_ACCESS_KEY` et `PEXELS_API_KEY` dans GitHub** marchent toujours, mais la valeur saisie dans le back office passe en priorité.
+
+## Personnaliser l'app (nom, logo, couleurs, textes, notification, e-mails)
+
+Back office › Administration › **Personnalisation**. L'app applique les réglages à sa prochaine ouverture.
+Pour les e-mails (expéditeur et modèles), il faut le secret GitHub `SUPABASE_ACCESS_TOKEN` (le même que pour Premium, voir PREMIUM.md) : les réglages partent dans Supabase dans les 20 minutes.

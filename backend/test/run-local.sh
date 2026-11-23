@@ -33,7 +33,7 @@ VIDE=${DB/titre_test/titre_vide}
 psql "$VIDE" -v ON_ERROR_STOP=1 -q -f test/supabase-stub.sql
 DATABASE_URL="$VIDE" npx tsx src/install.ts
 DATABASE_URL="$VIDE" npx tsx src/install.ts
-psql "$VIDE" -tAc "select case when count(*) = 16 then 'OK  base vide installée toute seule (15 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
+psql "$VIDE" -tAc "select case when count(*) = 17 then 'OK  base vide installée toute seule (16 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
 psql "$VIDE" -tAc "select case when count(*) >= 10 then 'OK  sources de départ présentes' else 'ÉCHEC  sources absentes' end from sources"
 
 echo "--- Pilote automatique (réglage par défaut) : l'édition se publie seule"
@@ -89,3 +89,11 @@ psql "$VIDE" -qc "update ad_campaigns set max_views = 1 where name = 'Sponsor'"
 psql "$VIDE" -tAc "select case when (select views || '/' || clicks from ad_stats) = '1/1' and (select count(*) from public.live_ads()) = 2 then 'OK  affichages et clics comptés, plafond atteint : les autres campagnes reprennent' else 'ÉCHEC  comptage ou plafond' end"
 
 psql "$VIDE" -v ON_ERROR_STOP=1 -qtA -f test/algo.sql | grep -v '^$'
+
+echo "--- Personnalisation : identité, textes, notification transmis à l'app"
+psql "$VIDE" -tAc "select case when public.app_config() ? 'brand' and public.app_config()->'brand' = 'null'::jsonb then 'OK  sans réglage, l''app garde son identité d''origine' else 'ÉCHEC  identité par défaut' end"
+psql "$VIDE" -qc "insert into app_settings (key, value) values ('BRAND', '{\"name\":\"Brief\",\"colors\":{\"violet\":\"#E0457B\"}}'), ('NOTIFICATIONS', 'pas du json')"
+psql "$VIDE" -tAc "select case when public.app_config()->'brand'->>'name' = 'Brief' and public.app_config()->'notifications' = 'null'::jsonb then 'OK  identité transmise, réglage abîmé ignoré sans casser l''app' else 'ÉCHEC  app_config personnalisation' end"
+psql "$VIDE" -qc "insert into app_settings (key, value) values ('SMTP_PASS_KEY', 'secret-smtp')"
+psql "$VIDE" -tAc "select case when public.app_config()::text not like '%secret-smtp%' and (select count(*) from setting_keys where key in ('BRAND','APP_TEXTS','NOTIFICATIONS','SMTP_PASS_KEY','MAIL_CONFIRM_BODY')) = 5 then 'OK  réglages d''e-mails acceptés, mot de passe jamais envoyé à l''app' else 'ÉCHEC  clés de personnalisation' end"
+npx tsx test/mail.ts

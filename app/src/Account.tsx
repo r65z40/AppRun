@@ -156,11 +156,11 @@ function Field({ label, value, onChange, type, onSubmit, max }: { label: string;
 const styles = StyleSheet.create({
   head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 26, paddingBottom: 22, gap: 16 },
   h: { color: '#fff', fontFamily: F.black, fontSize: 26, lineHeight: 28 },
-  close: { color: '#cfd9ff', fontFamily: F.semi, fontSize: 14 },
+  close: { color: C.link, fontFamily: F.semi, fontSize: 14 },
   p: { color: C.text2, fontFamily: F.regular, fontSize: 15, lineHeight: 22 },
   input: { height: 50, borderRadius: 15, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, color: '#fff', fontFamily: F.regular, fontSize: 16, paddingHorizontal: 14 },
   err: { color: C.coral, fontFamily: F.semi, fontSize: 14, lineHeight: 20 },
-  link: { color: '#cfd9ff', fontFamily: F.semi, fontSize: 14, textAlign: 'center', paddingVertical: 4 },
+  link: { color: C.link, fontFamily: F.semi, fontSize: 14, textAlign: 'center', paddingVertical: 4 },
   rows: { borderRadius: 18, backgroundColor: C.surface, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderColor: C.line },
   rl: { color: '#fff', fontFamily: F.regular, fontSize: 15, flex: 1 },
