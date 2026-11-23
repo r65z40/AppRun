@@ -386,8 +386,8 @@ function CardContent({ card, k, W, H, tag, why, api, bottom, tiltX, tiltY }: {
           <Press onPress={() => api.onRead(a)} accessibilityLabel="Lire le résumé, 1 minute" style={[styles.read, { marginRight: 'auto' }]}>
             <Text style={styles.readTxt}>Lire · 1 min</Text>
           </Press>
-          <ReactBtn icon="up" n={a.likes + (r === 1 ? 1 : 0)} on={r === 1} color={C.violet} onPress={() => api.onReact(a, 1)} label="J'aime" />
-          <ReactBtn icon="down" on={r === -1} color={C.coral} onPress={() => api.onReact(a, -1)} label="Je n'aime pas" />
+          <ReactBtn icon="up" n={a.likes + (r === 1 ? 1 : 0)} on={r === 1} color={C.like} ratio={shares(a, r).up} onPress={() => api.onReact(a, 1)} label="J'aime" />
+          <ReactBtn icon="down" on={r === -1} color={C.dislike} ratio={shares(a, r).down} onPress={() => api.onReact(a, -1)} label="Je n'aime pas" />
           {api.emojiMode ? (
             <Press onPress={() => { setPick(!pick); feel('select'); }} style={styles.ic} accessibilityLabel="Réagir avec un emoji">
               {mine ? <Text style={{ fontSize: 20 }}>{mine}</Text> : <Icon name="smile" size={20} />}
@@ -409,16 +409,32 @@ function CardContent({ card, k, W, H, tag, why, api, bottom, tiltX, tiltY }: {
 }
 
 /**
+ * Part des lecteurs qui ont vu l'info et l'ont aimée (up) ou pas (down), vote du lecteur compris.
+ * 100 % des lecteurs aiment : pouce plein ; la moitié : pouce rempli à moitié.
+ */
+export function shares(a: Article, r: number) {
+  const up = a.likes + (r === 1 ? 1 : 0);
+  const down = (a.dislikes ?? 0) + (r === -1 ? 1 : 0);
+  const seen = Math.max(a.views ?? 0, up + down, 1);
+  return { up: up / seen, down: down / seen };
+}
+
+/**
  * Like / dislike : le pouce s'écrase puis rebondit, une gerbe d'éclats part autour (vers le haut pour un like,
  * vers le bas pour un dislike) et un anneau s'élargit. Annuler son vote : le pouce se contracte simplement.
  */
-export function ReactBtn({ icon, n, on, color, onPress, label, row }: { icon: 'up' | 'down'; n?: number; on: boolean; color: string; onPress: () => void; label: string; row?: boolean }) {
+export function ReactBtn({ icon, n, on, color, ratio, onPress, label, row }: { icon: 'up' | 'down'; n?: number; on: boolean; color: string; ratio: number; onPress: () => void; label: string; row?: boolean }) {
   const reduce = useReducedMotion();
   const s = useSharedValue(1);
   const rot = useSharedValue(0);
   const burst = useSharedValue(1);
   const a = useAnimatedStyle(() => ({ transform: [{ scale: s.value }, { rotate: `${rot.value}deg` }] }));
   const ring = useAnimatedStyle(() => ({ opacity: burst.value < 1 ? 0.7 * (1 - burst.value) : 0, transform: [{ scale: 0.5 + burst.value * 1.3 }] }));
+  // Remplissage du pouce, du bas vers le haut, selon la part de lecteurs (glisse quand elle change).
+  const level = Math.max(0, Math.min(1, ratio));
+  const fill = useSharedValue(level);
+  useEffect(() => { fill.value = reduce ? level : withTiming(level, { duration: 420, easing: Easing.out(Easing.cubic) }); }, [level]);
+  const filled = useAnimatedStyle(() => ({ height: 20 * fill.value }));
   const play = () => {
     if (on) {
       s.value = withSequence(withTiming(0.8, { duration: 90 }), withSpring(1, { duration: 300, dampingRatio: 0.7 }));
@@ -434,7 +450,7 @@ export function ReactBtn({ icon, n, on, color, onPress, label, row }: { icon: 'u
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={`${label}, ${Math.round(level * 100)} % des lecteurs`}
       accessibilityState={{ selected: on }}
       onPress={() => { play(); onPress(); }}
       style={row ? styles.icRow : styles.ic}
@@ -442,8 +458,11 @@ export function ReactBtn({ icon, n, on, color, onPress, label, row }: { icon: 'u
       <View style={{ alignItems: 'center', justifyContent: 'center' }}>
         <Animated.View pointerEvents="none" style={[styles.ring, { borderColor: color }, ring]} />
         {Array.from({ length: 8 }, (_, i) => <Spark key={i} i={i} t={burst} color={i % 2 ? color : C.pink} down={icon === 'down'} />)}
-        <Animated.View style={a}>
-          <Icon name={icon} size={20} color="#fff" fill={on ? color : 'none'} />
+        <Animated.View style={[a, { width: 20, height: 20 }]}>
+          <Icon name={icon} size={20} color={on ? color : '#fff'} />
+          <Animated.View pointerEvents="none" style={[styles.fillClip, filled]}>
+            <View style={styles.fillIcon}><Icon name={icon} size={20} color={on ? color : '#fff'} fill={color} /></View>
+          </Animated.View>
         </Animated.View>
       </View>
       {n != null ? <Text style={row ? styles.footTxt : styles.icTxt}>{n}</Text> : null}
@@ -644,6 +663,8 @@ const styles = StyleSheet.create({
   icTxt: { color: C.text2, fontFamily: F.semi, fontSize: 10 },
   icRow: { flexDirection: 'row', alignItems: 'center', gap: 7, height: 44 },
   footTxt: { color: C.text2, fontFamily: F.semi, fontSize: 14 },
+  fillClip: { position: 'absolute', left: 0, right: 0, bottom: 0, overflow: 'hidden' },
+  fillIcon: { position: 'absolute', left: 0, bottom: 0 },
   ring: { position: 'absolute', width: 34, height: 34, borderRadius: 17, borderWidth: 2 },
   spark: { position: 'absolute', width: 5, height: 5, borderRadius: 3 },
   picker: { position: 'absolute', right: 0, bottom: 56, flexDirection: 'row', gap: 2, padding: 6, borderRadius: 22, backgroundColor: 'rgba(30,24,64,0.96)', borderWidth: 1, borderColor: C.line },

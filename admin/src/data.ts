@@ -35,7 +35,7 @@ export type Source = {
 };
 export type RubricHint = { id: string; name: string; ai_hint: string | null };
 export type Role = 'reader' | 'moderator' | 'editor' | 'admin';
-export type Profile = { id: string; pseudo: string | null; role: Role; premium: boolean; banned?: boolean; suspended_until?: string | null; ban_reason?: string | null; created_at: string };
+export type Profile = { id: string; pseudo: string | null; email?: string | null; role: Role; premium: boolean; banned?: boolean; suspended_until?: string | null; ban_reason?: string | null; created_at: string };
 export type Comment = { id: string; article_id: string; user_id: string; text: string; status: 'visible' | 'hidden'; created_at: string; article_title?: string; pseudo?: string | null };
 export type Report = { id: string; comment_id: string; reason: string | null; resolved: boolean; created_at: string; comment?: Comment };
 export type Flash = { id: string; status: 'published' | 'hidden'; rubric_id: string | null; importance: number; title: string; sentence: string; sources: { source: string; url: string }[]; manual: boolean; model: string | null; published_at: string; created_at: string;
@@ -303,7 +303,10 @@ function supabaseApi(sb: SupabaseClient): Api {
       ok(await sb.storage.from('photos').upload(path, file, { contentType: file.type }));
       return sb.storage.from('photos').getPublicUrl(path).data.publicUrl;
     },
-    team: async () => sb.from('profiles').select('*').in('role', ['moderator', 'editor', 'admin']).order('created_at').then(ok<Profile[]>),
+    // Avec l'adresse e-mail de chacun (admin_users lit les comptes, réservé aux administrateurs).
+    team: async () => (ok(await sb.rpc('admin_users', { search: '', filter: 'team', page: 0 })) as Reader[])
+      .map((r): Profile => ({ id: r.id, pseudo: r.pseudo, email: r.email, role: r.role, premium: r.premium, created_at: r.created_at }))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at)),
     async setRole(id, role) {
       ok(await sb.from('profiles').update({ role }).eq('id', id));
     },

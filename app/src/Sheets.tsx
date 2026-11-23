@@ -8,10 +8,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, DRAWER_MS, GRAD3, alpha } from './theme';
 import { BRAND } from './brand';
-import type { Article, Comment } from './types';
+import type { Article, Comment, ReaderCard } from './types';
+import { BadgeIcons, ReaderCardView, pseudoColor } from './Badges';
 import { rubricOf, summaryOf } from './edition';
 import { Icon, Press } from './ui';
-import { ReactBtn } from './Feed';
+import { ReactBtn, shares } from './Feed';
 import { feel } from './feel';
 import { todayLabel, yearLabel } from './dates';
 
@@ -154,8 +155,8 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
             </View>
           </Animated.ScrollView>
           <View style={[styles.foot, { paddingBottom: Math.max(18, insets.bottom + 6) }]}>
-            <ReactBtn row icon="up" n={a.likes + (reaction === 1 ? 1 : 0)} on={reaction === 1} color={C.violet} onPress={() => onReact(1)} label="J'aime" />
-            <ReactBtn row icon="down" on={reaction === -1} color={C.coral} onPress={() => onReact(-1)} label="Je n'aime pas" />
+            <ReactBtn row icon="up" n={a.likes + (reaction === 1 ? 1 : 0)} on={reaction === 1} color={C.like} ratio={shares(a, reaction).up} onPress={() => onReact(1)} label="J'aime" />
+            <ReactBtn row icon="down" on={reaction === -1} color={C.dislike} ratio={shares(a, reaction).down} onPress={() => onReact(-1)} label="Je n'aime pas" />
             {emojiMode ? null : (
               <Press style={styles.footBtn} onPress={onComments} accessibilityLabel="Commentaires">
                 <Icon name="cmt" size={20} />
@@ -172,17 +173,26 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
   );
 }
 
-export function CommentsSheet({ a, open, onClose, H, comments, total, loading, onSend, onVote, onFlag, onDelete, onBlock }: {
+export function CommentsSheet({ a, open, onClose, H, comments, total, loading, onSend, onVote, onFlag, onDelete, onBlock, loadCard }: {
   a: Article | null; open: boolean; onClose: () => void; H: number; comments: Comment[]; total: number; loading?: boolean;
   /** Envoie le commentaire ; renvoie son id (pour l'animer) ou null si l'envoi n'a pas eu lieu. */
   onSend: (text: string) => Promise<string | null>;
   onVote: (c: Comment, v: -1 | 0 | 1) => void; onFlag: (c: Comment) => void; onDelete: (c: Comment) => void; onBlock: (c: Comment) => void;
+  /** Fiche de l'auteur, en touchant son pseudo. */
+  loadCard: (c: Comment) => Promise<ReaderCard | null>;
 }) {
   const insets = useSafeAreaInsets();
   const [sort, setSort] = useState<'pert' | 'rec'>('pert');
   const [txt, setTxt] = useState('');
   const [sending, setSending] = useState(false);
   const [fresh, setFresh] = useState<string | null>(null);
+  const [card, setCard] = useState<{ who: string; data: ReaderCard | null | undefined } | null>(null);
+  const openCard = (c: Comment) => {
+    feel('select');
+    setCard({ who: c.who, data: undefined });
+    loadCard(c).then((data) => setCard((x) => (x && x.who === c.who ? { ...x, data } : x)));
+  };
+  useEffect(() => { if (!open) setCard(null); }, [open]);
   const list = [...comments].sort((x, y) =>
     sort === 'pert' ? y.likes - y.dislikes + y.mine - (x.likes - x.dislikes + x.mine) || x.order - y.order : x.order - y.order,
   );
@@ -219,7 +229,7 @@ export function CommentsSheet({ a, open, onClose, H, comments, total, loading, o
           {loading && !comments.length ? <Text style={[styles.voteTxt, { textAlign: 'center', paddingVertical: 30 }]}>Chargement…</Text> : null}
           {!loading && !comments.length ? <Text style={[styles.voteTxt, { textAlign: 'center', paddingVertical: 30, fontSize: 14 }]}>Aucun commentaire pour l’instant. Donnez le premier avis.</Text> : null}
           {list.map((c) => (
-            <CommentRow key={c.id} c={c} fresh={c.id === fresh} onVote={(v) => vote(c, v)} onFlag={() => (c.own ? onDelete(c) : onFlag(c))} onBlock={() => onBlock(c)} />
+            <CommentRow key={c.id} c={c} fresh={c.id === fresh} onWho={() => openCard(c)} onVote={(v) => vote(c, v)} onFlag={() => (c.own ? onDelete(c) : onFlag(c))} onBlock={() => onBlock(c)} />
           ))}
         </ScrollView>
         <View style={[styles.compose, { paddingBottom: Math.max(16, insets.bottom + 4) }]}>
@@ -244,11 +254,12 @@ export function CommentsSheet({ a, open, onClose, H, comments, total, loading, o
           </Press>
         </View>
       </KeyboardAvoidingView>
+      {card ? <ReaderCardView who={card.who} card={card.data} onClose={() => setCard(null)} /> : null}
     </Sheet>
   );
 }
 
-function CommentRow({ c, fresh, onVote, onFlag, onBlock }: { c: Comment; fresh: boolean; onVote: (v: 1 | -1) => void; onFlag: () => void; onBlock: () => void }) {
+function CommentRow({ c, fresh, onWho, onVote, onFlag, onBlock }: { c: Comment; fresh: boolean; onWho: () => void; onVote: (v: 1 | -1) => void; onFlag: () => void; onBlock: () => void }) {
   const t = useSharedValue(fresh ? 60 : 0);
   useEffect(() => {
     if (fresh) t.value = withSpring(0, { duration: 500, dampingRatio: 0.8 });
@@ -257,9 +268,12 @@ function CommentRow({ c, fresh, onVote, onFlag, onBlock }: { c: Comment; fresh: 
   return (
     <Animated.View style={[styles.cmt, a]}>
       <View style={styles.cmtTop}>
-        <View style={[styles.av, { backgroundColor: c.color }]}><Text style={styles.avTxt}>{c.who[0].toUpperCase()}</Text></View>
-        <Text style={styles.who}>{c.who}</Text>
-        {c.premium ? <View style={styles.prem}><Text style={styles.premTxt}>PREMIUM</Text></View> : null}
+        <Pressable onPress={onWho} hitSlop={8} style={styles.cmtWho} accessibilityRole="button" accessibilityHint="Affiche les reconnaissances de ce lecteur">
+          <View style={[styles.av, { backgroundColor: c.color }]}><Text style={styles.avTxt}>{c.who[0].toUpperCase()}</Text></View>
+          <Text style={[styles.who, { color: pseudoColor(c.badges) }]}>{c.who}</Text>
+          {/* Ancienne base, sans badges : la pastille Premium d'avant. */}
+          {c.badges ? <BadgeIcons badges={c.badges} /> : c.premium ? <View style={styles.prem}><Text style={styles.premTxt}>PREMIUM</Text></View> : null}
+        </Pressable>
         <Text style={styles.ago}>{c.ago}</Text>
       </View>
       <Text style={styles.cmtTxt}>{c.text}</Text>
@@ -316,6 +330,7 @@ const styles = StyleSheet.create({
   sortTxt: { color: C.text2, fontFamily: F.semi, fontSize: 12 },
   cmt: { paddingVertical: 14, borderBottomWidth: 1, borderColor: C.line, gap: 6 },
   cmtTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cmtWho: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   av: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   avTxt: { color: '#fff', fontFamily: F.black, fontSize: 11 },
   who: { color: '#fff', fontFamily: F.semi, fontSize: 13 },

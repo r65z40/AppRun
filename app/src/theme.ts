@@ -14,7 +14,7 @@ export function alpha(h: string, o: number): string {
   return `rgba(${r},${g},${b},${o})`;
 }
 
-export const BASE = { night: '#0E0B1F', violet: '#7B5CFF', blue: '#3D7BFF', pink: '#C86BFA', coral: '#FF6B8A' };
+export const BASE = { night: '#0E0B1F', violet: '#7B5CFF', blue: '#3D7BFF', pink: '#C86BFA', coral: '#FF6B8A', like: '#34D399', dislike: '#FF6B8A' };
 export type BaseColors = typeof BASE;
 
 const derive = (b: BaseColors) => ({

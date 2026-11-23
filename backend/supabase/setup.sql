@@ -2604,6 +2604,524 @@ $$;
 revoke all on function public.dispatch_status() from public, anon;
 grant execute on function public.dispatch_status() to authenticated;
 
+-- ===== supabase/migrations/0022_reconnaissance.sql
+-- Reconnaissance des lecteurs : badges (Premium, paliers de lecture, Bienfaiteur et statuts donnés à la main,
+-- équipe, ancienneté, pionniers, commentaires appréciés), tous réglables dans le back office (Lecteurs > Reconnaissance).
+-- Un lecteur peut cacher les siens. Aussi : nombre de lecteurs qui ont vu chaque info (pouces remplis selon le ratio).
+
+insert into public.setting_keys (key) values ('RECOGNITION') on conflict do nothing;
+
+alter table public.profiles add column if not exists show_badges boolean not null default true;
+create index if not exists profiles_created on public.profiles (created_at);
+
+-- 1. Les badges ----------------------------------------------------------------------------------------
+-- kind : premium (abonné), reads (a lu au moins N infos), manual (donné à la main, ex. Bienfaiteur),
+-- team (membre de l'équipe), seniority (compte de plus de N jours), early (parmi les N premiers comptes),
+-- liked (ses commentaires ont reçu au moins N likes), streak (venu N jours d'affilée), early_bird (a lu avant 8 h
+-- au moins N matins), explorer (a lu des infos dans au moins N rubriques), sharer (a partagé au moins N infos),
+-- event (a ouvert l'app entre starts_at et ends_at : badge d'un événement ou d'une période).
+create table if not exists public.badges (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null check (kind in ('premium', 'reads', 'manual', 'team', 'seniority', 'early', 'liked', 'streak', 'early_bird', 'explorer', 'sharer', 'event')),
+  label text not null check (char_length(label) between 1 and 30),
+  description text not null default '' check (char_length(description) <= 200),
+  icon text not null default '⭐' check (char_length(icon) between 1 and 8),
+  color text not null default '#7B5CFF' check (color ~ '^#[0-9A-Fa-f]{6}$'),
+  threshold int not null default 0 check (threshold >= 0),
+  position int not null default 0,
+  starts_at date,
+  ends_at date,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+alter table public.badges enable row level security;
+drop policy if exists badges_read on public.badges;
+create policy badges_read on public.badges for select using (active or public.is_admin());
+drop policy if exists badges_admin on public.badges;
+create policy badges_admin on public.badges for all using (public.is_admin()) with check (public.is_admin());
+grant select on public.badges to anon;
+grant select, insert, update, delete on public.badges to authenticated;
+
+insert into public.badges (kind, label, description, icon, color, threshold, position, starts_at, ends_at)
+select kind, label, description, icon, color, threshold, position,
+       case when kind = 'event' then current_date end, case when kind = 'event' then current_date + 60 end
+  from (values
+  ('premium', 'Premium', 'Abonné Premium : soutient l''app.', '💎', '#C86BFA', 0, 1),
+  ('manual', 'Bienfaiteur', 'A proposé des idées pour améliorer l''app.', '💌', '#FFB547', 0, 2),
+  ('team', 'Équipe', 'Fait partie de l''équipe.', '🛡️', '#3D7BFF', 0, 3),
+  ('reads', 'Curieux', 'A lu plus de 50 infos.', '📖', '#5AD1B5', 50, 10),
+  ('reads', 'Assidu', 'A lu plus de 250 infos.', '📚', '#4FB0FF', 250, 11),
+  ('reads', 'Érudit', 'A lu plus de 1 000 infos.', '🧠', '#9A7BFF', 1000, 12),
+  ('reads', 'Encyclopédie', 'A lu plus de 5 000 infos.', '🏆', '#FFD166', 5000, 13),
+  ('early', 'Pionnier', 'Parmi les 1 000 premiers comptes.', '🚀', '#FF8A7A', 1000, 20),
+  ('seniority', 'Fidèle', 'Membre depuis plus d''un an.', '🎂', '#FF6B8A', 365, 21),
+  ('liked', 'Plume appréciée', 'Ses commentaires ont reçu plus de 100 likes.', '✍️', '#7B5CFF', 100, 22),
+  ('streak', 'Série de 7 jours', 'Venu 7 jours d''affilée.', '🔥', '#FF8A3D', 7, 30),
+  ('streak', 'Série de 30 jours', 'Venu 30 jours d''affilée.', '⚡', '#FFB547', 30, 31),
+  ('streak', 'Série de 100 jours', 'Venu 100 jours d''affilée.', '💯', '#FF6B8A', 100, 32),
+  ('early_bird', 'Lève-tôt', 'A lu son édition avant 8 h, 20 matins.', '☀️', '#FFD166', 20, 33),
+  ('explorer', 'Explorateur', 'A lu des infos dans les 10 rubriques.', '🧭', '#5AD1B5', 10, 34),
+  ('sharer', 'Partageur', 'A partagé 10 infos.', '📣', '#4FB0FF', 10, 35),
+  ('event', 'Présent au lancement', 'Était là pendant les deux premiers mois.', '🎉', '#C86BFA', 0, 40)
+) v (kind, label, description, icon, color, threshold, position)
+where not exists (select 1 from public.badges);
+
+-- Statuts donnés à la main (Bienfaiteur et ceux que l'équipe crée).
+create table if not exists public.user_badges (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  badge_id uuid not null references public.badges (id) on delete cascade,
+  granted_by uuid references auth.users (id) on delete set null,
+  granted_at timestamptz not null default now(),
+  primary key (user_id, badge_id)
+);
+alter table public.user_badges enable row level security;
+revoke all on public.user_badges from anon, authenticated;
+
+-- 2. Infos lues par compte, gardées pour toujours (le journal de lecture, lui, s'efface après 90 jours) ------
+create table if not exists public.user_reads (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  article_id uuid not null,
+  at timestamptz not null default now(),
+  primary key (user_id, article_id)
+);
+alter table public.user_reads enable row level security;
+revoke all on public.user_reads from anon, authenticated;
+insert into public.user_reads (user_id, article_id, at)
+select user_id, article_id, min(at) from public.reading_events where kind = 'view' and user_id is not null group by 1, 2
+on conflict do nothing;
+
+-- Partages par compte, gardés pour toujours aussi.
+create table if not exists public.user_stats (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  shares int not null default 0
+);
+alter table public.user_stats enable row level security;
+revoke all on public.user_stats from anon, authenticated;
+insert into public.user_stats (user_id, shares)
+select user_id, count(*) from public.reading_events where kind = 'share' and user_id is not null group by 1
+on conflict (user_id) do nothing;
+
+-- Même fonction que dans 0015, qui note en plus chaque info vue par un lecteur connecté.
+create or replace function public.track(d text, ev jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if char_length(coalesce(d, '')) not between 8 and 64 or jsonb_typeof(ev) <> 'array' then return; end if;
+  if auth.uid() is not null then
+    with up as (update public.reading_events set user_id = auth.uid() where device = d and user_id is null returning article_id, kind)
+    insert into public.user_reads (user_id, article_id) select distinct auth.uid(), article_id from up where kind = 'view'
+    on conflict do nothing;
+    -- La visite du jour compte pour le compte (séries), même si le lecteur s'est connecté après l'ouverture.
+    update public.visits set user_id = auth.uid() where device = d and day = (now() at time zone 'Europe/Paris')::date and user_id is null;
+  end if;
+  with ins as (
+    insert into public.reading_events (device, user_id, article_id, kind, ms)
+    select d, auth.uid(), a.id, e->>'k', least(greatest((e->>'ms')::int, 0), 600000)
+      from (select value e from jsonb_array_elements(ev) limit 100) x
+      join public.articles a on a.id::text = e->>'a' and a.status = 'published'
+     where e->>'k' in ('view', 'summary', 'summary_end', 'source', 'click', 'share', 'back', 'less')
+    returning user_id, article_id, kind),
+  r as (insert into public.user_reads (user_id, article_id) select distinct user_id, article_id from ins where kind = 'view' and user_id is not null
+        on conflict do nothing returning 1)
+  insert into public.user_stats (user_id, shares) select user_id, count(*) from ins where kind = 'share' and user_id is not null group by user_id
+  on conflict (user_id) do update set shares = public.user_stats.shares + excluded.shares;
+end $$;
+grant execute on function public.track(text, jsonb) to anon, authenticated;
+
+-- 3. Réglages (JSON « RECOGNITION ») : minutes gagnées par info lue, icônes à côté du pseudo, pseudo coloré ----
+create or replace function public.recognition_conf() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select '{"minutes_per_article": 3, "max_icons": 3, "color_pseudo": true}'::jsonb || coalesce(public.setting_json('RECOGNITION'), '{}'::jsonb);
+$$;
+grant execute on function public.recognition_conf() to anon, authenticated;
+
+-- Badges d'un compte, dans l'ordre choisi. Pour les paliers (lecture, ancienneté, pionnier, likes), seul le plus haut atteint.
+create or replace function public.badges_of(uid uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  with p as (select * from public.profiles where id = uid),
+  n as (select count(*)::int v from public.user_reads where user_id = uid),
+  l as (select count(*)::int v from public.comment_votes v join public.comments c on c.id = v.comment_id
+         where c.user_id = uid and c.status = 'visible' and v.value = 1),
+  got as (
+    select b.* from public.badges b, p, n, l
+     where b.active and case b.kind
+       when 'premium' then p.premium and (p.premium_until is null or p.premium_until > now())
+       when 'team' then p.role <> 'reader'
+       when 'reads' then n.v >= b.threshold
+       when 'seniority' then p.created_at <= now() - make_interval(days => b.threshold)
+       when 'early' then (select count(*) from public.profiles q where q.created_at < p.created_at) < b.threshold
+       when 'liked' then l.v >= b.threshold
+       -- plus longue suite de jours de visite consécutifs
+       when 'streak' then coalesce((select max(n) from (select count(*) n from (select day - (row_number() over (order by day))::int g
+                           from (select distinct day from public.visits where user_id = uid) d) x group by g) y), 0) >= b.threshold
+       when 'early_bird' then (select count(distinct (at at time zone 'Europe/Paris')::date) from public.user_reads
+                                where user_id = uid and extract(hour from at at time zone 'Europe/Paris') < 8) >= b.threshold
+       when 'explorer' then (select count(distinct a.rubric_id) from public.user_reads r join public.articles a on a.id = r.article_id
+                              where r.user_id = uid) >= b.threshold
+       when 'sharer' then coalesce((select shares from public.user_stats where user_id = uid), 0) >= b.threshold
+       when 'event' then exists (select 1 from public.visits v where v.user_id = uid and v.day between b.starts_at and b.ends_at)
+       else exists (select 1 from public.user_badges u where u.user_id = uid and u.badge_id = b.id)
+     end),
+  best as (
+    select *, row_number() over (
+      partition by case when kind in ('reads', 'seniority', 'liked', 'early', 'streak', 'early_bird', 'explorer', 'sharer') then kind else id::text end
+      order by case when kind = 'early' then -threshold else threshold end desc) rn
+    from got)
+  select coalesce(jsonb_agg(jsonb_build_object('label', label, 'description', description, 'icon', icon, 'color', color, 'kind', kind)
+                  order by position, threshold desc), '[]'::jsonb)
+    from best where rn = 1;
+$$;
+revoke all on function public.badges_of(uuid) from public, anon, authenticated;
+
+-- Fiche publique d'un lecteur, ouverte en touchant son pseudo sous un commentaire (cid), ou la mienne (cid vide).
+-- Badges cachés par le lecteur : seulement le pseudo.
+create or replace function public.reader_card(cid uuid default null) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare uid uuid; p public.profiles; n int;
+begin
+  if cid is null then uid := auth.uid();
+  else select c.user_id into uid from public.comments c where c.id = cid and c.status = 'visible';
+  end if;
+  select * into p from public.profiles where id = uid;
+  if not found then return null; end if;
+  if not p.show_badges and uid is distinct from auth.uid() then
+    return jsonb_build_object('pseudo', p.pseudo, 'hidden', true);
+  end if;
+  select count(*) into n from public.user_reads where user_id = uid;
+  return jsonb_build_object(
+    'pseudo', p.pseudo, 'hidden', false, 'show', p.show_badges, 'since', p.created_at, 'reads', n,
+    'minutes_saved', n * (public.recognition_conf()->>'minutes_per_article')::numeric,
+    'badges', public.badges_of(uid));
+end $$;
+grant execute on function public.reader_card(uuid) to anon, authenticated;
+
+-- Commentaires : on ajoute les badges de l'auteur (vides s'il les cache).
+drop function if exists public.article_comments(uuid);
+create function public.article_comments(aid uuid)
+returns table (id uuid, text text, pseudo text, created_at timestamptz, likes int, dislikes int, mine smallint, own boolean, premium boolean, badges jsonb)
+language sql stable security definer set search_path = public as $$
+  select c.id, c.text, coalesce(p.pseudo, 'lecteur'), c.created_at,
+         coalesce(sum(case when v.value = 1 then 1 else 0 end), 0)::int,
+         coalesce(sum(case when v.value = -1 then 1 else 0 end), 0)::int,
+         coalesce(max(case when v.user_id = auth.uid() then v.value end), 0)::smallint,
+         coalesce(c.user_id = auth.uid(), false),
+         coalesce(p.premium, false),
+         case when coalesce(p.show_badges, true) then public.badges_of(c.user_id) else '[]'::jsonb end
+    from public.comments c
+    join public.articles a on a.id = c.article_id and a.status = 'published'
+    left join public.profiles p on p.id = c.user_id
+    left join public.comment_votes v on v.comment_id = c.id
+   where c.article_id = aid and c.status = 'visible'
+     and not exists (select 1 from public.blocks b where b.user_id = auth.uid() and b.blocked_id = c.user_id)
+   group by c.id, p.pseudo, p.premium, p.show_badges
+   order by c.created_at desc
+   limit 200;
+$$;
+grant execute on function public.article_comments(uuid) to anon, authenticated;
+
+-- 4. Back office : donner ou retirer un statut à la main, voir qui l'a -----------------------------------------
+create or replace function public.grant_badge(uid uuid, bid uuid, give boolean) returns void
+language plpgsql security definer set search_path = public as $$
+declare b text; who text;
+begin
+  if not public.is_admin() then raise exception 'Réservé aux administrateurs'; end if;
+  select label into b from public.badges where id = bid and kind = 'manual';
+  if b is null then raise exception 'Seuls les statuts « donnés à la main » s''attribuent'; end if;
+  select coalesce(pseudo, uid::text) into who from public.profiles where id = uid;
+  if give then
+    insert into public.user_badges (user_id, badge_id, granted_by) values (uid, bid, auth.uid()) on conflict do nothing;
+  else
+    delete from public.user_badges where user_id = uid and badge_id = bid;
+  end if;
+  insert into public.audit_log (actor, action, target, detail)
+  values (auth.uid(), case when give then 'Statut attribué' else 'Statut retiré' end, who, b);
+end $$;
+revoke all on function public.grant_badge(uuid, uuid, boolean) from public, anon;
+grant execute on function public.grant_badge(uuid, uuid, boolean) to authenticated;
+
+create or replace function public.badge_holders(bid uuid)
+returns table (user_id uuid, pseudo text, email text, granted_at timestamptz)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Réservé aux administrateurs'; end if;
+  return query select u.user_id, p.pseudo, a.email::text, u.granted_at
+    from public.user_badges u left join public.profiles p on p.id = u.user_id left join auth.users a on a.id = u.user_id
+   where u.badge_id = bid order by u.granted_at desc;
+end $$;
+revoke all on function public.badge_holders(uuid) from public, anon;
+grant execute on function public.badge_holders(uuid) to authenticated;
+
+-- 5. Lecteurs qui ont vu chaque info (comptes et appareils sans compte) : likes et dislikes deviennent un ratio ----
+create or replace view public.article_stats as
+select a.id as article_id,
+  coalesce(sum(case when r.value = 1 then 1 else 0 end), 0)::int as likes,
+  coalesce(sum(case when r.value = -1 then 1 else 0 end), 0)::int as dislikes,
+  (select count(*) from public.comments c where c.article_id = a.id and c.status = 'visible')::int as comments,
+  (select count(distinct coalesce(e.user_id::text, e.device)) from public.reading_events e
+    where e.article_id = a.id and e.kind = 'view')::int as views
+from public.articles a left join public.reactions r on r.article_id = a.id
+where a.status = 'published'
+group by a.id;
+
+-- 6. Réglages publics lus par l'app : on ajoute ceux de la reconnaissance.
+create or replace function public.app_config() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'comments_mode', coalesce((select value from public.app_settings where key = 'COMMENTS_MODE'), 'comments'),
+    'brand', public.setting_json('BRAND'),
+    'texts', public.setting_json('APP_TEXTS'),
+    'notifications', public.setting_json('NOTIFICATIONS'),
+    'rules', public.setting_json('APP_RULES'),
+    'nudges', public.setting_json('NUDGES'),
+    'recognition', public.recognition_conf()
+  );
+$$;
+grant execute on function public.app_config() to anon, authenticated;
+
+-- ===== supabase/migrations/0023_parrainage.sql
+-- Parrainage : chaque lecteur a un lien d'invitation (et le code qui va avec). Un ami qui crée son compte avec ce lien,
+-- ou qui tape le code dans les jours qui suivent, devient son filleul. Le parrainage est validé quand le filleul a
+-- vraiment lu quelques infos (contre les faux comptes) : il compte alors pour le badge Ambassadeur et, si c'est réglé,
+-- offre des jours Premium au parrain et au filleul. Tout se règle dans le back office (Lecteurs > Parrainage).
+
+insert into public.setting_keys (key) values ('REFERRAL') on conflict do nothing;
+
+-- 1. Codes et parrainages (fermés au public : tout passe par les fonctions ci-dessous) -------------------------
+create table if not exists public.referral_codes (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  code text not null unique check (code ~ '^[A-Z0-9]{4,12}$'),
+  created_at timestamptz not null default now()
+);
+alter table public.referral_codes enable row level security;
+revoke all on public.referral_codes from anon, authenticated;
+
+create table if not exists public.referrals (
+  referee uuid primary key references auth.users (id) on delete cascade, -- un filleul n'a qu'un parrain
+  referrer uuid not null references auth.users (id) on delete cascade,
+  via text not null default 'link' check (via in ('link', 'code')),
+  created_at timestamptz not null default now(),
+  confirmed_at timestamptz,
+  referrer_days int not null default 0, -- jours Premium offerts au parrain pour ce filleul
+  referee_days int not null default 0,  -- jours Premium offerts au filleul
+  check (referee <> referrer)
+);
+create index if not exists referrals_referrer on public.referrals (referrer, confirmed_at);
+alter table public.referrals enable row level security;
+revoke all on public.referrals from anon, authenticated;
+
+-- 2. Réglages (JSON « REFERRAL ») ------------------------------------------------------------------------------
+-- enabled : parrainage ouvert ; confirm_reads : infos lues par le filleul pour valider ; referrer_days / referee_days :
+-- jours Premium offerts (0 = aucun) ; max_rewarded : filleuls récompensés au plus par parrain (le badge, lui, continue) ;
+-- claim_days : jours après l'inscription pendant lesquels on peut encore taper un code ; link : adresse du lien
+-- (vide = la version web de l'app) ; share_text : message partagé, {lien} et {code} sont remplacés.
+create or replace function public.referral_conf() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select '{"enabled": true, "confirm_reads": 5, "referrer_days": 7, "referee_days": 7, "max_rewarded": 10, "claim_days": 14, "link": "",
+           "share_text": "J''ai trouvé une app qui résume l''actu du jour en quelques minutes. Essaie-la avec mon lien : {lien}"}'::jsonb
+         || coalesce(public.setting_json('REFERRAL'), '{}'::jsonb);
+$$;
+revoke all on function public.referral_conf() from public, anon, authenticated;
+
+-- 3. Le badge Ambassadeur : nouveau type « referral » (filleuls validés au moins N) ----------------------------
+alter table public.badges drop constraint if exists badges_kind_check;
+alter table public.badges add constraint badges_kind_check check (kind in ('premium', 'reads', 'manual', 'team', 'seniority', 'early', 'liked',
+  'streak', 'early_bird', 'explorer', 'sharer', 'event', 'referral'));
+insert into public.badges (kind, label, description, icon, color, threshold, position)
+select * from (values
+  ('referral', 'Ambassadeur', 'A fait découvrir l''app à 3 amis.', '🤝', '#3DDC97', 3, 36),
+  ('referral', 'Grand ambassadeur', 'A fait découvrir l''app à 10 amis.', '🌟', '#FFB547', 10, 37)
+) v (kind, label, description, icon, color, threshold, position)
+where not exists (select 1 from public.badges where kind = 'referral');
+
+-- Même fonction que dans 0022, avec le type « referral ».
+create or replace function public.badges_of(uid uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  with p as (select * from public.profiles where id = uid),
+  n as (select count(*)::int v from public.user_reads where user_id = uid),
+  l as (select count(*)::int v from public.comment_votes v join public.comments c on c.id = v.comment_id
+         where c.user_id = uid and c.status = 'visible' and v.value = 1),
+  got as (
+    select b.* from public.badges b, p, n, l
+     where b.active and case b.kind
+       when 'premium' then p.premium and (p.premium_until is null or p.premium_until > now())
+       when 'team' then p.role <> 'reader'
+       when 'reads' then n.v >= b.threshold
+       when 'seniority' then p.created_at <= now() - make_interval(days => b.threshold)
+       when 'early' then (select count(*) from public.profiles q where q.created_at < p.created_at) < b.threshold
+       when 'liked' then l.v >= b.threshold
+       -- plus longue suite de jours de visite consécutifs
+       when 'streak' then coalesce((select max(n) from (select count(*) n from (select day - (row_number() over (order by day))::int g
+                           from (select distinct day from public.visits where user_id = uid) d) x group by g) y), 0) >= b.threshold
+       when 'early_bird' then (select count(distinct (at at time zone 'Europe/Paris')::date) from public.user_reads
+                                where user_id = uid and extract(hour from at at time zone 'Europe/Paris') < 8) >= b.threshold
+       when 'explorer' then (select count(distinct a.rubric_id) from public.user_reads r join public.articles a on a.id = r.article_id
+                              where r.user_id = uid) >= b.threshold
+       when 'sharer' then coalesce((select shares from public.user_stats where user_id = uid), 0) >= b.threshold
+       when 'event' then exists (select 1 from public.visits v where v.user_id = uid and v.day between b.starts_at and b.ends_at)
+       when 'referral' then (select count(*) from public.referrals where referrer = uid and confirmed_at is not null) >= b.threshold
+       else exists (select 1 from public.user_badges u where u.user_id = uid and u.badge_id = b.id)
+     end),
+  best as (
+    select *, row_number() over (
+      partition by case when kind in ('reads', 'seniority', 'liked', 'early', 'streak', 'early_bird', 'explorer', 'sharer', 'referral') then kind else id::text end
+      order by case when kind = 'early' then -threshold else threshold end desc) rn
+    from got)
+  select coalesce(jsonb_agg(jsonb_build_object('label', label, 'description', description, 'icon', icon, 'color', color, 'kind', kind)
+                  order by position, threshold desc), '[]'::jsonb)
+    from best where rn = 1;
+$$;
+revoke all on function public.badges_of(uuid) from public, anon, authenticated;
+
+-- 4. Rattacher un filleul à son parrain ----------------------------------------------------------------------
+-- Renvoie un message d'erreur lisible, ou null si c'est fait.
+create or replace function public.link_referral(uid uuid, c text, how text) returns text
+language plpgsql security definer set search_path = public as $$
+declare conf jsonb := public.referral_conf(); ref uuid; joined timestamptz;
+begin
+  if not coalesce((conf->>'enabled')::boolean, true) then return 'Le parrainage est fermé pour le moment'; end if;
+  select user_id into ref from public.referral_codes where code = upper(regexp_replace(coalesce(c, ''), '[^A-Za-z0-9]', '', 'g'));
+  if ref is null then return 'Ce code de parrainage n''existe pas'; end if;
+  if ref = uid then return 'C''est votre propre code'; end if;
+  if exists (select 1 from public.referrals where referee = uid) then return 'Vous avez déjà un parrain'; end if;
+  -- Pas de parrainage croisé (A parraine B qui parraine A).
+  if exists (select 1 from public.referrals where referee = ref and referrer = uid) then return 'Cette personne est déjà votre filleul'; end if;
+  select created_at into joined from public.profiles where id = uid;
+  if joined < now() - make_interval(days => greatest(coalesce((conf->>'claim_days')::int, 14), 0)) then
+    return 'Le code se saisit dans les ' || (conf->>'claim_days') || ' jours qui suivent l''inscription';
+  end if;
+  if exists (select 1 from public.profiles where id in (uid, ref) and banned) then return 'Ce parrainage n''est pas possible'; end if;
+  insert into public.referrals (referee, referrer, via) values (uid, ref, how);
+  perform public.check_referral(uid);
+  return null;
+end $$;
+revoke all on function public.link_referral(uuid, text, text) from public, anon, authenticated;
+
+-- Inscription avec le lien : l'app envoie le code avec la création du compte (données de l'inscription, « ref »).
+create or replace function public.referral_from_signup() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if coalesce(new.raw_user_meta_data->>'ref', '') <> '' then
+    begin perform public.link_referral(new.id, new.raw_user_meta_data->>'ref', 'link');
+    exception when others then null; -- un code abîmé ne doit jamais bloquer une inscription
+    end;
+  end if;
+  return new;
+end $$;
+-- Déclenché après on_auth_user_created (ordre alphabétique) : le profil existe déjà.
+drop trigger if exists on_auth_user_referral on auth.users;
+create trigger on_auth_user_referral after insert on auth.users
+for each row execute function public.referral_from_signup();
+
+-- Lien ouvert ou code tapé après l'inscription (Mon compte), dans les jours réglés.
+create or replace function public.claim_referral(c text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare err text; p text;
+begin
+  if auth.uid() is null then raise exception 'Connectez-vous pour utiliser un code de parrainage'; end if;
+  err := public.link_referral(auth.uid(), c, 'code');
+  if err is not null then return jsonb_build_object('error', err); end if;
+  select pr.pseudo into p from public.referrals r join public.profiles pr on pr.id = r.referrer where r.referee = auth.uid();
+  return jsonb_build_object('ok', true, 'referrer', p);
+end $$;
+revoke all on function public.claim_referral(text) from public, anon;
+grant execute on function public.claim_referral(text) to authenticated;
+
+-- 5. Validation : le filleul a lu assez d'infos → jours Premium (si réglés) et un filleul de plus pour le badge ---
+create or replace function public.check_referral(uid uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare r public.referrals; conf jsonb := public.referral_conf(); rd int; ed int; done int; who text;
+begin
+  select * into r from public.referrals where referee = uid and confirmed_at is null for update;
+  if not found then return; end if;
+  if (select count(*) from public.user_reads where user_id = uid) < greatest(coalesce((conf->>'confirm_reads')::int, 5), 0) then return; end if;
+  if exists (select 1 from public.profiles where id = uid and banned) then return; end if;
+  rd := greatest(coalesce((conf->>'referrer_days')::int, 0), 0);
+  ed := greatest(coalesce((conf->>'referee_days')::int, 0), 0);
+  select count(*) into done from public.referrals where referrer = r.referrer and referrer_days > 0;
+  if done >= greatest(coalesce((conf->>'max_rewarded')::int, 10), 0) then rd := 0; end if;
+  select coalesce(pseudo, 'un ami') into who from public.profiles where id = uid;
+  -- give_days ne renvoie rien pour un compte déjà Premium à vie : rien n'est alors compté comme offert.
+  if rd > 0 and public.give_days(r.referrer, rd, 'gift', 'Parrainage : ' || who, null) is null then rd := 0; end if;
+  if ed > 0 and public.give_days(uid, ed, 'gift', 'Bienvenue (parrainage)', null) is null then ed := 0; end if;
+  update public.referrals set confirmed_at = now(), referrer_days = rd, referee_days = ed where referee = uid;
+end $$;
+revoke all on function public.check_referral(uuid) from public, anon, authenticated;
+
+-- À chaque nouvelle info lue par un filleul pas encore validé.
+create or replace function public.user_reads_referral() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from public.referrals where referee = new.user_id and confirmed_at is null) then
+    perform public.check_referral(new.user_id);
+  end if;
+  return null;
+end $$;
+drop trigger if exists user_reads_referral on public.user_reads;
+create trigger user_reads_referral after insert on public.user_reads
+for each row execute function public.user_reads_referral();
+
+-- 6. Ce que l'app affiche dans Mon compte ---------------------------------------------------------------------
+create or replace function public.my_referral() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := auth.uid(); conf jsonb := public.referral_conf(); c text; ok int; wait int; days int; joined timestamptz; parent text; nxt jsonb;
+begin
+  if uid is null then return null; end if;
+  if not coalesce((conf->>'enabled')::boolean, true) then return jsonb_build_object('enabled', false); end if;
+  select code into c from public.referral_codes where user_id = uid;
+  while c is null loop
+    -- 6 caractères sans 0/O ni 1/I pour se dicter sans erreur.
+    c := (select string_agg(substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 1 + floor(random() * 32)::int, 1), '') from generate_series(1, 6));
+    begin insert into public.referral_codes (user_id, code) values (uid, c);
+    exception when unique_violation then
+      select code into c from public.referral_codes where user_id = uid; -- déjà créé entre-temps, ou code déjà pris : on retire
+    end;
+  end loop;
+  select count(*) filter (where confirmed_at is not null), count(*) filter (where confirmed_at is null), coalesce(sum(referrer_days), 0)
+    into ok, wait, days from public.referrals where referrer = uid;
+  select created_at into joined from public.profiles where id = uid;
+  select coalesce(p.pseudo, 'un lecteur') into parent from public.referrals r left join public.profiles p on p.id = r.referrer where r.referee = uid;
+  select jsonb_build_object('label', label, 'icon', icon, 'color', color, 'threshold', threshold) into nxt
+    from public.badges where kind = 'referral' and active and threshold > ok order by threshold limit 1;
+  return jsonb_build_object(
+    'enabled', true, 'code', c, 'link', conf->>'link', 'share_text', conf->>'share_text',
+    'confirmed', ok, 'pending', wait, 'days_earned', days,
+    'referrer_days', case when (select count(*) from public.referrals where referrer = uid and referrer_days > 0) < (conf->>'max_rewarded')::int
+                          then (conf->>'referrer_days')::int else 0 end,
+    'referee_days', (conf->>'referee_days')::int, 'confirm_reads', (conf->>'confirm_reads')::int,
+    'next_badge', nxt, 'referred_by', parent,
+    'can_claim', parent is null and joined >= now() - make_interval(days => greatest((conf->>'claim_days')::int, 0)));
+end $$;
+revoke all on function public.my_referral() from public, anon;
+grant execute on function public.my_referral() to authenticated;
+
+-- 7. Back office : chiffres, meilleurs parrains, derniers parrainages, et les réglages --------------------------
+create or replace function public.referral_admin() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'Réservé aux administrateurs'; end if;
+  return jsonb_build_object(
+    'conf', public.referral_conf(),
+    'totals', (select jsonb_build_object(
+        'referrals', count(*), 'confirmed', count(*) filter (where confirmed_at is not null),
+        'pending', count(*) filter (where confirmed_at is null),
+        'last_30', count(*) filter (where created_at > now() - interval '30 days'),
+        'referrers', count(distinct referrer),
+        'days_given', coalesce(sum(referrer_days + referee_days), 0)) from public.referrals),
+    'top', coalesce((select jsonb_agg(t order by t.confirmed desc, t.total desc) from (
+        select p.pseudo, u.email::text email, count(*) total, count(*) filter (where r.confirmed_at is not null) confirmed,
+               sum(r.referrer_days) days, max(r.created_at) last
+          from public.referrals r left join public.profiles p on p.id = r.referrer left join auth.users u on u.id = r.referrer
+         group by r.referrer, p.pseudo, u.email order by 4 desc, 3 desc limit 20) t), '[]'::jsonb),
+    'recent', coalesce((select jsonb_agg(t order by t.created_at desc) from (
+        select r.created_at, r.confirmed_at, r.via, r.referrer_days, r.referee_days,
+               pr.pseudo referrer, pe.pseudo referee, ue.email::text referee_email,
+               (select count(*) from public.user_reads x where x.user_id = r.referee) reads
+          from public.referrals r left join public.profiles pr on pr.id = r.referrer
+          left join public.profiles pe on pe.id = r.referee left join auth.users ue on ue.id = r.referee
+         order by r.created_at desc limit 50) t), '[]'::jsonb));
+end $$;
+revoke all on function public.referral_admin() from public, anon;
+grant execute on function public.referral_admin() to authenticated;
+
 -- ===== supabase/migrations/0024_sujets_suivis.sql
 -- Suivre un sujet (« Ukraine », « Budget »…) : le lecteur suit un mot-clé, reçoit une alerte quand il bouge
 -- et voit une petite frise de l'histoire (infos et Dernière minute qui en parlent).

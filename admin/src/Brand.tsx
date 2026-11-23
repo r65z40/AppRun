@@ -10,6 +10,8 @@ const COLORS: [string, string, string][] = [
   ['blue', 'Couleur secondaire', '#3D7BFF'],
   ['pink', 'Accent (dégradés)', '#C86BFA'],
   ['coral', 'Alerte (Dernière minute)', '#FF6B8A'],
+  ['like', 'Pouce « J’aime » (se remplit selon la part de lecteurs)', '#34D399'],
+  ['dislike', 'Pouce « Je n’aime pas »', '#FF6B8A'],
 ];
 const FONTS: [string, string][] = [['archivo', 'Archivo'], ['inter', 'Inter'], ['dm-sans', 'DM Sans'], ['outfit', 'Outfit'], ['manrope', 'Manrope'], ['plus-jakarta-sans', 'Plus Jakarta Sans']];
 const FONT_CSS: Record<string, string> = { archivo: 'Archivo', inter: 'Inter', 'dm-sans': 'DM Sans', outfit: 'Outfit', manrope: 'Manrope', 'plus-jakarta-sans': 'Plus Jakarta Sans' };
