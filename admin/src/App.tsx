@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { AdsPage } from './Ads';
-import { AlgoPage } from './Algo';
+import { AlgoPage, ReaderTaste } from './Algo';
 import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
 type Page = 'dashboard' | 'readers' | 'algo' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'team' | 'settings';
@@ -1089,6 +1089,7 @@ function ReaderSheet({ p, act }: { p: Reader; act: (f: () => Promise<unknown>, m
     <div className="body">
       {p.banned || suspended ? <p className="warn small">{p.banned ? 'Banni' : `Suspendu jusqu'au ${until(p.suspended_until!)}`}{p.ban_reason ? ` · motif : ${p.ban_reason}` : ''}</p> : null}
       {d ? <p className="muted small">{d.days_30} jour{d.days_30 > 1 ? 's' : ''} d'ouverture sur 30 · {d.likes} like{d.likes > 1 ? 's' : ''} donnés · {d.reports_made} signalement{d.reports_made > 1 ? 's' : ''} faits · bloqué par {d.blocked_by} lecteur{d.blocked_by > 1 ? 's' : ''}</p> : <p className="muted small">Chargement…</p>}
+      <ReaderTaste uid={p.id} />
       {/* abonnement */}
       <div className="btns">
         {p.role === 'reader' && !p.banned ? <>

@@ -297,3 +297,31 @@ function StatsView({ say }: { say: (m: string) => void }) {
     </>
   );
 }
+
+/** Goûts d'un lecteur, sur sa fiche (page Lecteurs) : rubriques et mots-clés qu'il aime ou évite. */
+export function ReaderTaste({ uid }: { uid: string }) {
+  const [d, setD] = useState<ReaderAlgo | null | false>(null);
+  useEffect(() => { setD(null); algo.reader(uid).then(setD).catch(() => setD(false)); }, [uid]);
+  if (d === false) return null;
+  if (!d) return <p className="muted small">Goûts : chargement…</p>;
+  const fmt = (o: Record<string, number>, name: (k: string) => string, n: number) => {
+    const e = Object.entries(o).sort((a, b) => b[1] - a[1]);
+    const likes = e.filter(([, v]) => v > 0).slice(0, n).map(([k]) => name(k));
+    const avoids = e.filter(([, v]) => v < 0).slice(-3).reverse().map(([k]) => name(k));
+    return { likes, avoids };
+  };
+  const r = fmt(d.taste.rubrics, (k) => RUBRICS[k] ?? k, 4);
+  const t = fmt(d.taste.topics, (k) => k, 8);
+  return (
+    <>
+      <h4>Goûts</h4>
+      {d.taste.n ? (
+        <>
+          <p className="small"><span className="muted">Aime :</span> {[...r.likes, ...t.likes].join(', ') || '—'}</p>
+          {r.avoids.length || t.avoids.length ? <p className="small"><span className="muted">Évite :</span> {[...r.avoids, ...t.avoids].join(', ')}</p> : null}
+          <p className="muted small">{int(d.taste.n)} gestes pris en compte · rubriques suivies : {d.active.map((x) => RUBRICS[x] ?? x).join(', ') || '—'} · {d.quota} infos par jour. Détail et édition du jour : Algorithme &gt; Aperçu par lecteur.</p>
+        </>
+      ) : <p className="muted small">Pas encore assez de lectures pour connaître ses goûts.</p>}
+    </>
+  );
+}
