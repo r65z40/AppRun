@@ -33,7 +33,7 @@ VIDE=${DB/titre_test/titre_vide}
 psql "$VIDE" -v ON_ERROR_STOP=1 -q -f test/supabase-stub.sql
 DATABASE_URL="$VIDE" npx tsx src/install.ts
 DATABASE_URL="$VIDE" npx tsx src/install.ts
-psql "$VIDE" -tAc "select case when count(*) = 18 then 'OK  base vide installée toute seule (17 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
+psql "$VIDE" -tAc "select case when count(*) = 19 then 'OK  base vide installée toute seule (18 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
 psql "$VIDE" -tAc "select case when count(*) >= 10 then 'OK  sources de départ présentes' else 'ÉCHEC  sources absentes' end from sources"
 
 echo "--- Pilote automatique (réglage par défaut) : l'édition se publie seule"
@@ -97,3 +97,10 @@ psql "$VIDE" -tAc "select case when public.app_config()->'brand'->>'name' = 'Bri
 psql "$VIDE" -qc "insert into app_settings (key, value) values ('SMTP_PASS_KEY', 'secret-smtp')"
 psql "$VIDE" -tAc "select case when public.app_config()::text not like '%secret-smtp%' and (select count(*) from setting_keys where key in ('BRAND','APP_TEXTS','NOTIFICATIONS','SMTP_PASS_KEY','MAIL_CONFIRM_BODY')) = 5 then 'OK  réglages d''e-mails acceptés, mot de passe jamais envoyé à l''app' else 'ÉCHEC  clés de personnalisation' end"
 npx tsx test/mail.ts
+
+echo "--- Règles de l'app réglables dans le back office"
+psql "$VIDE" -qc "insert into app_settings (key, value) values ('APP_RULES', '{\"default_quota\":16,\"ad_every\":8}'), ('NUDGES', '{\"premium\":{\"enabled\":false}}')"
+psql "$VIDE" -tAc "select case when (public.app_config()->'rules'->>'ad_every')::int = 8 and (public.app_config()->'nudges'->'premium'->>'enabled') = 'false' then 'OK  règles de l''app et rappels compte / Premium transmis à l''app' else 'ÉCHEC  règles de l''app' end"
+psql "$VIDE" -tAc "select case when public.setting_int('COMMENT_RATE', 5, 1, 60) = 5 and public.setting_int('REPORTS_TO_HIDE', 3, 0, 50) = 3 then 'OK  garde-fous des commentaires : 5 par minute et masquage au 3e signalement par défaut' else 'ÉCHEC  garde-fous par défaut' end"
+psql "$VIDE" -qc "insert into app_settings (key, value) values ('COMMENT_RATE', '500'), ('REPORTS_TO_HIDE', 'abc')"
+psql "$VIDE" -tAc "select case when public.setting_int('COMMENT_RATE', 5, 1, 60) = 60 and public.setting_int('REPORTS_TO_HIDE', 3, 0, 50) = 3 then 'OK  garde-fous réglés : valeur trop grande bornée, valeur abîmée ignorée' else 'ÉCHEC  garde-fous réglés' end"

@@ -1,7 +1,7 @@
 // Personnalisation de l'app : identité (nom, logo, couleurs, police), textes, notification du matin, e-mails des comptes.
 // L'app lit ces réglages à chaque ouverture (app_config) ; les e-mails partent dans Supabase toutes les 20 minutes (backend/src/mail.ts).
 import { useEffect, useState } from 'react';
-import { api, type Setting } from './data';
+import { api, RUBRICS, type Setting } from './data';
 
 // Mêmes valeurs par défaut que dans l'app (app/src/brand.ts et app/src/theme.ts).
 const COLORS: [string, string, string][] = [
@@ -35,8 +35,8 @@ const TIMES = Array.from({ length: 13 }, (_, i) => { const m = 360 + i * 30; ret
 
 type Brand = { name: string; logo: string; font: string; colors: Record<string, string> };
 type Notif = typeof NOTIF_DEF;
-type Tab = 'identity' | 'texts' | 'notif' | 'mail';
-const TABS: [Tab, string][] = [['identity', 'Identité'], ['texts', 'Textes de l’app'], ['notif', 'Notification'], ['mail', 'E-mails']];
+type Tab = 'identity' | 'texts' | 'rules' | 'nudges' | 'notif' | 'mail';
+const TABS: [Tab, string][] = [['identity', 'Identité'], ['texts', 'Textes de l’app'], ['rules', 'Règles de l’app'], ['nudges', 'Compte et Premium'], ['notif', 'Notification'], ['mail', 'E-mails']];
 const isHex = (v: string) => /^#[0-9a-f]{6}$/i.test(v);
 const parse = <T,>(v: string, d: T): T => { try { return v ? { ...d, ...JSON.parse(v) } : d; } catch { return d; } };
 
@@ -64,6 +64,8 @@ export function BrandPage({ say }: { say: (m: string) => void }) {
       {tab === 'texts' ? <Texts key={get('APP_TEXTS')} raw={get('APP_TEXTS')} save={save} /> : null}
       {tab === 'notif' ? <NotifTab key={get('NOTIFICATIONS')} raw={get('NOTIFICATIONS')} brand={parse(get('BRAND'), { name: 'TITRE' } as Brand).name || 'TITRE'} save={save} /> : null}
       {tab === 'mail' ? <Mail get={get} save={save} /> : null}
+      {tab === 'rules' ? <Rules key={get('APP_RULES')} raw={get('APP_RULES')} save={save} /> : null}
+      {tab === 'nudges' ? <Nudges key={get('NUDGES')} raw={get('NUDGES')} save={save} /> : null}
     </>
   );
 }
@@ -286,6 +288,133 @@ function Mail({ get, save }: { get: (k: string) => string; save: Save }) {
       <div className="setting-actions">
         <span className="muted small">Il faut le secret GitHub SUPABASE_ACCESS_TOKEN (le même que pour Premium).</span>
         <button className="btn primary" disabled={!dirty.length && !pass.trim()} onClick={saveAll}>Enregistrer</button>
+      </div>
+    </>
+  );
+}
+
+/* ---------- Règles de l'app ---------- */
+// Mêmes valeurs par défaut que RULES dans app/src/brand.ts.
+const RULES_DEF = {
+  default_rubrics: ['france', 'monde', 'eco', 'tech'], default_quota: 24, quota_max: 60, ad_first: 3, ad_every: 6, next_edition: '6 h 00',
+  emojis: ['❤️', '😂', '😮', '😢', '😡', '👏'], premium_benefits: ['Zéro pub dans votre fil', 'Le badge Premium à côté de votre pseudo', 'Vous soutenez {nom} directement'],
+  edition_refresh_min: 10, live_refresh_min: 3,
+};
+type Rules = typeof RULES_DEF;
+const HOURS = Array.from({ length: 24 }, (_, i) => { const m = 240 + i * 15; return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; });
+const opts = (vals: number[], unit = '') => vals.map((n) => [String(n), `${n}${unit}`] as [string, string]);
+
+function Rules({ raw, save }: { raw: string; save: Save }) {
+  const init: Rules = parse(raw, RULES_DEF);
+  const [r, setR] = useState<Rules>(init);
+  const [emo, setEmo] = useState(init.emojis.join(' '));
+  const [ben, setBen] = useState(init.premium_benefits.join('\n'));
+  const next: Rules = { ...r, emojis: emo.split(/\s+/).filter(Boolean).slice(0, 8), premium_benefits: ben.split('\n').map((x) => x.trim()).filter(Boolean).slice(0, 6) };
+  // On n'enregistre que ce qui diffère des valeurs d'origine.
+  const diff = Object.fromEntries(Object.entries(next).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(RULES_DEF[k as keyof Rules])));
+  const changed = JSON.stringify(diff) !== JSON.stringify(Object.fromEntries(Object.entries(init).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(RULES_DEF[k as keyof Rules]))));
+  const bad = !next.default_rubrics.length || next.emojis.length < 2 || next.default_quota > next.quota_max;
+  const pick = (k: keyof Rules, label: string, help: string, options: [string, string][], num = true) => (
+    <div className="setting">
+      <div><b>{label}</b><p className="muted small">{help}</p></div>
+      <select value={String(r[k])} onChange={(e) => setR({ ...r, [k]: num ? Number(e.target.value) : e.target.value })} aria-label={label}>
+        {options.map(([v, l]) => <option key={v} value={v}>{l}{v === String(RULES_DEF[k]) ? ' (par défaut)' : ''}</option>)}
+      </select>
+    </div>
+  );
+  return (
+    <>
+      <section className="panel settings">
+        <h2>Nouveau lecteur</h2>
+        <div className="setting column">
+          <div><b>Rubriques cochées au départ</b><p className="muted small">Ce que voit cochées un lecteur qui ouvre l’app pour la première fois. Il peut changer ensuite.</p></div>
+          <div className="chips">
+            {Object.entries(RUBRICS).map(([id, name]) => {
+              const on = r.default_rubrics.includes(id);
+              return <button key={id} className={`chip ${on ? 'on' : ''}`} onClick={() => setR({ ...r, default_rubrics: on ? r.default_rubrics.filter((x) => x !== id) : [...r.default_rubrics, id] })}>{name}</button>;
+            })}
+          </div>
+        </div>
+        {pick('default_quota', 'Infos par jour proposées', 'Valeur de départ de la roue « Combien d’infos par jour ? ».', opts(Array.from({ length: 25 }, (_, i) => (i + 1) * 4).filter((n) => n <= r.quota_max), ' infos'))}
+        {pick('quota_max', 'Maximum de la roue', 'Le lecteur choisit de 4 en 4 jusqu’à ce nombre.', opts([16, 24, 32, 40, 48, 60, 80, 100], ' infos'))}
+      </section>
+      <section className="panel settings">
+        <h2>Publicité (version gratuite)</h2>
+        {pick('ad_first', 'Première pub', 'Après combien d’infos arrive la première carte sponsorisée.', opts([1, 2, 3, 4, 5, 6, 8, 10], 'e info'))}
+        {pick('ad_every', 'Ensuite, une pub toutes les', 'Jamais juste après un sujet sensible : elle glisse après l’info suivante.', opts([3, 4, 5, 6, 8, 10, 12, 15, 20], ' infos'))}
+      </section>
+      <section className="panel settings">
+        <h2>Lecture</h2>
+        {pick('next_edition', 'Heure annoncée de la prochaine édition', 'Affichée sur l’écran de fin de journée. Le moteur prépare l’édition vers 5 h 30.', HOURS.map((h) => [h, h] as [string, string]), false)}
+        {pick('edition_refresh_min', 'Rafraîchir l’édition toutes les', 'L’app recharge les nouvelles infos pendant qu’elle est ouverte (et à chaque retour dans l’app).', opts([5, 10, 15, 30, 60], ' min'))}
+        {pick('live_refresh_min', 'Rafraîchir la Dernière minute toutes les', 'Plus court = plus réactif, un peu plus de batterie.', opts([1, 2, 3, 5, 10], ' min'))}
+        <div className="setting">
+          <div><b>Réactions emoji</b><p className="muted small">En mode « emoji » (page Réglages). Séparées par un espace, 2 à 8.</p></div>
+          <input value={emo} onChange={(e) => setEmo(e.target.value)} aria-label="Réactions emoji" className={next.emojis.length < 2 ? 'invalid' : ''} />
+        </div>
+      </section>
+      <section className="panel settings">
+        <h2>Premium</h2>
+        <div className="setting column">
+          <div><b>Avantages affichés</b><p className="muted small">Un par ligne, 6 au plus. {'{nom}'} = nom de l’app. Les prix se règlent dans App Store, Google Play et RevenueCat.</p></div>
+          <textarea rows={4} value={ben} onChange={(e) => setBen(e.target.value)} aria-label="Avantages Premium" />
+        </div>
+      </section>
+      <div className="setting-actions sticky-actions">
+        <button className="btn ghost" disabled={!raw} onClick={() => save('APP_RULES', '', 'Règles d’origine rétablies')}>Revenir aux règles d’origine</button>
+        <button className="btn primary" disabled={!changed || bad} onClick={() => save('APP_RULES', Object.keys(diff).length ? JSON.stringify(diff) : '')}>{bad ? 'Vérifiez les champs' : 'Enregistrer'}</button>
+      </div>
+    </>
+  );
+}
+
+/* ---------- Rappels compte et Premium ---------- */
+const NUDGE_DEF = {
+  account: { enabled: true, every_days: 3, after_cards: 4, text: 'Votre compte gratuit : une édition qui apprend de vos likes et dislikes, sur tous vos appareils.' },
+  premium: { enabled: true, every_days: 5, after_cards: 6 },
+};
+type NudgeConf = typeof NUDGE_DEF;
+
+function Nudges({ raw, save }: { raw: string; save: Save }) {
+  const p = parse(raw, {} as Partial<NudgeConf>);
+  const init: NudgeConf = { account: { ...NUDGE_DEF.account, ...p.account }, premium: { ...NUDGE_DEF.premium, ...p.premium } };
+  const [n, setN] = useState<NudgeConf>(init);
+  const changed = JSON.stringify(n) !== JSON.stringify(init);
+  const set = <K extends keyof NudgeConf>(k: K, v: Partial<NudgeConf[K]>) => setN({ ...n, [k]: { ...n[k], ...v } });
+  const block = (k: keyof NudgeConf, title: string, who: string) => (
+    <section className="panel settings">
+      <h2>{title}</h2>
+      <label className="setting toggle">
+        <div><b>Proposer de temps en temps</b><p className="muted small">{who}</p></div>
+        <input type="checkbox" checked={n[k].enabled} onChange={(e) => set(k, { enabled: e.target.checked })} />
+      </label>
+      <div className="setting">
+        <div><b>Pas plus d’une fois tous les</b><p className="muted small">Par téléphone.</p></div>
+        <select value={n[k].every_days} onChange={(e) => set(k, { every_days: Number(e.target.value) })} aria-label={`${title} : fréquence`}>
+          {[1, 2, 3, 5, 7, 14, 30].map((d) => <option key={d} value={d}>{d} jour{d > 1 ? 's' : ''}{d === NUDGE_DEF[k].every_days ? ' (par défaut)' : ''}</option>)}
+        </select>
+      </div>
+      <div className="setting">
+        <div><b>Après</b><p className="muted small">Le message arrive pendant la lecture, jamais au milieu d’un article ouvert.</p></div>
+        <select value={n[k].after_cards} onChange={(e) => set(k, { after_cards: Number(e.target.value) })} aria-label={`${title} : moment`}>
+          {[1, 2, 3, 4, 6, 8, 10, 15].map((d) => <option key={d} value={d}>{d} info{d > 1 ? 's' : ''} lue{d > 1 ? 's' : ''}{d === NUDGE_DEF[k].after_cards ? ' (par défaut)' : ''}</option>)}
+        </select>
+      </div>
+      {k === 'account' ? (
+        <div className="setting column">
+          <div><b>Message</b></div>
+          <input maxLength={200} value={n.account.text} onChange={(e) => set('account', { text: e.target.value || NUDGE_DEF.account.text })} aria-label="Message de création de compte" />
+        </div>
+      ) : null}
+    </section>
+  );
+  return (
+    <>
+      {block('account', 'Créer un compte', 'Aux lecteurs sans compte : le volet de création de compte s’ouvre avec ce message.')}
+      {block('premium', 'Passer Premium', 'Aux lecteurs avec un compte gratuit : le volet Premium s’ouvre.')}
+      <div className="setting-actions">
+        <button className="btn ghost" disabled={!raw} onClick={() => save('NUDGES', '', 'Réglages d’origine rétablis')}>Revenir aux réglages d’origine</button>
+        <button className="btn primary" disabled={!changed} onClick={() => save('NUDGES', JSON.stringify(n))}>Enregistrer</button>
       </div>
     </>
   );

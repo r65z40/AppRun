@@ -7,7 +7,7 @@ import { useSharedValue, withSpring } from 'react-native-reanimated';
 import { DeviceMotion } from 'expo-sensors';
 import { useFonts, Archivo_400Regular, Archivo_600SemiBold, Archivo_900Black } from '@expo-google-fonts/archivo';
 import { C } from './src/theme';
-import { NOTIF } from './src/brand';
+import { NOTIF, NUDGES, RULES } from './src/brand';
 import { notifWanted, setNotif, syncNotif } from './src/notify';
 import { RUBRICS } from './src/content';
 import { buildColumns, rubricOf, seedComments } from './src/edition';
@@ -69,20 +69,23 @@ function Main() {
     loadEdition().then((d) => { demoNote.current = !d && remoteConfigured; }).finally(() => setLoaded(true));
     loadConfig().then((c) => c && setCommentsMode(c.commentsMode));
   }, []);
-  // Lecteur connecté qui a déjà ses réglages : on saute la présentation.
+  // Réglages déjà faits (compte, ou sinon ce téléphone) : on saute la présentation.
+  const [localPrefs, setLocalPrefs] = useState<Partial<Prefs> | null | undefined>(undefined);
+  useEffect(() => { acc.getLocal(LOCAL_PREFS).then((v) => { try { setLocalPrefs(v ? JSON.parse(v) : null); } catch { setLocalPrefs(null); } }); }, []);
   useEffect(() => {
-    if (!loaded || !splashDone || phase !== 'splash') return;
-    const saved = acc.currentMe()?.prefs as Partial<Prefs> | undefined;
+    if (!loaded || !splashDone || phase !== 'splash' || localPrefs === undefined) return;
+    const mine = acc.currentMe()?.prefs as Partial<Prefs> | undefined;
+    const saved = mine?.active?.length ? { ...localPrefs, ...mine } : localPrefs ?? undefined;
     if (saved?.active?.length) {
       // L'édition personnelle arrive avant la première carte, pour qu'elle ne change pas sous le doigt.
-      fetchPicks(saved.active, saved.quota ?? 24, saved.perso !== false).then((r) => {
+      fetchPicks(saved.active, saved.quota ?? RULES.default_quota, saved.perso !== false).then((r) => {
         setPicks(r);
-        setP((x) => ({ ...x, ...pickSaved(saved) }));
-        setLimit(saved.quota ?? 24);
+        setP((x) => ({ ...x, ...pickSaved(saved), ...pickDevice(saved) }));
+        setLimit(saved.quota ?? RULES.default_quota);
         setPhase('feed');
       });
     } else setPhase('onb');
-  }, [loaded, splashDone]);
+  }, [loaded, splashDone, localPrefs]);
   // L'édition se complète au fil de la journée : rechargée toutes les 10 minutes et au retour dans l'app.
   const [edVer, setEdVer] = useState(0);
   useEffect(() => {
@@ -92,14 +95,20 @@ function Main() {
       loadEdition().then((d) => d && editionSig() !== before && setEdVer((v) => v + 1));
       loadConfig().then((c) => c && setCommentsMode(c.commentsMode));
     };
-    const t = setInterval(refresh, 600000);
+    const t = setInterval(refresh, RULES.edition_refresh_min * 60000);
     const sub = AppState.addEventListener('change', (s) => s === 'active' && refresh());
     return () => { clearInterval(t); sub.remove(); };
   }, []);
   const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded, edVer]);
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 24, sound: true, haptic: true, parallax: true, premium: false, time: NOTIF.default_time, adsPersonalized: false });
+  const [p, setP] = useState<Prefs>({ active: [...RULES.default_rubrics], quota: RULES.default_quota, sound: true, haptic: true, parallax: true, premium: false, time: NOTIF.default_time, adsPersonalized: false });
 
+  // Tous les réglages restent sur le téléphone, avec ou sans compte : la présentation ne revient plus.
+  useEffect(() => {
+    if (phase !== 'feed') return;
+    const { premium: _p, notif: _n, ...keep } = p;
+    acc.setLocal(LOCAL_PREFS, JSON.stringify(keep));
+  }, [phase, p]);
   // Notification du matin : état de cet appareil, puis reprogrammée à chaque ouverture (heure et textes du moment).
   useEffect(() => { notifWanted().then((v) => setP((x) => ({ ...x, notif: v }))); }, []);
   useEffect(() => { if (phase === 'feed') syncNotif(p.time, p.quota); }, [phase, p.time, p.quota]);
@@ -110,7 +119,7 @@ function Main() {
   useEffect(() => {
     const refresh = () => Promise.all([loadFlashes(), loadAds()]).then(([f, a]) => (f || a) && setFlashVer((v) => v + 1));
     refresh();
-    const t = setInterval(refresh, 180000);
+    const t = setInterval(refresh, RULES.live_refresh_min * 60000);
     const sub = AppState.addEventListener('change', (s) => s === 'active' && refresh());
     return () => { clearInterval(t); sub.remove(); };
   }, []);
@@ -136,7 +145,7 @@ function Main() {
   const [ri, setRi] = useState(0);
   const [idx, setIdx] = useState<Record<string, number>>({});
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
-  const [limit, setLimit] = useState(24);
+  const [limit, setLimit] = useState(RULES.default_quota);
   const [reactions, setReactions] = useState<Record<string, -1 | 0 | 1>>({});
   const [myEmoji, setMyEmoji] = useState<Record<string, string>>({});
   const [welcome, setWelcome] = useState<AppMessage | null>(null);
@@ -146,6 +155,22 @@ function Main() {
   const [toast, setToast] = useState<string | null>(null);
   const [loadingCmts, setLoadingCmts] = useState(false);
   const [account, setAccount] = useState<AccountAsk | null>(null);
+  // De temps en temps, pendant la lecture : proposer un compte (sans compte) ou Premium (compte gratuit).
+  // Au plus une fois par ouverture, après quelques infos lues, et pas plus d'une fois tous les N jours (réglable).
+  const nudged = useRef(false);
+  useEffect(() => {
+    if (nudged.current || phase !== 'feed' || overlay || summary || cmts || account || showPremium) return;
+    const kind = acc.accountsOn && !me ? 'account' : me && !premium ? 'premium' : null;
+    if (!kind) return;
+    const n = NUDGES[kind];
+    if (!n.enabled || seen.size < n.after_cards) return;
+    nudged.current = true;
+    acc.getLocal(`titre.nudge.${kind}`).then((last) => {
+      if (last && Date.now() - Number(last) < n.every_days * 86400000) return;
+      acc.setLocal(`titre.nudge.${kind}`, String(Date.now()));
+      if (kind === 'account') setAccount({ reason: NUDGES.account.text }); else setShowPremium(true);
+    });
+  }, [seen.size, phase, overlay, summary, cmts, account, showPremium, me?.uid, premium]);
   useEffect(() => { acc.restore(); }, []);
   /** Lance l'action si le lecteur est connecté (avec un pseudo si besoin), sinon ouvre « Mon compte » puis la lance. */
   const withAccount = (reason: string, then: () => void, needPseudo = false) => {
@@ -625,6 +650,14 @@ function Main() {
   );
 }
 
+
+const LOCAL_PREFS = 'titre.prefs';
+/** Réglages propres à ce téléphone (sons, vibrations, profondeur, pubs ciblées). */
+function pickDevice(s: Partial<Prefs>): Partial<Prefs> {
+  const o: Partial<Prefs> = {};
+  (['sound', 'haptic', 'parallax', 'adsPersonalized'] as const).forEach((k) => { if (typeof s[k] === 'boolean') o[k] = s[k]; });
+  return o;
+}
 
 /** Les réglages qui suivent le lecteur d'un appareil à l'autre. */
 function pickSaved(s: Partial<Prefs> | undefined): Partial<Prefs> {

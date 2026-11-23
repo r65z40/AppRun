@@ -4,7 +4,7 @@ import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, wi
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, GRAD, GRAD3, DRAWER_MS, alpha } from './theme';
-import { BRAND, NOTIF, TEXTS } from './brand';
+import { BRAND, NOTIF, RULES, TEXTS } from './brand';
 import { setNotif } from './notify';
 import { RUBRIC_LIST } from './content';
 import { accountsOn } from './account';
@@ -46,8 +46,8 @@ export type OnbResult = { active: string[]; quota: number; time: string; adsPers
 export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) => void }) {
   const insets = useSafeAreaInsets();
   const [i, setI] = useState(0);
-  const [active, setActive] = useState<string[]>(['france', 'monde', 'eco', 'tech']);
-  const [quota, setQuota] = useState(24);
+  const [active, setActive] = useState<string[]>([...RULES.default_rubrics]);
+  const [quota, setQuota] = useState(RULES.default_quota);
   const [time, setTime] = useState(NOTIF.default_time);
   const [adsP, setAdsP] = useState(false);
   const [notif, setNotifP] = useState<Promise<boolean> | undefined>(undefined);
@@ -264,7 +264,7 @@ function Row({ label, hint, last, children }: { label: string; hint?: string; la
 }
 
 /* ---------- Nombre d'infos : carrousel de 4 en 4 ---------- */
-const QUOTAS = Array.from({ length: 15 }, (_, k) => (k + 1) * 4); // 4 à 60
+const QUOTAS = Array.from({ length: Math.floor(RULES.quota_max / 4) }, (_, k) => (k + 1) * 4); // de 4 en 4, jusqu'au maximum réglé
 const QW = 64; // largeur d'un cran
 export function QuotaWheel({ value, onChange }: { value: number; onChange: (q: number) => void }) {
   const ref = useRef<ScrollViewInstance>(null);
@@ -436,7 +436,7 @@ export function End({ n, realMs, allRead, left, onReread }: { n: number; realMs:
         <View style={styles.moon} />
         <Text style={styles.endH}>{allRead ? TEXTS.end_title : 'Bonne journée.'}{'\n'}<Text style={{ color: C.soft }}>{TEXTS.end_bye}</Text></Text>
         <Text style={[styles.p, { fontSize: 17 }]}>
-          {allRead ? 'Vous avez lu toutes les infos du jour. ' : `Il reste ${left} infos aujourd'hui si vous changez d'avis. `}Prochaine édition {tomorrowLabel()} à 6 h 00.
+          {allRead ? 'Vous avez lu toutes les infos du jour. ' : `Il reste ${left} infos aujourd'hui si vous changez d'avis. `}Prochaine édition {tomorrowLabel()} à {RULES.next_edition}.
         </Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {[[String(n), 'infos lues'], [fmt(real).replace(/ \d+ s$/, ''), 'de lecture'], ['5 jours', "d'affilée"]].map(([b, s]) => (
