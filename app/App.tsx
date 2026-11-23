@@ -364,7 +364,7 @@ function Main() {
   useEffect(() => {
     if (phase !== 'feed' || overlay || !current || !isAd(current)) return;
     const ad = current;
-    const t = setTimeout(() => adHit(ad.id, ad.c), 1000);
+    const t = setTimeout(() => adHit(ad), 1000);
     return () => clearTimeout(t);
   }, [current, phase, overlay]);
 
