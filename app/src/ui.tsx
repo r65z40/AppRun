@@ -3,7 +3,9 @@ import { Pressable, StyleSheet, Text, View, type PressableProps, type StyleProp,
 import Animated, { useAnimatedStyle, useSharedValue, withTiming, Easing } from 'react-native-reanimated';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
 import { C, F, GRAD, GRAD3 } from './theme';
+import { BRAND } from './brand';
 
 /* ---------- Icônes (traits fins, style Lucide) ---------- */
 type IconName = 'up' | 'down' | 'cmt' | 'share' | 'flag' | 'book' | 'gear' | 'send' | 'smile';
@@ -39,6 +41,8 @@ export function Glyph({ size = 40 }: { size?: number }) {
 }
 export function AppIcon({ size = 64, glass = false }: { size?: number; glass?: boolean }) {
   const r = size * 0.27;
+  // Logo réglé dans le back office (Personnalisation > Identité) à la place de l'icône dessinée.
+  if (BRAND.logo) return <Image source={{ uri: BRAND.logo }} contentFit="cover" style={{ width: size, height: size, borderRadius: r }} accessibilityLabel={BRAND.name} />;
   if (glass)
     return (
       <View style={{ width: size, height: size, borderRadius: r, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' }}>

@@ -30,7 +30,13 @@
     },
     "plugins": [
       "expo-audio",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "color": "#7B5CFF"
+        }
+      ]
     ],
     "web": {
       "name": "TITRE",

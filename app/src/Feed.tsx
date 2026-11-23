@@ -21,7 +21,7 @@ import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { C, F, GRAD3, SPRING, SPRING_FLICK } from './theme';
+import { C, F, GRAD3, SPRING, SPRING_FLICK, alpha, mix } from './theme';
 import { isAd, isArticle, isFlash, type Article, type Card, type Column, type Tag } from './types';
 import { rubricOf } from './edition';
 import { flashTime } from './dates';
@@ -286,7 +286,7 @@ function Background({ card, k, ci, W, H, colX, y, tiltX, tiltY, parallax }: {
         <View style={[StyleSheet.absoluteFill, { backgroundColor: photo ? 'rgba(40,24,110,0.42)' : 'transparent' }]} />
       </Animated.View>
       <LinearGradient
-        colors={['rgba(14,11,31,0.6)', 'rgba(14,11,31,0)', 'rgba(14,11,31,0.25)', 'rgba(14,11,31,0.86)', C.night]}
+        colors={[alpha(C.night, 0.6), alpha(C.night, 0), alpha(C.night, 0.25), alpha(C.night, 0.86), C.night]}
         locations={[0, 0.2, 0.38, 0.62, 0.92]}
         style={StyleSheet.absoluteFill}
       />
@@ -611,7 +611,7 @@ function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; 
   );
 }
 
-const FLASH_GRAD = ['#FF6B8A', '#7B5CFF', '#3a1d5c', '#0E0B1F'];
+const FLASH_GRAD = [C.coral, C.violet, mix(C.night, C.pink, 0.22), C.night];
 
 const styles = StyleSheet.create({
   flashSrc: { color: C.text2, fontFamily: F.semi, fontSize: 14 },
@@ -625,16 +625,16 @@ const styles = StyleSheet.create({
   whyLink: { color: C.text3, fontFamily: F.semi, fontSize: 11 },
   whyBox: { marginTop: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
   whyTxt: { color: C.text, fontFamily: F.regular, fontSize: 13, lineHeight: 18 },
-  whyLess: { color: '#d6ccff', fontFamily: F.semi, fontSize: 13 },
+  whyLess: { color: C.soft2, fontFamily: F.semi, fontSize: 13 },
   kicker: { color: C.text2, fontFamily: F.semi, fontSize: 11, letterSpacing: 2 },
   title: { color: '#fff', fontFamily: F.black, fontSize: 33, lineHeight: 33, letterSpacing: -0.4 },
   key: { color: 'rgba(255,255,255,0.82)', fontFamily: F.regular, fontSize: 16.5, lineHeight: 24, marginTop: -4 },
   fact: { borderTopWidth: StyleSheet.hairlineWidth * 2, borderColor: C.line, paddingVertical: 12, minHeight: 46, justifyContent: 'center' },
   factLast: { borderBottomWidth: StyleSheet.hairlineWidth * 2 },
   factTxt: { color: 'rgba(255,255,255,0.92)', fontFamily: F.regular, fontSize: 15, lineHeight: 20 },
-  factBack: { position: 'absolute', left: -6, right: -6, top: 4, bottom: 4, borderRadius: 12, backgroundColor: 'rgba(123,92,255,0.3)', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 },
+  factBack: { position: 'absolute', left: -6, right: -6, top: 4, bottom: 4, borderRadius: 12, backgroundColor: alpha(C.violet, 0.3), flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 },
   backTxt: { flex: 1, color: '#fff', fontFamily: F.regular, fontSize: 13 },
-  backLink: { color: '#cfe0ff', fontFamily: F.semi, fontSize: 12 },
+  backLink: { color: C.link, fontFamily: F.semi, fontSize: 12 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
   read: { height: 46, paddingHorizontal: 22, borderRadius: 999, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)' },
   readTxt: { color: '#fff', fontFamily: F.semi, fontSize: 15 },
@@ -646,12 +646,12 @@ const styles = StyleSheet.create({
   spark: { position: 'absolute', width: 5, height: 5, borderRadius: 3 },
   picker: { position: 'absolute', right: 0, bottom: 56, flexDirection: 'row', gap: 2, padding: 6, borderRadius: 22, backgroundColor: 'rgba(30,24,64,0.96)', borderWidth: 1, borderColor: C.line },
   pickBtn: { width: 46, alignItems: 'center', paddingVertical: 4, borderRadius: 14 },
-  pickOn: { backgroundColor: 'rgba(123,92,255,0.35)' },
+  pickOn: { backgroundColor: alpha(C.violet, 0.35) },
   sources: { color: C.text3, fontFamily: F.regular, fontSize: 11 },
   adCta: { height: 46, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center' },
   head: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 22, gap: 10 },
   headRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logo: { color: '#b9a8ff', fontFamily: F.black, fontSize: 19, letterSpacing: -0.3, width: 62 },
+  logo: { color: C.soft, fontFamily: F.black, fontSize: 19, letterSpacing: -0.3, width: 62 },
   rubs: { flex: 1, height: 36, overflow: 'hidden', ...(Platform.OS === 'web' ? ({ maskImage: 'linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent)', WebkitMaskImage: 'linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent)' } as object) : null) },
   rub: { height: 36, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   rubTxt: { color: C.text2, fontFamily: F.semi, fontSize: 12.5 },
