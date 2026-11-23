@@ -3,7 +3,9 @@
  * Lit les sources, garde les dépêches des deux dernières heures, l'IA retient les faits majeurs
  * confirmés par deux médias, publiés aussitôt (FLASH_AUTO_PUBLISH=0 pour les garder masqués jusqu'à validation).
  *
- * Usage : npm run flash -- [--fixtures test/feeds]
+ * --test (mode test du back office) : l'IA propose comme d'habitude, rien n'est publié.
+ *
+ * Usage : npm run flash -- [--fixtures test/feeds] [--test]
  */
 import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
@@ -20,6 +22,7 @@ const args = process.argv.slice(2);
 const fx = args.indexOf('--fixtures');
 const FIXTURES = fx >= 0 ? args[fx + 1] : undefined;
 const AUTO = cfg.flashAutoPublish();
+const TEST = args.includes('--test');
 let J: Journal;
 const log = (...a: unknown[]) => J.log(...a);
 
@@ -28,7 +31,7 @@ async function main() {
   J = await startJournal('flash');
   try {
     await flash();
-    await alerts();
+    if (!TEST) await alerts();
   } catch (e) {
     if (e instanceof AiStopped) { log(e.message); await alerts(); return J.finish('ok', e.message, { model: model(), ai: { ...usage } }); }
     log(`Erreur : ${e instanceof Error ? e.message : e}`);
@@ -48,13 +51,14 @@ async function flash() {
   const ended = await q<{ n: number }>('select public.expire_premium() as n').catch(() => [{ n: 0 }]);
   if (ended[0]?.n) log(`Premium : ${ended[0].n} abonnement(s) arrivé(s) à échéance`);
   await q('select public.ad_purge()').catch(() => {}); // détail des affichages pub de plus de 35 jours (les totaux restent)
-  if (cfg.paused()) { const msg = await pauseMessage(); log(msg); return J.finish('ok', msg, { paused: true }); }
+  if (TEST) { J.details.test = true; log('Mode test : rien n’est publié.'); }
+  if (cfg.paused() && !TEST) { const msg = await pauseMessage(); log(msg); return J.finish('ok', msg, { paused: true }); }
   await budget.check(); // IA coupée ou budget atteint : arrêt propre (voir main), ni modération ni Dernière minute
-  const mod = await moderate(log).catch((e) => { log(`Modération impossible : ${e instanceof Error ? e.message : e}`); return null; });
+  const mod = TEST ? null : await moderate(log).catch((e) => { log(`Modération impossible : ${e instanceof Error ? e.message : e}`); return null; });
   if (mod?.ai) { J.details.moderation = mod.done; J.details.moderation_ai = mod.ai; }
   if (!cfg.flashEnabled()) return J.finish('ok', 'Dernière minute désactivée dans les réglages.');
   const todayCount = (await q<{ n: number }>("select count(*)::int as n from flashes where published_at > date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris'"))[0].n;
-  if (todayCount >= cfg.flashMaxPerDay()) return J.finish('ok', `Plafond atteint : ${todayCount} infos aujourd'hui (réglage : ${cfg.flashMaxPerDay()}).`);
+  if (todayCount >= cfg.flashMaxPerDay() && !TEST) return J.finish('ok', `Plafond atteint : ${todayCount} infos aujourd'hui (réglage : ${cfg.flashMaxPerDay()}).`);
   const fetched = await collect(FIXTURES, log);
   const used = new Set((await q<{ id: string }>("select unnest(raw_item_ids)::text as id from flashes where created_at > now() - interval '24 hours'")).map((r) => r.id));
   const H = cfg.flashWindowHours();
@@ -98,6 +102,7 @@ async function flash() {
       continue;
     }
     const its = f.item_numbers.map((k) => raws[k - 1]).filter(Boolean);
+    if (TEST) { n++; log(`  ⚡ (test) ${f.title} — ${f.sentence}`); kept.push({ title: `${f.title} — ${f.sentence}`, sources: [...new Set(its.map((r) => r.source))] }); continue; }
     const sources = [...new Map(its.map((r) => [r.source, { source: r.source, url: r.link }])).values()];
     await q(
       `insert into flashes (status, rubric_id, importance, title, sentence, sources, raw_item_ids, model, sensitive)
@@ -111,7 +116,7 @@ async function flash() {
     log(`  ⚡ ${f.title}${isExtra ? ` (importance ${f.importance}, pour tenir le minimum du jour)` : ''}`);
     kept.push({ title: f.title, sources: sources.map((x) => x.source) });
   }
-  const summary = `${fetched} titres lus, ${items.length} dépêches récentes, ${n} info(s) publiée(s).`;
+  const summary = TEST ? `Test (rien publié) : ${items.length} dépêches récentes, ${n} info(s) que l'IA aurait publiée(s).` : `${fetched} titres lus, ${items.length} dépêches récentes, ${n} info(s) publiée(s).`;
   log(`Dernière minute : ${summary}`);
   await J.finish('ok', summary, { fetched, items: items.length, proposed: found.length, published: n, model: model(), ai: { ...usage } });
 }

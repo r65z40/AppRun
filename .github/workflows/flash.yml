@@ -6,6 +6,10 @@ on:
     # les tâches prévues pile à :00, :20 ou :40, les moments les plus chargés.
     - cron: '7,17,27,37,47,57 5-22 * * *' # créneaux en double : GitHub en saute beaucoup
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Vide = passage normal ; test = passage à blanc, rien publié'
+        required: false
 
 concurrency: flash
 
@@ -35,7 +39,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FLASH_AUTO_PUBLISH: ${{ vars.FLASH_AUTO_PUBLISH }}
           TITRE_MODEL: ${{ vars.TITRE_MODEL }}
-        run: npm run flash
+        run: npm run flash -- ${{ inputs.mode == 'test' && '--test' || '' }}
       - name: Appliquer les e-mails réglés dans le back office
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
