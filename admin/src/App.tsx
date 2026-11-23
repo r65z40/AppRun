@@ -7,7 +7,7 @@ import { FollowPage } from './Follow';
 import { BadgesPage } from './Badges';
 import { ReferralPage } from './Referral';
 import { BrandPage } from './Brand';
-import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type EngineStatus, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type EngineStatus, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type LaunchWhat, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
 type Page = 'dashboard' | 'readers' | 'algo' | 'follow' | 'badges' | 'referral' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings' | 'brand';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
@@ -739,6 +739,27 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
     await api.runEngine!((s) => setSteps((l) => [...(l ?? []), s]));
   };
   const get = st.get;
+  // Lancer un passage d'un clic ; sans jeton GitHub, la page GitHub s'ouvre pour le lancer à la main.
+  const launch = async (what: LaunchWhat) => {
+    const test = what === 'test' || what === 'flash_test';
+    if (!test && what === 'edition' && !window.confirm("Générer l'édition du jour maintenant ? L'IA construit l'édition, ou la complète si elle existe déjà (environ 5 minutes, coût habituel d'une édition).")) return;
+    try {
+      const r = await api.launchEngine(what);
+      if (r.ok) { say(test ? 'Test lancé : le résultat arrive dans Historique d’ici 2 à 5 minutes, rien ne sera publié' : 'Passage lancé : le résultat arrive dans Historique d’ici 2 à 5 minutes'); setTab('history'); return; }
+      if (r.reason === 'recent') return say('Déjà lancé il y a moins d’une minute : le résultat arrive dans Historique');
+      window.open(what.startsWith('flash') ? FLASH_URL : ENGINE_URL, '_blank');
+      say(`Jeton GitHub absent (onglet Clés) : GitHub s’ouvre, cliquez « Run workflow »${test ? ' et tapez test dans « mode »' : ''}`);
+    } catch (e) { say(e instanceof Error ? e.message : 'Lancement impossible'); }
+  };
+  const TestBox = ({ what, label }: { what: LaunchWhat; label: string }) => (
+    <section className="panel settings">
+      <h2>Mode test</h2>
+      <div className="setting">
+        <div><b>{label}</b><p className="muted small">Passage à blanc avec les réglages ci-dessus : l’IA lit les dépêches, choisit et écrit comme d’habitude, mais rien n’est publié. Le résultat complet (sujets retenus, écartés et pourquoi, cartes d’essai) arrive dans Historique, marqué « Test ». Coût : environ un passage normal{what === 'test' ? ', 5 cartes au plus' : ''}.</p></div>
+        <button className="btn" onClick={() => launch(what)}>Tester maintenant</button>
+      </div>
+    </section>
+  );
   const pauseV = get('ENGINE_PAUSED');
   const paused = pauseV === '1' || (!!pauseV && pauseV !== '0' && new Date(pauseV).getTime() > Date.now());
   const auto = get('AUTO_PUBLISH') ? get('AUTO_PUBLISH') === '1' : true;
@@ -757,8 +778,8 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
           <p className="muted">Comment l'IA choisit et écrit les infos, les médias qu'elle lit, et ce qu'elle a fait à chaque passage. Le moteur relit ces réglages à chaque passage.</p>
         </div>
         <div className="actions">
-          {api.runEngine ? <button className="btn" onClick={runEngine} title="Simulation du moteur (mode démo)">Lancer l'édition</button> : <a className="btn" href={ENGINE_URL} target="_blank" rel="noreferrer" title="Ouvre GitHub : bouton « Run workflow »">Lancer l'édition ↗</a>}
-          <a className="btn" href={FLASH_URL} target="_blank" rel="noreferrer">Lancer Dernière minute ↗</a>
+          {api.runEngine ? <button className="btn" onClick={runEngine} title="Simulation du moteur (mode démo)">Générer l'édition</button> : admin ? <button className="btn primary" onClick={() => launch('edition')}>Générer l'édition</button> : <a className="btn" href={ENGINE_URL} target="_blank" rel="noreferrer">Générer l'édition ↗</a>}
+          {admin ? <button className="btn" onClick={() => launch('flash')}>Lancer Dernière minute</button> : <a className="btn" href={FLASH_URL} target="_blank" rel="noreferrer">Lancer Dernière minute ↗</a>}
         </div>
       </header>
       {admin && st.list ? (
@@ -852,6 +873,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
             {st.Pick({ k: 'LIVE_MIN_CARDS', label: 'Cartes ajoutées par mise à jour, au moins', help: "S'il y a des dépêches nouvelles, chaque mise à jour ajoute au moins ce nombre de cartes, même sous l'importance minimum ci-dessous (les plus importantes d'abord). 0 = seulement les sujets au-dessus du seuil.", def: '1', options: st.nums([0, 1, 2, 3, 5]) })}
             {st.Pick({ k: 'LIVE_MIN_IMPORTANCE', label: 'Importance minimum pour une mise à jour', help: "Plus haut = moins d'ajouts, seulement les sujets qui comptent vraiment (et moins de coût). Au plus un quart du plafond de cartes par passage.", def: '6', options: st.nums(range(3, 10), ' sur 10') })}
           </section>
+          <TestBox what="test" label="Tester l’édition" />
         </>
       ) : null}
       {admin && st.list && tab === 'flash' ? (
@@ -867,6 +889,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
             {st.Pick({ k: 'FLASH_RELAX_IMPORTANCE', label: 'Importance acceptée pour tenir le minimum', help: "Seuil utilisé seulement quand la journée est en retard sur le minimum ci-dessus.", def: '6', options: st.nums([4, 5, 6, 7], ' sur 10') })}
             {st.Pick({ k: 'FLASH_MAX_PER_DAY', label: 'Infos par jour, au plus', help: 'Au-delà, le moteur arrête de publier jusqu’au lendemain.', def: '12', options: st.nums([3, 5, 8, 12, 20, 30, 50]) })}
           </section>
+          <TestBox what="flash_test" label="Tester la Dernière minute" />
         </>
       ) : null}
       {admin && st.list && tab === 'keys' ? (
@@ -970,6 +993,7 @@ function EnginePage() {
             <button className="run-head" onClick={() => setOpen(open === r.id ? null : r.id)}>
               <span className={`pill ${r.status === 'ok' ? 'published' : r.status === 'error' ? 'rejected' : ''}`}>{r.kind === 'edition' ? 'Édition' : 'Dernière minute'}</span>
               <span className="muted small">{when(r.started_at)}</span>
+              {r.details?.test ? <span className="pill">Test</span> : null}
               <span className="run-sum">{r.status === 'running' ? 'En cours…' : r.summary}</span>
               <span className="muted">{open === r.id ? '▾' : '▸'}</span>
             </button>
@@ -1015,8 +1039,8 @@ function RunDetails({ r }: { r: EngineRun }) {
       ) : null}
       {d.cards?.length ? (
         <section>
-          <h3>Cartes écrites</h3>
-          <ul>{d.cards.map((c, i) => <li key={i}>{c.error ? '✗' : c.issues.length ? '⚠' : '✓'} <span className="muted small">[{RUBRICS[c.rubric] ?? c.rubric}]</span> {c.title}{c.error ? <span className="warn"> : {c.error}</span> : c.issues.length ? <span className="warn"> : {c.issues.join(', ')}</span> : null}{c.photo ? <span className="muted small"> · photo : {c.photo}</span> : null}</li>)}</ul>
+          <h3>{d.test ? 'Cartes d’essai (non publiées)' : 'Cartes écrites'}</h3>
+          <ul>{d.cards.map((c, i) => <li key={i}>{c.error ? '✗' : c.issues.length ? '⚠' : '✓'} <span className="muted small">[{RUBRICS[c.rubric] ?? c.rubric}]</span> {c.title}{c.error ? <span className="warn"> : {c.error}</span> : c.issues.length ? <span className="warn"> : {c.issues.join(', ')}</span> : null}{c.photo ? <span className="muted small"> · photo : {c.photo}</span> : null}{c.key_sentence ? <div className="small" style={{ margin: '4px 0 8px 18px' }}><div>{c.key_sentence}</div><ul>{c.facts?.map((f, k) => <li key={k} className="muted" dangerouslySetInnerHTML={{ __html: safeBold(f) }} />)}</ul></div> : null}</li>)}</ul>
         </section>
       ) : null}
       {d.flashes ? (

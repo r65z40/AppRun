@@ -10,7 +10,10 @@
  * --update (passages de la journée) : ajoute à l'édition déjà en ligne les sujets nouveaux et importants
  * des 4 dernières heures, sans reprendre ceux déjà traités. Sans édition du jour, la construit en entier.
  *
- * Usage : npm run engine -- [--date 2026-11-22] [--fixtures test/feeds] [--per-rubric 8] [--update]
+ * --test (mode test du back office) : passage à blanc avec les réglages actuels. L'IA choisit les sujets et
+ * écrit quelques cartes, visibles dans IA > Historique, mais rien n'est enregistré ni publié.
+ *
+ * Usage : npm run engine -- [--date 2026-11-22] [--fixtures test/feeds] [--per-rubric 8] [--update] [--force] [--test]
  */
 import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
@@ -34,6 +37,9 @@ const PER_RUBRIC = arg('per-rubric') ? Number(arg('per-rubric')) : cfg.perRubric
 const AUTO_PUBLISH = cfg.autoPublish();
 const WINDOW_H = cfg.windowHours();
 
+const TEST = args.includes('--test');
+/** Cartes écrites au plus en mode test (pour limiter le coût). */
+const TEST_CARDS = 5;
 let J: Journal;
 const log = (...a: unknown[]) => J.log(...a);
 
@@ -43,7 +49,7 @@ async function main() {
   try {
     await edition();
     // Alertes des sujets suivis (les infos publiées la nuit n'en déclenchent pas : voir le back office).
-    await sendTopicAlerts().catch((e) => console.error(`Alertes sujets impossibles : ${e instanceof Error ? e.message : e}`));
+    if (!TEST) await sendTopicAlerts().catch((e) => console.error(`Alertes sujets impossibles : ${e instanceof Error ? e.message : e}`));
   } catch (e) {
     // IA coupée ou budget atteint pendant le choix des sujets : arrêt voulu, pas une panne.
     if (e instanceof AiStopped) { log(e.message); return J.finish('ok', e.message, { model: model(), ai: { ...usage } }); }
@@ -60,7 +66,8 @@ async function edition() {
   await q('select purge_reading_events()').catch(() => {});
   await q('select purge_raw_items($1)', [cfg.rawRetentionDays()]).catch(() => {});
   setRubricHints(await q<{ id: string; name: string; ai_hint: string | null }>('select id, name, ai_hint from rubrics').catch(() => []));
-  if (cfg.paused()) {
+  if (TEST) { J.details.test = true; log('Mode test : l’IA choisit et écrit comme d’habitude, mais rien n’est enregistré ni publié.'); }
+  if (cfg.paused() && !TEST) {
     const msg = await pauseMessage();
     log(msg);
     return J.finish('ok', msg, { paused: true });
@@ -68,18 +75,18 @@ async function edition() {
 
   const ed = await q<{ status: string }>('select status from editions where date = $1', [DATE]);
   // Mise à jour de la journée : seulement si l'édition du jour existe déjà, sinon on la construit (rattrapage).
-  const UPDATE = args.includes('--update') && !!ed[0] && ed[0].status !== 'building';
+  const UPDATE = !TEST && args.includes('--update') && !!ed[0] && ed[0].status !== 'building';
   if (UPDATE && !cfg.liveUpdates()) {
     log('Mises à jour de la journée coupées (Réglages).');
     return J.finish('ok', 'Mises à jour de la journée coupées dans les réglages.');
   }
   if (UPDATE) log(`Mise à jour de la journée : sujets nouveaux d'importance ${cfg.liveMinImportance()}/10 au moins.`);
   // --once (passages automatiques) : une seule édition par jour, même si GitHub lance plusieurs rattrapages.
-  if (args.includes('--once') && ed[0] && ed[0].status !== 'building') {
+  if (!TEST && args.includes('--once') && ed[0] && ed[0].status !== 'building') {
     log('Édition du jour déjà faite : rattrapage inutile.');
     return J.finish('ok', 'Édition du jour déjà faite.');
   }
-  if (ed[0]?.status === 'published' && !args.includes('--force') && !UPDATE) {
+  if (ed[0]?.status === 'published' && !args.includes('--force') && !UPDATE && !TEST) {
     log('Édition déjà publiée : rien à faire (ajoutez --force pour compléter).');
     return J.finish('ok', 'Édition déjà publiée, rien à faire.');
   }
@@ -89,7 +96,7 @@ async function edition() {
     log(e.message);
     return J.finish('ok', e.message);
   }
-  await q(`insert into editions (date) values ($1) on conflict (date) do nothing`, [DATE]);
+  if (!TEST) await q(`insert into editions (date) values ($1) on conflict (date) do nothing`, [DATE]);
 
   log('1/4 Récupération des sources');
   const fetched = await collect(FIXTURES, log);
@@ -106,7 +113,7 @@ async function edition() {
     [FIXTURES ? new Date(0) : new Date(end.getTime() - hours * 3600e3), FIXTURES ? new Date('2100-01-01') : end], // flux d'exemple : dates figées
   );
   // Ne pas réécrire un sujet déjà traité dans cette édition.
-  const done = new Set((await q<{ id: string }>('select unnest(raw_item_ids)::text as id from articles where edition_date = $1 and status <> $2', [DATE, 'rejected'])).map((r) => r.id));
+  const done = TEST ? new Set<string>() : new Set((await q<{ id: string }>('select unnest(raw_item_ids)::text as id from articles where edition_date = $1 and status <> $2', [DATE, 'rejected'])).map((r) => r.id));
   // Même article dans deux flux d'un média (Une + rubrique) ou repris mot pour mot : une seule dépêche pour l'IA.
   const pending = raws.filter((r) => !done.has(r.id));
   const fresh = dedupe(pending).slice(0, cfg.maxItems());
@@ -192,6 +199,14 @@ async function edition() {
         const r = fresh[f.item_number - 1] ?? fresh[its[0].n - 1];
         return { text: f.text, source: r.source, url: r.link };
       });
+      if (TEST) {
+        // Mode test : la carte complète va dans le journal, rien dans la base.
+        written++;
+        if (issues.length) flagged++;
+        log(`   ✓ [${s.rubric}] ${card.title}${issues.length ? `  ⚠ ${issues.join(', ')}` : ''}`);
+        cards.push({ rubric: s.rubric, title: card.title, issues, key_sentence: card.key_sentence, facts: facts.map((f) => `${f.text} (${f.source})`), importance: s.importance } as never);
+        return;
+      }
       const photo = pexelsOn() ? await findPhoto(card.photo_query).catch((e) => { log(`   photo introuvable (${e instanceof Error ? e.message : e})`); return null; }) : null;
       const publish = AUTO_PUBLISH && (issues.every(minorIssue) || cfg.publishFlagged()) && s.importance >= cfg.publishMinImportance();
       await q(
@@ -223,7 +238,8 @@ async function edition() {
     }
   };
   // Quelques cartes en parallèle, pas plus.
-  const queue = [...sorted];
+  const queue = TEST ? sorted.slice(0, TEST_CARDS) : [...sorted];
+  if (TEST && sorted.length > TEST_CARDS) log(`   Mode test : ${TEST_CARDS} cartes écrites sur ${sorted.length} sujets retenus, pour limiter le coût.`);
   await Promise.all(Array.from({ length: Math.min(cfg.aiConcurrency(), queue.length) }, async () => {
     while (queue.length) await work(queue.shift()!);
   }));
@@ -231,6 +247,11 @@ async function edition() {
   log('4/4 Édition');
   const stats = { fetched, window: raws.length, items: items.length, proposed: proposed.length, stories: stories.length, written, flagged, fixed, failed, model: model(), ai: { ...usage } };
   const summary = `${UPDATE ? 'Mise à jour : ' : ''}${fetched} titres lus, ${items.length} à traiter, ${stories.length} sujets retenus, ${written} cartes écrites (${fixed} corrigées par l'IA, ${flagged} à relire, ${failed} échecs).${stopped ? ` Arrêt : ${stopped}` : ''}`;
+  if (TEST) {
+    const msg = `Test (rien publié) : ${items.length} dépêches lues, ${stories.length} sujets retenus, ${written} cartes d'essai écrites (${flagged} avec alerte).`;
+    log(`Terminé : ${msg}`);
+    return J.finish('ok', msg, stats);
+  }
   if (UPDATE) {
     // L'édition reste telle quelle (statut et statistiques du matin) : seules les nouvelles cartes s'ajoutent.
     log(`Terminé : ${summary}`);

@@ -191,6 +191,7 @@ export function demoApi(): Api {
       reports_open: reports.filter((r) => !r.resolved).length, banned: readers.filter((p) => p.banned).length, ai_today: 1.84, ai_7: 12.9, ai_30: 51.3,
       last_runs: [{ kind: 'edition', status: 'ok', started_at: at(15 * 60), finished_at: at(15 * 60 - 6), summary: runs[2].summary }, { kind: 'flash', status: 'error', started_at: at(9), finished_at: at(8), summary: 'Échec : clé Claude refusée (exemple de panne)' }],
     }),
+    launchEngine: () => wait({ ok: true }),
     engineStatus: () => {
       const v = settings.find((x) => x.key === 'ENGINE_PAUSED');
       const paused = !!v && (v.value === '1' || new Date(v.value).getTime() > Date.now());

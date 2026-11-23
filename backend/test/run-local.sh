@@ -90,6 +90,17 @@ psql "$VIDE" -qc "delete from app_settings where key = 'ENGINE_PAUSED'"
 DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --once >/dev/null
 psql "$VIDE" -tAc "select case when summary = 'Édition du jour déjà faite.' then 'OK  rattrapage ignoré quand l’édition du jour existe' else 'ÉCHEC  rattrapage : ' || coalesce(summary, '?') end from engine_runs where kind = 'edition' order by started_at desc limit 1"
 
+echo "--- Mode test du back office : rien n'est publié"
+A=$(psql "$VIDE" -tAc "select count(*) || '/' || (select count(*) from flashes) || '/' || (select count(*) from editions) from articles")
+psql "$VIDE" -qc "insert into app_settings (key, value) values ('ENGINE_PAUSED', '1')"
+DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --test >/dev/null
+psql "$VIDE" -tAc "select case when summary like 'Test (rien publié)%' and (details->>'test')::boolean and jsonb_array_length(details->'cards') between 1 and 5 and details->'cards'->0 ? 'key_sentence' then 'OK  test de l''édition : cartes d''essai dans le journal, même moteur en pause' else 'ÉCHEC  test édition : ' || coalesce(summary, '?') end from engine_runs where kind = 'edition' order by started_at desc limit 1"
+DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/flash.ts --fixtures test/feeds --test >/dev/null
+psql "$VIDE" -tAc "select case when summary like 'Test (rien publié)%' then 'OK  test de la Dernière minute' else 'ÉCHEC  test Dernière minute : ' || coalesce(summary, '?') end from engine_runs where kind = 'flash' order by started_at desc limit 1"
+psql "$VIDE" -qc "delete from app_settings where key = 'ENGINE_PAUSED'"
+psql "$VIDE" -tAc "select case when count(*) || '/' || (select count(*) from flashes) || '/' || (select count(*) from editions) = '$A' then 'OK  mode test : aucune carte, info ni édition enregistrée' else 'ÉCHEC  le mode test a écrit dans la base' end from articles"
+psql "$VIDE" -tAc "select case when not has_function_privilege('anon', 'public.launch_engine(text)', 'execute') and (select public.launch_engine('test') ->> 'reason' from (select set_config('request.jwt.claim.sub', (select id::text from profiles where role = 'admin' limit 1), false)) x) = 'token' then 'OK  bouton « Générer l''édition » : sans jeton GitHub, le back office ouvre GitHub' else 'ÉCHEC  launch_engine' end"
+
 echo "--- Mises à jour au fil de la journée"
 # Le plafond de 3 cartes ci-dessus a laissé des dépêches de côté : la mise à jour n'en prend que les importantes (1 carte au plus, un quart du plafond).
 DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --update >/dev/null

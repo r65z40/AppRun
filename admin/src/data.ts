@@ -41,13 +41,16 @@ export type Report = { id: string; comment_id: string; reason: string | null; re
 export type Flash = { id: string; status: 'published' | 'hidden'; rubric_id: string | null; importance: number; title: string; sentence: string; sources: { source: string; url: string }[]; manual: boolean; model: string | null; published_at: string; created_at: string;
   /** Sujet triste ou choquant : aucune alerte « sujet suivi ». */
   sensitive?: boolean };
+export type LaunchWhat = 'edition' | 'update' | 'test' | 'flash' | 'flash_test';
 export type EngineRun = {
   id: string; kind: 'edition' | 'flash'; status: 'running' | 'ok' | 'error'; started_at: string; finished_at: string | null;
   summary: string | null; stats: Record<string, unknown>; log: string[];
   details: {
     stories?: { label: string; rubric: string; importance: number; essential: boolean; sensitive?: boolean; items: { source: string; title: string }[] }[];
     left?: { source: string; title: string }[];
-    cards?: { rubric: string; title: string; issues: string[]; error?: string; photo?: string }[];
+    cards?: { rubric: string; title: string; issues: string[]; error?: string; photo?: string; key_sentence?: string; facts?: string[]; importance?: number }[];
+    /** Passage à blanc lancé depuis le back office : rien n'a été publié. */
+    test?: boolean;
     flashes?: { title: string; sources: string[]; rejected?: string }[];
     /** Commentaires signalés tranchés par l'IA pendant ce passage. */
     moderation?: { text: string; decision: 'hide' | 'keep'; reason: string }[];
@@ -147,6 +150,8 @@ export interface Api {
   createArticle(a: Partial<Article> & { edition_date: string; rubric_id: string }): Promise<void>;
   /** Démo : simule le moteur pas à pas. Vraie base : null (le moteur tourne sur GitHub). */
   runEngine?(onStep: (s: string) => void): Promise<void>;
+  /** Lance un passage du moteur sur GitHub (jeton GITHUB_DISPATCH_KEY). */
+  launchEngine(what: LaunchWhat): Promise<{ ok: boolean; reason?: 'token' | 'recent' }>;
   runs(): Promise<EngineRun[]>;
   flashes(): Promise<Flash[]>;
   saveFlash(f: Partial<Flash> & { id?: string }): Promise<void>;
@@ -295,6 +300,7 @@ function supabaseApi(sb: SupabaseClient): Api {
     banned: async () => sb.from('profiles').select('*').or(`banned.eq.true,suspended_until.gt.${new Date().toISOString()}`).order('created_at', { ascending: false }).then(ok<Profile[]>),
     dashboard: async () => ok(await sb.rpc('dashboard')) as Dashboard,
     engineStatus: async () => ok(await sb.rpc('engine_status')) as EngineStatus,
+    launchEngine: async (what) => ok(await sb.rpc('launch_engine', { what })) as { ok: boolean; reason?: 'token' | 'recent' },
     topArticles: async () => ok(await sb.rpc('top_articles')) as TopArticle[],
     moderationCost: async () => ok(await sb.rpc('moderation_cost')) as ModerationCost,
     readers: async (search, filter = 'all', page = 0) => ok(await sb.rpc('admin_users', { search, filter, page })) as Reader[],
