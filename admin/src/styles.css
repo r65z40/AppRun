@@ -170,3 +170,7 @@ a.btn { text-decoration: none; color: inherit; display: inline-flex; align-items
 .tile { padding: 16px; }
 .tile-v { font-size: 28px; font-weight: 800; margin: 4px 0; }
 .search { width: 100%; max-width: 460px; margin-bottom: 14px; }
+
+/* Publicité */
+.adform { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 24px; margin-bottom: 24px; }
+@media (max-width: 860px) { .adform { grid-template-columns: 1fr; } }

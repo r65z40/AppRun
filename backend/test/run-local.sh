@@ -31,7 +31,7 @@ VIDE=${DB/titre_test/titre_vide}
 psql "$VIDE" -v ON_ERROR_STOP=1 -q -f test/supabase-stub.sql
 DATABASE_URL="$VIDE" npx tsx src/install.ts
 DATABASE_URL="$VIDE" npx tsx src/install.ts
-psql "$VIDE" -tAc "select case when count(*) = 12 then 'OK  base vide installée toute seule (11 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
+psql "$VIDE" -tAc "select case when count(*) = 13 then 'OK  base vide installée toute seule (12 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
 psql "$VIDE" -tAc "select case when count(*) >= 10 then 'OK  sources de départ présentes' else 'ÉCHEC  sources absentes' end from sources"
 
 echo "--- Pilote automatique (réglage par défaut) : l'édition se publie seule"
@@ -74,3 +74,14 @@ psql "$VIDE" -tAc "select case when public.app_config()->>'comments_mode' = 'emo
 psql "$VIDE" -tAc "select case when exists (select 1 from information_schema.routines r join information_schema.parameters p on p.specific_name = r.specific_name where r.routine_name = 'article_comments' and p.parameter_name = 'premium') then 'OK  badge Premium renvoyé avec les commentaires' else 'ÉCHEC  badge Premium' end"
 psql "$VIDE" -qc "insert into app_messages (title, audience) values ('Bienvenue', 'premium'), ('Ancien', 'all')" -c "update app_messages set active = false where title = 'Ancien'"
 psql "$VIDE" -qtAc "set role anon; select case when count(*) = 1 then 'OK  messages d''accueil : seuls les actifs sont publics' else 'ÉCHEC  messages d''accueil' end from app_messages"
+
+echo "--- Régie publicitaire"
+psql "$VIDE" -qc "insert into ad_campaigns (name, advertiser, title, url, price) values ('A', 'Lumen', 'Pub A', 'https://a.test', 8), ('B', 'Rayon', 'Pub B', 'https://b.test', 8)" \
+  -c "insert into ad_campaigns (name, advertiser, title, url, ends_on, starts_on) values ('Finie', 'Vieux', 'Pub C', 'https://c.test', current_date - 1, current_date - 5)"
+psql "$VIDE" -qtAc "set role anon; select case when (select count(*) from public.live_ads()) = 2 then 'OK  pubs : seules les campagnes en cours partent dans l''app' else 'ÉCHEC  live_ads' end"
+psql "$VIDE" -tAc "select case when not has_table_privilege('anon', 'ad_campaigns', 'select') and not has_table_privilege('anon', 'ad_stats', 'select') then 'OK  pubs : prix et statistiques fermés au public' else 'ÉCHEC  campagnes visibles' end"
+psql "$VIDE" -qc "insert into ad_campaigns (name, advertiser, title, url, exclusive, pricing, price) values ('Sponsor', 'Horizon', 'Pub S', 'https://s.test', true, 'flat', 1500)"
+psql "$VIDE" -qtAc "set role anon; select case when (select string_agg(advertiser, ',') from public.live_ads()) = 'Horizon' then 'OK  sponsor exclusif : seul annonceur visible' else 'ÉCHEC  sponsor exclusif' end"
+psql "$VIDE" -qtAc "set role anon; select public.ad_hit((select id from public.live_ads() limit 1)); select public.ad_hit((select id from public.live_ads() limit 1), true);" >/dev/null
+psql "$VIDE" -qc "update ad_campaigns set max_views = 1 where name = 'Sponsor'"
+psql "$VIDE" -tAc "select case when (select views || '/' || clicks from ad_stats) = '1/1' and (select count(*) from public.live_ads()) = 2 then 'OK  affichages et clics comptés, plafond atteint : les autres campagnes reprennent' else 'ÉCHEC  comptage ou plafond' end"
