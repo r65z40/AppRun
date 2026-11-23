@@ -14,6 +14,11 @@ export const cfg = {
   paused: () => on('ENGINE_PAUSED', false),
 
   // IA
+  /** Interrupteur général : plus aucun appel à Claude, nulle part. */
+  aiOff: () => on('AI_OFF', false),
+  /** Plafonds de dépense en dollars ; 0 = sans limite. */
+  budgetDay: () => num('AI_BUDGET_DAY', 0, 0, 10000),
+  budgetMonth: () => num('AI_BUDGET_MONTH', 0, 0, 100000),
   effort: () => (['low', 'medium', 'high'].includes(process.env.TITRE_EFFORT ?? '') ? process.env.TITRE_EFFORT : 'medium') as 'low' | 'medium' | 'high',
   guidelines: () => text('AI_GUIDELINES'),
   avoid: () => text('AI_AVOID'),

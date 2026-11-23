@@ -17,7 +17,7 @@ import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
 import { findPhoto, pexelsOn } from './pexels.js';
-import { model, checkCard, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
+import { AiStopped, budget, model, checkCard, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 
@@ -41,6 +41,8 @@ async function main() {
   try {
     await edition();
   } catch (e) {
+    // IA coupée ou budget atteint pendant le choix des sujets : arrêt voulu, pas une panne.
+    if (e instanceof AiStopped) { log(e.message); return J.finish('ok', e.message, { model: model(), ai: { ...usage } }); }
     log(`Erreur : ${e instanceof Error ? e.message : e}`);
     await J.finish('error', `Échec : ${e instanceof Error ? e.message : e}`);
     throw e;
@@ -75,6 +77,12 @@ async function edition() {
   if (ed[0]?.status === 'published' && !args.includes('--force') && !UPDATE) {
     log('Édition déjà publiée : rien à faire (ajoutez --force pour compléter).');
     return J.finish('ok', 'Édition déjà publiée, rien à faire.');
+  }
+  // IA coupée ou budget déjà atteint : on s'arrête avant même de lire les sources.
+  try { await budget.check(); } catch (e) {
+    if (!(e instanceof AiStopped)) throw e;
+    log(e.message);
+    return J.finish('ok', e.message);
   }
   await q(`insert into editions (date) values ($1) on conflict (date) do nothing`, [DATE]);
 
@@ -145,6 +153,7 @@ async function edition() {
   existing.forEach((e) => (ranks[e.rubric_id] = e.n));
   const sorted = [...stories].sort((a, b) => Number(b.essential) - Number(a.essential) || b.importance - a.importance);
   let written = 0, flagged = 0, failed = 0, fixed = 0;
+  let stopped = '';
 
   const work = async (s: Story) => {
     const its = s.item_numbers.map((n) => items[n - 1]);
@@ -181,6 +190,12 @@ async function edition() {
       log(`   ✓ [${s.rubric}] ${card.title}${issues.length ? `  ⚠ ${issues.join(', ')}` : ''}`);
       cards.push({ rubric: s.rubric, title: card.title, issues, photo: photo ? `${card.photo_query} → ${photo.credit}` : pexelsOn() ? `${card.photo_query} → aucune photo` : undefined } as never);
     } catch (e) {
+      if (e instanceof AiStopped) {
+        // Plafond atteint en cours d'écriture : les cartes déjà écrites restent, les autres attendent le prochain passage.
+        if (!stopped) log(`   ■ ${(stopped = e.message)}`);
+        queue.length = 0;
+        return;
+      }
       failed++;
       log(`   ✗ [${s.rubric}] ${s.label} : ${e instanceof Error ? e.message : e}`);
       cards.push({ rubric: s.rubric, title: s.label, issues: [], error: e instanceof Error ? e.message : String(e) });
@@ -194,7 +209,7 @@ async function edition() {
 
   log('4/4 Édition');
   const stats = { fetched, window: raws.length, items: items.length, proposed: proposed.length, stories: stories.length, written, flagged, fixed, failed, model: model(), ai: { ...usage } };
-  const summary = `${UPDATE ? 'Mise à jour : ' : ''}${fetched} titres lus, ${items.length} à traiter, ${stories.length} sujets retenus, ${written} cartes écrites (${fixed} corrigées par l'IA, ${flagged} à relire, ${failed} échecs).`;
+  const summary = `${UPDATE ? 'Mise à jour : ' : ''}${fetched} titres lus, ${items.length} à traiter, ${stories.length} sujets retenus, ${written} cartes écrites (${fixed} corrigées par l'IA, ${flagged} à relire, ${failed} échecs).${stopped ? ` Arrêt : ${stopped}` : ''}`;
   if (UPDATE) {
     // L'édition reste telle quelle (statut et statistiques du matin) : seules les nouvelles cartes s'ajoutent.
     log(`Terminé : ${summary}`);
@@ -205,7 +220,7 @@ async function edition() {
   const live = AUTO_PUBLISH && (await q<{ n: number }>(`select count(*)::int as n from articles where edition_date = $1 and status = 'published'`, [DATE]))[0].n > 0;
   await q(
     `update editions set status = $2, stats = $3, published_at = case when $2 = 'published' then now() else published_at end where date = $1`,
-    [DATE, live ? 'published' : failed && !written ? 'building' : 'ready', JSON.stringify(stats)], // tout a échoué : le prochain essai refera l'édition
+    [DATE, live ? 'published' : !written && (failed || stopped) ? 'building' : 'ready', JSON.stringify(stats)], // tout a échoué : le prochain essai refera l'édition
   );
   log(`Terminé : ${summary} ${live ? 'Édition publiée automatiquement.' : 'En attente de validation dans le back office.'}`);
   await J.finish(failed && !written ? 'error' : 'ok', summary, stats);
