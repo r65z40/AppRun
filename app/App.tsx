@@ -16,6 +16,8 @@ import { Bravo, End, Onboarding, Settings, Splash, Toast, Welcome, type OnbResul
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
 import { loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, type AppMessage } from './src/remote';
 import { Account } from './src/Account';
+import { Premium } from './src/Premium';
+import { storeLogin } from './src/purchases';
 import * as acc from './src/account';
 import { loadMyEdition, resetTaste, signal, type Pick, type Signal } from './src/algo';
 import { isAd, isArticle, type Article, type Card, type Comment } from './src/types';
@@ -108,7 +110,13 @@ function Main() {
   }, []);
   // Compte lecteur
   const me = acc.useMe();
-  const premium = p.premium || !!me?.premium;
+  // Premium vient de la base (abonnement, code, cadeau de l'équipe). p.premium ne sert qu'à la démo sans base.
+  // bought : le store vient de confirmer un achat, la base le saura dans quelques secondes.
+  const [bought, setBought] = useState(false);
+  const [showPremium, setShowPremium] = useState(false);
+  const premiumFor = (np: Prefs) => (acc.accountsOn ? acc.isPremium(me) : np.premium) || bought;
+  const premium = premiumFor(p);
+  useEffect(() => { storeLogin(me?.uid ?? null); if (!me) setBought(false); }, [me?.uid]);
   // Algorithme « Mon édition » : recalculé quand les réglages, le compte, les goûts ou l'édition changent.
   const [picks, setPicks] = useState<Pick[] | null>(null);
   const [tasteVer, setTasteVer] = useState(0);
@@ -421,16 +429,19 @@ function Main() {
 
   const onOnb = async (r: OnbResult) => {
     setPicks(await fetchPicks(r.active.length ? r.active : p.active, r.quota, true));
-    setP((x) => ({ ...x, active: r.active.length ? r.active : x.active, quota: r.quota, time: r.time, adsPersonalized: r.adsPersonalized, premium: !!r.premium }));
+    setP((x) => ({ ...x, active: r.active.length ? r.active : x.active, quota: r.quota, time: r.time, adsPersonalized: r.adsPersonalized }));
     setLimit(r.quota);
     setPhase('feed');
     if (r.account) setTimeout(() => setAccount({ reason: 'Votre compte gratuit : une édition qui apprend de vos likes et dislikes, sur tous vos appareils.' }), 500);
+    else if (r.premium) setTimeout(() => setShowPremium(true), 500);
   };
 
   const onSave = (np: Prefs) => {
     // On revient sur la même carte si elle existe encore dans le nouveau fil.
     const prev = current;
-    const next = buildColumns(np.active, np.quota, np.premium || !!me?.premium, np.taste, np.adsPersonalized, picks);
+    // Premium ne se règle pas ici (volet Premium) : on garde la valeur actuelle.
+    np = { ...np, premium: p.premium };
+    const next = buildColumns(np.active, np.quota, premiumFor(np), np.taste, np.adsPersonalized, picks);
     let nri = Math.min(ri, next.length - 1);
     const nidx: Record<string, number> = {};
     if (prev) {
@@ -559,6 +570,8 @@ function Main() {
           account={me ? me.pseudo ?? '' : null}
           onAccount={() => (acc.accountsOn ? setAccount({ reason: null }) : showToast('Les comptes arrivent avec la vraie base (mode démo).'))}
           onResetTaste={onResetTaste}
+          premium={premium}
+          onPremium={() => setShowPremium(true)}
         />
       ) : null}
       {overlay === 'bravo' ? (
@@ -573,6 +586,18 @@ function Main() {
       ) : null}
       {overlay === 'end' ? <End n={seen.size} realMs={readMs.current} allRead={allRead} left={remaining} onReread={onReread} /> : null}
 
+      {showPremium ? (
+        <Premium
+          W={W}
+          demo={!acc.accountsOn}
+          demoOn={p.premium}
+          onDemo={(on) => setP((x) => ({ ...x, premium: on }))}
+          onBought={() => setBought(true)}
+          onToast={showToast}
+          onClose={() => setShowPremium(false)}
+          onNeedAccount={(then) => setAccount({ reason: 'Premium est lié à votre compte : vous le retrouvez sur tous vos appareils.', then })}
+        />
+      ) : null}
       {account ? (
         <Account
           W={W}
