@@ -1,0 +1,32 @@
+name: Carte du code
+
+# Refait la carte Graphify (graphify-out/) après chaque fusion dans main, sans IA ni coût.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['graphify-out/**']
+  workflow_dispatch:
+
+concurrency: graph
+
+permissions:
+  contents: write
+
+jobs:
+  graph:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install "graphifyy[sql]"
+      - run: graphify update . --force
+      - name: Enregistrer la carte si elle a changé
+        run: |
+          git add graphify-out/graph.json graphify-out/GRAPH_REPORT.md
+          git diff --cached --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Carte du code mise à jour"
+          git push

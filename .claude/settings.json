@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v graphify >/dev/null 2>&1 || pip install -q \"graphifyy[sql]\" >/dev/null 2>&1 || pip3 install -q \"graphifyy[sql]\" >/dev/null 2>&1 || true",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Règle du projet (CLAUDE.md) : pour tout travail de code, applique le skill ponytail ; avant de modifier du code, consulte la carte Graphify (graphify-out/GRAPH_REPORT.md, graphify explain / affected).'"
+          }
+        ]
+      }
+    ]
+  }
+}

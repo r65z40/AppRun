@@ -1,0 +1,7 @@
+# Fichiers ignorés par Graphify (bruit)
+*.json
+.github/
+node_modules/
+dist/
+backend/supabase/setup.sql
+graphify-out/
