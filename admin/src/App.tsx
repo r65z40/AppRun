@@ -457,7 +457,7 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
           {auto !== null ? <p className="muted small">{auto ? 'Pilote automatique : l’IA publie seule, vous corrigez si besoin.' : 'Relecture : l’IA prépare des brouillons, vous publiez.'} <button className="link" onClick={() => go('ai')}>Régler l’IA</button></p> : null}
         </div>
         <div className="actions">
-          <input type="date" value={date ?? today} max={today} onChange={(e) => e.target.value && reload(e.target.value)} aria-label="Choisir une édition" title={eds.length ? `Éditions construites : ${eds.map((e) => dateLabel(e.date)).join(', ')}` : 'Aucune édition construite'} />
+          <input type="date" style={{ width: "auto" }} value={date ?? today} max={today} onChange={(e) => e.target.value && reload(e.target.value)} aria-label="Choisir une édition" title={eds.length ? `Éditions construites : ${eds.map((e) => dateLabel(e.date)).join(', ')}` : 'Aucune édition construite'} />
           <button className="btn" onClick={() => setEdit(blank())}>Nouvel article</button>
           {count((a) => a.status === 'draft' && !serious(a)) ? <button className="btn" onClick={publishClean}>Publier les {count((a) => a.status === 'draft' && !serious(a))} brouillons sans alerte grave</button> : null}
           <button className={`btn ${ed?.status === 'published' ? '' : 'primary'}`} onClick={toggleEdition}>{ed?.status === 'published' ? 'Retirer l’édition' : 'Mettre l’édition en ligne'}</button>
