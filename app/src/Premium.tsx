@@ -5,7 +5,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { C, F, DRAWER_MS, alpha } from './theme';
-import { BRAND, TEXTS } from './brand';
+import { BRAND, RULES, TEXTS } from './brand';
 import { AppIcon, GradButton } from './ui';
 import { feel } from './feel';
 import { isPremium, loadPlans, mySubscription, redeemCode, reloadMe, useMe, type MySub, type Plan } from './account';
@@ -132,7 +132,7 @@ export function Premium({ W, onClose, onToast, onNeedAccount, demo, demoOn, onDe
           </View>
 
           <View style={styles.rows}>
-            {['Zéro pub dans votre fil', 'Le badge Premium à côté de votre pseudo', `Vous soutenez ${BRAND.name} directement`].map((t, i, l) => (
+            {RULES.premium_benefits.map((b) => b.replaceAll('{nom}', BRAND.name)).map((t, i, l) => (
               <View key={t} style={[styles.row, i === l.length - 1 && { borderBottomWidth: 0 }]}>
                 <Text style={styles.check}>✓</Text><Text style={styles.rl}>{t}</Text>
               </View>

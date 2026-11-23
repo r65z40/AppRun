@@ -45,7 +45,34 @@ export const NOTIF = {
   body: '{n} infos pour être à jour, en quelques minutes.',
 };
 
-type Config = { brand?: Record<string, unknown> | null; texts?: Record<string, unknown> | null; notifications?: Record<string, unknown> | null };
+/** Règles de l'app (Personnalisation > Règles de l'app). */
+export const RULES = {
+  /** Rubriques cochées pour un nouveau lecteur. */
+  default_rubrics: ['france', 'monde', 'eco', 'tech'],
+  /** Nombre d'infos par jour proposé à un nouveau lecteur, et maximum de la roue (de 4 en 4). */
+  default_quota: 24,
+  quota_max: 60,
+  /** Première pub après la N-ième info, puis une toutes les N infos (version gratuite). */
+  ad_first: 3,
+  ad_every: 6,
+  /** Heure annoncée sur l'écran de fin de journée. */
+  next_edition: '6 h 00',
+  /** Réactions proposées en mode emoji. */
+  emojis: ['❤️', '😂', '😮', '😢', '😡', '👏'],
+  /** Avantages affichés dans le volet Premium ({nom} = nom de l'app). */
+  premium_benefits: ['Zéro pub dans votre fil', 'Le badge Premium à côté de votre pseudo', 'Vous soutenez {nom} directement'],
+  /** Rechargement de l'édition et de la Dernière minute, en minutes. */
+  edition_refresh_min: 10,
+  live_refresh_min: 3,
+};
+
+/** Rappels de temps en temps : créer un compte (sans compte) ou passer Premium (compte gratuit). */
+export const NUDGES = {
+  account: { enabled: true, every_days: 3, after_cards: 4, text: 'Votre compte gratuit : une édition qui apprend de vos likes et dislikes, sur tous vos appareils.' },
+  premium: { enabled: true, every_days: 5, after_cards: 6 },
+};
+
+type Config = { brand?: Record<string, unknown> | null; texts?: Record<string, unknown> | null; notifications?: Record<string, unknown> | null; rules?: Record<string, unknown> | null; nudges?: Record<string, unknown> | null };
 
 const URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -53,7 +80,9 @@ const CACHE = 'titre.config';
 const isHex = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 const str = (v: unknown, max = 400) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
 
-const DEF = { brand: { ...BRAND }, texts: { ...TEXTS }, notif: { ...NOTIF } };
+const DEF = { brand: { ...BRAND }, texts: { ...TEXTS }, notif: { ...NOTIF }, rules: JSON.parse(JSON.stringify(RULES)) as typeof RULES, nudges: JSON.parse(JSON.stringify(NUDGES)) as typeof NUDGES };
+const int = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : null);
+const strs = (v: unknown, max: number, len = 120) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim().slice(0, len)).slice(0, max) : []);
 
 /** Repart des valeurs par défaut puis applique ce qui est réglé (un réglage effacé revient au défaut). */
 function apply(c: Config) {
@@ -75,6 +104,30 @@ function apply(c: Config) {
   if (typeof n.default_time === 'string' && /^([01]?\d|2[0-3]) h [0-5]\d$/.test(n.default_time)) NOTIF.default_time = n.default_time;
   const nt = str(n.title, 80); if (nt) NOTIF.title = nt;
   const nb = str(n.body, 200); if (nb) NOTIF.body = nb;
+  applyRules(c.rules ?? {}, c.nudges ?? {});
+}
+
+function applyRules(r: Record<string, unknown>, g: Record<string, unknown>) {
+  Object.assign(RULES, JSON.parse(JSON.stringify(DEF.rules)));
+  Object.assign(NUDGES, JSON.parse(JSON.stringify(DEF.nudges)));
+  const rub = strs(r.default_rubrics, 20, 40); if (rub.length) RULES.default_rubrics = rub;
+  const qm = int(r.quota_max, 8, 100); if (qm) RULES.quota_max = qm - (qm % 4);
+  const dq = int(r.default_quota, 4, RULES.quota_max); if (dq) RULES.default_quota = dq - (dq % 4) || 4;
+  const af = int(r.ad_first, 1, 20); if (af) RULES.ad_first = af;
+  const ae = int(r.ad_every, 2, 30); if (ae) RULES.ad_every = ae;
+  if (typeof r.next_edition === 'string' && /^([01]?\d|2[0-3]) h [0-5]\d$/.test(r.next_edition)) RULES.next_edition = r.next_edition;
+  const em = strs(r.emojis, 8, 8); if (em.length >= 2) RULES.emojis = em;
+  const pb = strs(r.premium_benefits, 6); if (pb.length) RULES.premium_benefits = pb;
+  const er = int(r.edition_refresh_min, 2, 120); if (er) RULES.edition_refresh_min = er;
+  const lr = int(r.live_refresh_min, 1, 60); if (lr) RULES.live_refresh_min = lr;
+  for (const k of ['account', 'premium'] as const) {
+    const x = (g[k] ?? {}) as Record<string, unknown>;
+    const d = NUDGES[k] as { enabled: boolean; every_days: number; after_cards: number; text?: string };
+    if (typeof x.enabled === 'boolean') d.enabled = x.enabled;
+    const ed = int(x.every_days, 1, 60); if (ed) d.every_days = ed;
+    const ac = int(x.after_cards, 1, 30); if (ac) d.after_cards = ac;
+    const tx = str(x.text, 200); if (tx && k === 'account') d.text = tx;
+  }
 }
 
 async function fetchConfig(ms: number): Promise<Config | null> {
@@ -111,7 +164,7 @@ export async function bootBrand(): Promise<void> {
   const fresh = await fetchConfig(1500);
   if (fresh) {
     apply(fresh);
-    setLocal(CACHE, JSON.stringify({ brand: fresh.brand, texts: fresh.texts, notifications: fresh.notifications }));
+    setLocal(CACHE, JSON.stringify({ brand: fresh.brand, texts: fresh.texts, notifications: fresh.notifications, rules: fresh.rules, nudges: fresh.nudges }));
   }
   await loadFont(BRAND.font, 3000);
 }

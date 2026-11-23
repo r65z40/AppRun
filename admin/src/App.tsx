@@ -45,7 +45,10 @@ export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [page, setPage] = useState<Page>(() => toPage(location.hash.slice(1)));
   const [toast, setToast] = useState<string | null>(null);
+  const [appName, setAppName] = useState('TITRE');
   useEffect(() => { api.me().then(setMe); }, []);
+  // Nom réglé dans Personnalisation > Identité.
+  useEffect(() => { if (me) api.settings().then((l) => { try { const n = JSON.parse(l.find((x) => x.key === 'BRAND')?.value ?? '{}').name; if (n) { setAppName(n); document.title = `${n} · back office`; } } catch {} }).catch(() => {}); }, [me?.id, page]);
   useEffect(() => { location.hash = page; }, [page]);
   const say = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(null), 2400); }, []);
 
@@ -65,7 +68,7 @@ export default function App() {
   return (
     <div className="shell">
       <aside className="side">
-        <div className="logo"><Glyph /> TITRE <span>back office</span></div>
+        <div className="logo"><Glyph /> {appName} <span>back office</span></div>
         <nav>
           {GROUPS.map((g) => {
             const items = PAGES.filter(([p, , pg]) => pg === g && allowed(me.role, p));
@@ -548,6 +551,8 @@ function SettingsPage({ say }: { say: (m: string) => void }) {
       <section className="panel settings">
         <h2>Modération</h2>
         {st.Pick({ k: 'MODERATION', label: 'Mode de modération', help: "Mots-clés : un commentaire ou un pseudo qui contient une insulte de la liste est refusé à l'envoi, sans coût. IA : toutes les 10 minutes, l'IA relit les commentaires signalés, masque ce qui enfreint les règles, garde le reste et laisse les cas douteux à l'équipe ; chaque décision est expliquée dans le Journal et son coût est au Tableau de bord.", def: 'both', options: [['both', 'Mots-clés et IA'], ['words', 'Mots-clés seulement (gratuit)'], ['ai', 'IA seulement']] })}
+        {st.Pick({ k: 'COMMENT_RATE', label: 'Commentaires par minute', help: 'Au-delà, le lecteur doit attendre un instant avant de commenter à nouveau (contre les rafales et les robots).', def: '5', options: st.nums([1, 2, 3, 5, 10, 20], ' par minute') })}
+        {st.Pick({ k: 'REPORTS_TO_HIDE', label: 'Masquer automatiquement au', help: "Un commentaire signalé par ce nombre de lecteurs différents est masqué en attendant la décision (de l'IA ou de l'équipe).", def: '3', options: [['0', 'Jamais'], ...st.nums([2, 3, 4, 5, 10], 'e signalement')] })}
         {st.Text({ k: 'BANNED_WORDS', label: 'Mots interdits en plus', help: "Les insultes courantes sont déjà bloquées, même déguisées (c0nnard, connnnard). Ajoutez vos mots, séparés par des virgules : un commentaire ou un pseudo qui en contient un est refusé.", placeholder: 'mot1, mot2, une expression' })}
       </section>
     </>

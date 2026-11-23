@@ -25,7 +25,8 @@ import { C, F, GRAD3, SPRING, SPRING_FLICK, alpha, mix } from './theme';
 import { isAd, isArticle, isFlash, type Article, type Card, type Column, type Tag } from './types';
 import { rubricOf } from './edition';
 import { flashTime } from './dates';
-import { EMOJIS, PHOTOS } from './content';
+import { PHOTOS } from './content';
+import { RULES } from './brand';
 import { Icon, Press, Rich } from './ui';
 import { feel } from './feel';
 import { adHit } from './ads';
@@ -348,7 +349,7 @@ function CardContent({ card, k, W, H, tag, why, api, bottom, tiltX, tiltY }: {
   const r = api.reactions[a.id] ?? 0;
   const mine = api.myEmoji[a.id];
   const emo = (e: string) => (a.emojis?.[e] ?? 0) + (mine === e ? 1 : 0);
-  const emoTotal = EMOJIS.reduce((n, e) => n + emo(e), 0);
+  const emoTotal = RULES.emojis.reduce((n, e) => n + emo(e), 0);
   return (
     <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
       <Animated.View style={[styles.content, pad, depth]}>
@@ -370,8 +371,9 @@ function CardContent({ card, k, W, H, tag, why, api, bottom, tiltX, tiltY }: {
             ) : null}
           </View>
         ) : null}
-        <Text style={styles.title}>{a.title.toUpperCase()}</Text>
-        <Text style={styles.key}>{a.key}</Text>
+        {/* Toucher le grand titre (ou la phrase clé) ouvre l'article, comme le bouton « Lire ». */}
+        <Text style={styles.title} onPress={() => api.onRead(a)} suppressHighlighting accessibilityRole="button" accessibilityHint="Ouvre le résumé de l'info">{a.title.toUpperCase()}</Text>
+        <Text style={styles.key} onPress={() => api.onRead(a)} suppressHighlighting>{a.key}</Text>
         <View>
           {a.facts.map((f, i) => (
             <FactRow key={i} text={f.text} source={f.source} doc={f.doc} last={i === a.facts.length - 1} onFlip={() => api.onSignal(a, 'source')} onSource={() => { api.onSignal(a, 'click'); if (/^https?:\/\//.test(f.doc)) Linking.openURL(f.doc).catch(() => api.onToast('Lien indisponible')); else api.onToast('Ouverture de la source officielle'); }} />
@@ -465,7 +467,7 @@ function Spark({ i, t, color, down }: { i: number; t: SharedValue<number>; color
 function EmojiPicker({ mine, count, onPick }: { mine?: string; count: (e: string) => number; onPick: (e: string) => void }) {
   return (
     <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={styles.picker}>
-      {EMOJIS.map((e) => (
+      {RULES.emojis.map((e) => (
         <Press key={e} scaleTo={0.85} onPress={() => { feel('light', 'pop'); onPick(e); }} style={[styles.pickBtn, mine === e && styles.pickOn]} accessibilityLabel={`Réagir ${e}`}>
           <Text style={{ fontSize: 24 }}>{e}</Text>
           <Text style={styles.icTxt}>{count(e)}</Text>

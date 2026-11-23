@@ -8,8 +8,9 @@ import { C, F, GRAD, GRAD3 } from './theme';
 import { BRAND } from './brand';
 
 /* ---------- Icônes (traits fins, style Lucide) ---------- */
-type IconName = 'up' | 'down' | 'cmt' | 'share' | 'flag' | 'book' | 'gear' | 'send' | 'smile';
+type IconName = 'up' | 'down' | 'cmt' | 'share' | 'flag' | 'book' | 'gear' | 'send' | 'smile' | 'close';
 const PATHS: Record<IconName, string> = {
+  close: 'M18 6 6 18M6 6l12 12',
   up: 'M7 10v11H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3zm0 0 4-8a3 3 0 0 1 3 3v4h5.5a2 2 0 0 1 2 2.3l-1.4 8a2 2 0 0 1-2 1.7H7',
   down: 'M17 14V3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-3zm0 0-4 8a3 3 0 0 1-3-3v-4H4.5a2 2 0 0 1-2-2.3l1.4-8a2 2 0 0 1 2-1.7H17',
   cmt: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z',
