@@ -390,6 +390,8 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
   const ed = eds.find((e) => e.date === date);
   const count = (f: (a: Article) => boolean) => list.filter(f).length;
   const isReview = (a: Article) => a.status === 'draft' && a.review_notes.length > 0;
+  // Alerte simple (longueur, ponctuation, gras) : avertissement seulement, la carte se publie quand même.
+  const serious = (a: Article) => a.review_notes.some((n) => !/trop long|ponctuation|en gras/.test(n));
   const needle = norm(search.trim());
   const shown = list.filter((a) => (filter === 'all' || (filter === 'review' ? isReview(a) : a.status === filter)) && (!rub || a.rubric_id === rub)
     && (!needle || norm(`${a.title} ${a.key_sentence} ${a.facts.map((f) => `${f.text} ${f.source}`).join(' ')}`).includes(needle)));
@@ -423,8 +425,8 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
     setList((l) => l.map((x) => ({ ...x, rank: patches.find((p) => p.id === x.id)?.patch.rank ?? x.rank })));
   };
   const publishClean = async () => {
-    const ok = list.filter((a) => a.status === 'draft' && !a.review_notes.length);
-    if (!ok.length) return say('Aucune carte sans alerte à publier');
+    const ok = list.filter((a) => a.status === 'draft' && !serious(a));
+    if (!ok.length) return say('Aucune carte sans alerte grave à publier');
     const now = new Date().toISOString();
     await api.saveArticles(ok.map((a) => ({ id: a.id, patch: { status: 'published', published_at: now } })));
     setList((l) => l.map((x) => (ok.some((o) => o.id === x.id) ? { ...x, status: 'published', published_at: now } : x)));
@@ -451,14 +453,13 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
               {ed.stats.fetched != null ? <span className="muted">{String(ed.stats.fetched)} titres lus · {String(ed.stats.stories ?? 0)} sujets retenus{ed.stats.fixed ? ` · ${String(ed.stats.fixed)} corrigées par l’IA` : ''} · modèle {String(ed.stats.model ?? '—')}</span> : null}
             </div>
           ) : null}
+          {!ed && date ? <p className="warn">Aucune édition construite ce jour-là (moteur en pause ou passages non lancés). Choisissez un autre jour dans le calendrier, ou ajoutez un article.</p> : null}
           {auto !== null ? <p className="muted small">{auto ? 'Pilote automatique : l’IA publie seule, vous corrigez si besoin.' : 'Relecture : l’IA prépare des brouillons, vous publiez.'} <button className="link" onClick={() => go('ai')}>Régler l’IA</button></p> : null}
         </div>
         <div className="actions">
-          <select value={date ?? ''} onChange={(e) => reload(e.target.value)} aria-label="Choisir une édition">
-            {eds.map((e) => <option key={e.date} value={e.date}>{dateLabel(e.date)}</option>)}
-          </select>
+          <input type="date" value={date ?? today} max={today} onChange={(e) => e.target.value && reload(e.target.value)} aria-label="Choisir une édition" title={eds.length ? `Éditions construites : ${eds.map((e) => dateLabel(e.date)).join(', ')}` : 'Aucune édition construite'} />
           <button className="btn" onClick={() => setEdit(blank())}>Nouvel article</button>
-          {count((a) => a.status === 'draft' && !a.review_notes.length) ? <button className="btn" onClick={publishClean}>Publier les {count((a) => a.status === 'draft' && !a.review_notes.length)} brouillons sans alerte</button> : null}
+          {count((a) => a.status === 'draft' && !serious(a)) ? <button className="btn" onClick={publishClean}>Publier les {count((a) => a.status === 'draft' && !serious(a))} brouillons sans alerte grave</button> : null}
           <button className={`btn ${ed?.status === 'published' ? '' : 'primary'}`} onClick={toggleEdition}>{ed?.status === 'published' ? 'Retirer l’édition' : 'Mettre l’édition en ligne'}</button>
         </div>
       </header>
@@ -517,10 +518,10 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
                 <h3>{a.title}</h3>
                 <p className="muted">{a.key_sentence}</p>
                 <p className="muted small srcs">{[...new Set(a.facts.map((f) => f.source).filter(Boolean))].join(' · ') || 'Aucune source'}</p>
-                {a.review_notes.length ? <p className="warn">⚠ {a.review_notes.join(' · ')}</p> : null}
+                {a.review_notes.length ? <p className="warn">⚠ {a.review_notes.join(' · ')}{serious(a) ? '' : ' (simple avertissement)'}</p> : null}
               </div>
               <div className="btns">
-                {a.status !== 'published' ? <button className="btn primary sm" onClick={() => publish(a)}>Publier</button> : <button className="btn sm" onClick={() => save(a, { status: 'draft', published_at: null }, 'Carte dépubliée')}>Dépublier</button>}
+                {a.status !== 'published' ? <button className="btn primary sm" onClick={() => publish(a)}>{a.review_notes.length ? 'Publier quand même' : 'Publier'}</button> : <button className="btn sm" onClick={() => save(a, { status: 'draft', published_at: null }, 'Carte dépubliée')}>Dépublier</button>}
                 <button className="btn sm" onClick={() => setEdit(a)}>Modifier</button>
                 {a.status !== 'rejected' ? <button className="btn ghost sm" onClick={() => save(a, { status: 'rejected' }, 'Carte rejetée')}>Rejeter</button> : <button className="btn ghost sm" onClick={() => save(a, { status: 'draft' }, 'Carte remise en brouillon')}>Restaurer</button>}
               </div>
@@ -623,7 +624,7 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
             </div>
           </div>
           <div className="pfoot">
-            {over ? <p className="warn">Un texte dépasse la longueur conseillée.</p> : null}
+            {over ? <p className="warn">Un texte dépasse la longueur conseillée : simple avertissement, vous pouvez publier quand même.</p> : null}
             <button className="btn" onClick={onClose}>Annuler</button>
             <button className="btn" onClick={() => onSave(patch(), false)}>Enregistrer</button>
             <button className="btn primary" onClick={() => onSave(patch(), true)}>Enregistrer et publier</button>
@@ -832,7 +833,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
           <section className="panel settings">
             <h2>Édition : écriture et publication</h2>
             {st.Toggle({ k: 'AUTO_FIX', label: 'Autocorrection', help: "Une carte qui échoue aux contrôles (trop longue, source manquante, phrase reprise d'un média) est réécrite une fois par l'IA.", def: true })}
-            {st.Toggle({ k: 'PUBLISH_FLAGGED', label: 'Publier aussi les cartes avec alerte', help: "Déconseillé. Coupé, une carte encore en défaut attend dans « À relire ».", def: false })}
+            {st.Toggle({ k: 'PUBLISH_FLAGGED', label: 'Publier aussi les cartes avec alerte', help: "Déconseillé. Les alertes simples (texte un peu long, ponctuation, gras manquant) ne bloquent jamais la publication. Coupé, une carte avec une alerte grave (source manquante, reprise mot pour mot…) attend dans « À relire ».", def: false })}
             {st.Pick({ k: 'PUBLISH_MIN_IMPORTANCE', label: 'Publication automatique à partir de', help: 'Avec le pilote automatique, seules les cartes au moins aussi importantes sont publiées ; les autres attendent en brouillon.', def: '1', options: [['1', 'Toutes les cartes'], ...st.nums(range(3, 9)).map(([v, l]) => [v, `Importance ${l} et plus`] as [string, string])] })}
           </section>
           <section className="panel settings">
