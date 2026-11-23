@@ -10,7 +10,9 @@ const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 export const accountsOn = !!(URL && KEY);
 
 type Session = { access: string; refresh: string; exp: number; uid: string; email: string };
-export type Me = { uid: string; email: string; pseudo: string | null; premium: boolean; prefs: Record<string, unknown> };
+export type Me = { uid: string; email: string; pseudo: string | null; premium: boolean; premiumUntil: string | null; prefs: Record<string, unknown> };
+/** Premium en cours : l'échéance est vérifiée ici aussi, sans attendre que le serveur l'éteigne. */
+export const isPremium = (m: Me | null) => !!m?.premium && (!m.premiumUntil || new Date(m.premiumUntil).getTime() > Date.now());
 
 /* ---------- Stockage de la session ---------- */
 const SKEY = 'titre.session';
@@ -108,10 +110,13 @@ async function api<T = unknown>(path: string, init: { method?: string; body?: un
 
 async function loadMe() {
   if (!session) { me = null; return emit(); }
-  const rows = await api<{ pseudo: string | null; premium: boolean; prefs: Record<string, unknown> | null }[]>(`profiles?select=pseudo,premium,prefs&id=eq.${session.uid}`).catch(() => []);
-  me = { uid: session.uid, email: session.email, pseudo: rows[0]?.pseudo ?? null, premium: !!rows[0]?.premium, prefs: rows[0]?.prefs ?? {} };
+  const rows = await api<{ pseudo: string | null; premium: boolean; premium_until?: string | null; prefs: Record<string, unknown> | null }[]>(`profiles?select=*&id=eq.${session.uid}`).catch(() => []);
+  me = { uid: session.uid, email: session.email, pseudo: rows[0]?.pseudo ?? null, premium: !!rows[0]?.premium, premiumUntil: rows[0]?.premium_until ?? null, prefs: rows[0]?.prefs ?? {} };
   emit();
 }
+
+/** Relit le compte (après un achat, un code promo…). */
+export const reloadMe = () => loadMe();
 
 /* ---------- Compte ---------- */
 
@@ -134,10 +139,19 @@ export async function restore() {
   ping();
 }
 
-/** Compte l'appareil comme lecteur actif du jour (identifiant tiré au hasard, rien de personnel). */
-async function ping() {
+/** Appel d'une fonction de la base (rpc), au nom du lecteur connecté s'il y en a un. */
+export const rpc = <T = unknown>(fn: string, body: unknown) => api<T>(`rpc/${fn}`, { method: 'POST', body });
+
+/** Identifiant de l'appareil, tiré au hasard une fois pour toutes (rien de personnel). */
+export async function deviceId() {
   let d = await store.get('titre.device');
   if (!d) { d = Math.random().toString(36).slice(2) + Date.now().toString(36); await store.set(d, 'titre.device'); }
+  return d;
+}
+
+/** Compte l'appareil comme lecteur actif du jour (identifiant tiré au hasard, rien de personnel). */
+async function ping() {
+  const d = await deviceId();
   api('rpc/ping', { method: 'POST', body: { d } }).catch(() => {});
 }
 
@@ -281,3 +295,27 @@ export async function deleteComment(commentId: string) {
   await api(`comments?id=eq.${commentId}`, { method: 'DELETE' });
 }
 
+
+/* ---------- Premium ---------- */
+
+export type Plan = { id: string; name: string; period: 'month' | 'year' | 'lifetime'; price_cents: number; currency: string; trial_days: number; apple_product_id: string | null; google_product_id: string | null; highlight: string | null };
+export type MySub = { premium: boolean; until: string | null; status: string | null; source: string | null; plan: string | null; auto_renew: boolean; expires_at: string | null };
+
+/** Offres en vente, dans l'ordre choisi dans le back office. */
+export async function loadPlans(): Promise<Plan[]> {
+  if (!accountsOn) return [];
+  return api<Plan[]>('plans?select=*&active=eq.true&order=position.asc').catch(() => []);
+}
+
+export async function mySubscription(): Promise<MySub | null> {
+  if (!session) return null;
+  return api<MySub>('rpc/my_subscription', { method: 'POST', body: {} }).catch(() => null);
+}
+
+/** Code promo : renvoie le nombre de jours offerts, ou lève une erreur lisible. */
+export async function redeemCode(code: string): Promise<number> {
+  const r = await api<{ days?: number; error?: string }>('rpc/redeem_code', { method: 'POST', body: { c: code.trim() } });
+  if (r?.error) throw new UserError(r.error);
+  await loadMe();
+  return r.days ?? 0;
+}

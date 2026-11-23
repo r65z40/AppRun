@@ -14,6 +14,8 @@ export type Article = {
   summary?: string[];
   /** Sujet majeur du jour (choisi par la rédaction). */
   essential?: boolean;
+  /** Sujet triste ou choquant : aucune pub juste après. */
+  sensitive?: boolean;
   /** « D'après … » : médias d'où viennent les faits. */
   media?: string;
   credit?: string;
@@ -44,6 +46,8 @@ export type Column = {
   name: string;
   cards: Card[];
   tags: Record<string, Tag>;
+  /** « Pourquoi cette info ? » : raison donnée par l'algorithme, par info. */
+  why?: Record<string, string>;
 };
 
 export type Comment = {

@@ -1355,6 +1355,976 @@ end $$;
 revoke all on function public.admin_user_export(uuid) from public, anon;
 grant execute on function public.admin_user_export(uuid) to authenticated;
 
+-- ===== supabase/migrations/0014_premium.sql
+-- Premium et abonnements : offres, abonnements (App Store, Google Play via RevenueCat, offerts, codes),
+-- historique des paiements, codes promo. profiles.premium reste le booléen lu partout (app, pubs,
+-- badge) : il est désormais recalculé tout seul à partir des abonnements.
+
+-- 1. Offres affichées dans l'app ---------------------------------------------------------------
+create table if not exists public.plans (
+  id text primary key,
+  name text not null,
+  period text not null check (period in ('month', 'year', 'lifetime')),
+  price_cents int not null check (price_cents >= 0),
+  currency text not null default 'EUR',
+  trial_days int not null default 0 check (trial_days between 0 and 90),
+  apple_product_id text,
+  google_product_id text,
+  -- Petite phrase sous le prix (« 2 mois offerts »).
+  highlight text,
+  active boolean not null default true,
+  position int not null default 0,
+  updated_at timestamptz not null default now()
+);
+alter table public.plans enable row level security;
+drop policy if exists plans_read on public.plans;
+create policy plans_read on public.plans for select using (active or public.is_admin());
+drop policy if exists plans_admin on public.plans;
+create policy plans_admin on public.plans for all using (public.is_admin()) with check (public.is_admin());
+insert into public.plans (id, name, period, price_cents, trial_days, apple_product_id, google_product_id, highlight, position) values
+  ('mensuel', 'Mensuel', 'month', 299, 7, 'titre_premium_mensuel', 'titre_premium:mensuel', null, 1),
+  ('annuel', 'Annuel', 'year', 2499, 7, 'titre_premium_annuel', 'titre_premium:annuel', '30 % moins cher', 0)
+on conflict (id) do nothing;
+
+-- 2. Abonnements -------------------------------------------------------------------------------
+-- status : trial (essai), active, grace (paiement en échec, accès gardé), cancelled (ne se
+-- renouvellera pas, accès jusqu'à expires_at), expired, refunded, revoked (retiré par l'équipe).
+create table if not exists public.subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  plan_id text references public.plans (id) on delete set null,
+  source text not null check (source in ('app_store', 'play_store', 'web', 'promo', 'gift', 'code')),
+  status text not null check (status in ('trial', 'active', 'grace', 'cancelled', 'expired', 'refunded', 'revoked')),
+  started_at timestamptz not null default now(),
+  expires_at timestamptz, -- vide = à vie
+  auto_renew boolean not null default false,
+  store_ref text,          -- identifiant de l'achat d'origine chez Apple ou Google
+  product_id text,
+  price_cents int,
+  currency text,
+  sandbox boolean not null default false,
+  note text,
+  granted_by uuid references auth.users (id) on delete set null,
+  last_event_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists subscriptions_store_ref on public.subscriptions (source, store_ref) where store_ref is not null;
+create index if not exists subscriptions_user on public.subscriptions (user_id);
+alter table public.subscriptions enable row level security;
+drop policy if exists subscriptions_read on public.subscriptions;
+create policy subscriptions_read on public.subscriptions for select using (user_id = auth.uid() or public.is_admin());
+
+-- 3. Historique (paiements, résiliations, cadeaux…) --------------------------------------------
+create table if not exists public.subscription_events (
+  id bigserial primary key,
+  at timestamptz not null default now(),
+  user_id uuid references public.profiles (id) on delete cascade,
+  subscription_id uuid references public.subscriptions (id) on delete set null,
+  kind text not null,
+  source text,
+  amount_cents int, -- négatif pour un remboursement
+  currency text,
+  sandbox boolean not null default false,
+  external_id text unique, -- identifiant de l'événement RevenueCat : chaque événement n'est compté qu'une fois
+  detail text,
+  raw jsonb
+);
+create index if not exists subscription_events_at on public.subscription_events (at desc);
+alter table public.subscription_events enable row level security;
+drop policy if exists subscription_events_admin on public.subscription_events;
+create policy subscription_events_admin on public.subscription_events for select using (public.is_admin());
+
+-- 4. Codes promo -------------------------------------------------------------------------------
+create table if not exists public.promo_codes (
+  code text primary key check (code ~ '^[A-Z0-9-]{4,24}$'),
+  days int not null check (days between 1 and 3650),
+  max_uses int check (max_uses > 0), -- vide = illimité
+  uses int not null default 0,
+  expires_at timestamptz,
+  active boolean not null default true,
+  note text,
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.promo_codes enable row level security;
+drop policy if exists promo_codes_admin on public.promo_codes;
+create policy promo_codes_admin on public.promo_codes for all using (public.is_admin()) with check (public.is_admin());
+
+create table if not exists public.promo_redemptions (
+  code text not null references public.promo_codes (code) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  at timestamptz not null default now(),
+  primary key (code, user_id)
+);
+alter table public.promo_redemptions enable row level security;
+-- Essais de code ratés : 10 par heure au plus, contre ceux qui devinent.
+create table if not exists public.promo_attempts (user_id uuid not null, at timestamptz not null default now());
+create index if not exists promo_attempts_user on public.promo_attempts (user_id, at);
+alter table public.promo_attempts enable row level security;
+
+-- 5. Le booléen premium suit les abonnements ---------------------------------------------------
+alter table public.profiles add column if not exists premium_until timestamptz;
+
+create or replace function public.sub_live(status text, expires_at timestamptz) returns boolean
+language sql stable as $$
+  select status in ('trial', 'active', 'grace', 'cancelled') and (expires_at is null or expires_at > now());
+$$;
+
+create or replace function public.sync_premium(uid uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare live boolean; lifetime boolean; until timestamptz;
+  c1 text := current_setting('request.jwt.claim.sub', true); c2 text := current_setting('request.jwt.claims', true);
+begin
+  select coalesce(bool_or(true), false), coalesce(bool_or(expires_at is null), false), max(expires_at)
+    into live, lifetime, until
+    from public.subscriptions where user_id = uid and public.sub_live(status, expires_at);
+  -- guard_profile refuse qu'un lecteur change premium : ce changement vient des abonnements, pas de lui.
+  -- On l'écrit donc « au nom du serveur » (sans identité de lecteur), puis on remet l'identité en place.
+  perform set_config('request.jwt.claim.sub', '', true);
+  perform set_config('request.jwt.claims', '', true);
+  update public.profiles
+     set premium = live, premium_until = case when live and not lifetime then until end
+   where id = uid and (premium is distinct from live or premium_until is distinct from case when live and not lifetime then until end);
+  perform set_config('request.jwt.claim.sub', coalesce(c1, ''), true);
+  perform set_config('request.jwt.claims', coalesce(c2, ''), true);
+end $$;
+revoke all on function public.sync_premium(uuid) from public, anon, authenticated;
+
+create or replace function public.subscriptions_changed() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'DELETE' then perform public.sync_premium(old.user_id); return old; end if;
+  new.updated_at := now();
+  return new;
+end $$;
+create or replace function public.subscriptions_after() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  perform public.sync_premium(coalesce(new.user_id, old.user_id));
+  if tg_op = 'UPDATE' and new.user_id is distinct from old.user_id then perform public.sync_premium(old.user_id); end if;
+  return null;
+end $$;
+drop trigger if exists subscriptions_touch on public.subscriptions;
+create trigger subscriptions_touch before update on public.subscriptions for each row execute function public.subscriptions_changed();
+drop trigger if exists subscriptions_sync on public.subscriptions;
+create trigger subscriptions_sync after insert or update or delete on public.subscriptions for each row execute function public.subscriptions_after();
+
+-- Fin des abonnements arrivés à échéance (lancé par le moteur toutes les 20 minutes).
+create or replace function public.expire_premium() returns int
+language plpgsql security definer set search_path = public as $$
+declare n int := 0; r record;
+begin
+  for r in update public.subscriptions set status = 'expired'
+            where status in ('trial', 'active', 'grace', 'cancelled') and expires_at is not null and expires_at <= now()
+           returning id, user_id, source, sandbox loop
+    insert into public.subscription_events (user_id, subscription_id, kind, source, sandbox, detail)
+    values (r.user_id, r.id, 'expiration', r.source, r.sandbox, 'Échéance passée');
+    n := n + 1;
+  end loop;
+  -- Rattrapage : un profil Premium sans abonnement en cours.
+  for r in select id from public.profiles p where premium and not exists
+             (select 1 from public.subscriptions s where s.user_id = p.id and public.sub_live(s.status, s.expires_at)) loop
+    perform public.sync_premium(r.id);
+  end loop;
+  return n;
+end $$;
+revoke all on function public.expire_premium() from public, anon, authenticated;
+
+-- 6. Événements envoyés par RevenueCat (via la fonction Edge « revenuecat ») -------------------
+-- Réservé au serveur (clé service_role) : jamais appelable depuis l'app.
+create or replace function public.apply_store_event(ev jsonb) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  t text := upper(coalesce(ev->>'type', ''));
+  uid uuid; src text; ref text; pl text; st text; renew boolean;
+  exp timestamptz; at timestamptz; sid uuid; amt int; kind text; cur public.subscriptions;
+  a text;
+begin
+  if ev->>'id' is not null and exists (select 1 from public.subscription_events where external_id = ev->>'id') then
+    return 'déjà traité';
+  end if;
+  at := coalesce(to_timestamp((ev->>'event_timestamp_ms')::bigint / 1000.0), now());
+
+  -- Le compte : app_user_id = identifiant Supabase du lecteur (l'app appelle Purchases.logIn).
+  for a in select x from jsonb_array_elements_text(coalesce(ev->'aliases', '[]'::jsonb) || jsonb_build_array(ev->>'app_user_id', ev->>'original_app_user_id')) x loop
+    if a ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' and exists (select 1 from public.profiles where id = a::uuid) then
+      uid := a::uuid;
+    end if;
+  end loop;
+
+  src := case upper(coalesce(ev->>'store', '')) when 'APP_STORE' then 'app_store' when 'MAC_APP_STORE' then 'app_store'
+           when 'PLAY_STORE' then 'play_store' when 'STRIPE' then 'web' when 'RC_BILLING' then 'web' when 'PADDLE' then 'web' else 'promo' end;
+
+  if t = 'TRANSFER' then
+    update public.subscriptions s set status = 'revoked', note = 'Achat transféré vers un autre compte'
+     where s.user_id in (select x::uuid from jsonb_array_elements_text(coalesce(ev->'transferred_from', '[]'::jsonb)) x
+                          where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+       and s.source in ('app_store', 'play_store', 'web') and public.sub_live(s.status, s.expires_at);
+    insert into public.subscription_events (user_id, kind, source, external_id, detail, raw, sandbox)
+    values (uid, 'transfert', src, ev->>'id', 'Achat transféré d''un compte à un autre', ev, upper(coalesce(ev->>'environment', '')) = 'SANDBOX');
+    return 'transfert';
+  end if;
+
+  if t = 'TEST' or uid is null then
+    insert into public.subscription_events (user_id, kind, source, external_id, detail, raw, sandbox)
+    values (uid, case when t = 'TEST' then 'test' else 'ignoré' end, src, ev->>'id',
+            case when t = 'TEST' then 'Test envoyé depuis RevenueCat' else 'Compte inconnu : ' || coalesce(ev->>'app_user_id', '?') end, ev, true);
+    return case when t = 'TEST' then 'test' else 'compte inconnu' end;
+  end if;
+
+  ref := coalesce(ev->>'original_transaction_id', ev->>'transaction_id', ev->>'id');
+  select id into pl from public.plans
+   where ev->>'product_id' in (apple_product_id, google_product_id) or split_part(ev->>'product_id', ':', 1) = split_part(google_product_id, ':', 1)
+   order by (ev->>'product_id' in (apple_product_id, google_product_id)) desc limit 1;
+  exp := case when ev->>'expiration_at_ms' is not null then to_timestamp((ev->>'expiration_at_ms')::bigint / 1000.0) end;
+  amt := case when ev->>'price_in_purchased_currency' is not null then round((ev->>'price_in_purchased_currency')::numeric * 100)::int end;
+
+  select * into cur from public.subscriptions where source = src and store_ref = ref;
+
+  case
+    when t in ('INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION', 'PRODUCT_CHANGE', 'SUBSCRIPTION_EXTENDED', 'TEMPORARY_ENTITLEMENT_GRANT') then
+      st := case when upper(coalesce(ev->>'period_type', '')) = 'TRIAL' then 'trial' else 'active' end; renew := true;
+      kind := case t when 'INITIAL_PURCHASE' then case when st = 'trial' then 'essai' else 'achat' end
+                     when 'RENEWAL' then case when cur.status = 'trial' then 'conversion' else 'renouvellement' end
+                     when 'UNCANCELLATION' then 'reprise' when 'PRODUCT_CHANGE' then 'changement d''offre' else 'prolongation' end;
+    when t = 'NON_RENEWING_PURCHASE' then st := 'active'; renew := false; kind := 'achat';
+    when t = 'CANCELLATION' then
+      if upper(coalesce(ev->>'cancel_reason', '')) = 'CUSTOMER_SUPPORT' then st := 'refunded'; kind := 'remboursement'; amt := -abs(coalesce(amt, cur.price_cents, 0));
+      else st := 'cancelled'; kind := 'résiliation'; amt := null; end if;
+      renew := false;
+    when t = 'BILLING_ISSUE' then st := 'grace'; renew := coalesce(cur.auto_renew, true); kind := 'problème de paiement'; amt := null;
+    when t = 'EXPIRATION' then st := 'expired'; renew := false; kind := 'expiration'; amt := null;
+    when t = 'SUBSCRIPTION_PAUSED' then st := coalesce(cur.status, 'active'); renew := false; kind := 'pause'; amt := null;
+    else st := coalesce(cur.status, 'active'); renew := coalesce(cur.auto_renew, false); kind := lower(t); amt := null;
+  end case;
+  -- Seuls les paiements réels comptent comme revenu (pas l'essai gratuit).
+  if st = 'trial' then amt := null; end if;
+
+  if cur.id is null then
+    insert into public.subscriptions (user_id, plan_id, source, status, started_at, expires_at, auto_renew, store_ref, product_id, price_cents, currency, sandbox, last_event_at)
+    values (uid, pl, src, st, coalesce(to_timestamp((ev->>'purchased_at_ms')::bigint / 1000.0), at), exp, renew, ref, ev->>'product_id',
+            nullif(abs(coalesce(amt, 0)), 0), ev->>'currency', upper(coalesce(ev->>'environment', '')) = 'SANDBOX', at)
+    returning id into sid;
+  elsif cur.last_event_at is null or at >= cur.last_event_at then
+    -- Les événements peuvent arriver dans le désordre : un vieux ne remplace pas un récent.
+    update public.subscriptions
+       set user_id = uid, plan_id = coalesce(pl, plan_id), status = st, expires_at = coalesce(exp, expires_at), auto_renew = renew,
+           product_id = coalesce(ev->>'product_id', product_id), price_cents = coalesce(nullif(abs(coalesce(amt, 0)), 0), price_cents),
+           currency = coalesce(ev->>'currency', currency), last_event_at = at
+     where id = cur.id;
+    sid := cur.id;
+  else
+    sid := cur.id;
+  end if;
+
+  insert into public.subscription_events (at, user_id, subscription_id, kind, source, amount_cents, currency, sandbox, external_id, detail, raw)
+  values (at, uid, sid, kind, src, amt, ev->>'currency', upper(coalesce(ev->>'environment', '')) = 'SANDBOX', ev->>'id', ev->>'product_id', ev);
+  return kind;
+end $$;
+revoke all on function public.apply_store_event(jsonb) from public, anon, authenticated;
+
+-- 7. Côté lecteur ------------------------------------------------------------------------------
+create or replace function public.my_subscription() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'premium', coalesce(p.premium, false), 'until', p.premium_until,
+    'status', s.status, 'source', s.source, 'plan', pl.name, 'auto_renew', coalesce(s.auto_renew, false), 'expires_at', s.expires_at)
+    from public.profiles p
+    left join lateral (select * from public.subscriptions x where x.user_id = p.id and public.sub_live(x.status, x.expires_at)
+                        order by x.expires_at desc nulls first limit 1) s on true
+    left join public.plans pl on pl.id = s.plan_id
+   where p.id = auth.uid();
+$$;
+revoke all on function public.my_subscription() from public, anon;
+grant execute on function public.my_subscription() to authenticated;
+
+-- Jours offerts, ajoutés après la fin de ce qui est déjà en cours.
+create or replace function public.give_days(uid uuid, d int, src text, why text, by_ uuid) returns timestamptz
+language plpgsql security definer set search_path = public as $$
+declare base timestamptz; ends timestamptz; sid uuid;
+begin
+  if exists (select 1 from public.subscriptions where user_id = uid and expires_at is null and public.sub_live(status, expires_at)) then
+    return null; -- déjà Premium à vie
+  end if;
+  select greatest(now(), coalesce(max(expires_at), now())) into base from public.subscriptions where user_id = uid and public.sub_live(status, expires_at);
+  ends := case when d is null or d <= 0 then null else coalesce(base, now()) + make_interval(days => d) end;
+  insert into public.subscriptions (user_id, source, status, expires_at, note, granted_by)
+  values (uid, src, 'active', ends, why, by_) returning id into sid;
+  insert into public.subscription_events (user_id, subscription_id, kind, source, detail)
+  values (uid, sid, case src when 'code' then 'code promo' else 'offert' end, src,
+          case when ends is null then 'À vie' else d || ' jour' || case when d > 1 then 's' else '' end end || coalesce(' · ' || why, ''));
+  return coalesce(ends, 'infinity'::timestamptz);
+end $$;
+revoke all on function public.give_days(uuid, int, text, text, uuid) from public, anon, authenticated;
+
+create or replace function public.redeem_code(c text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare pc public.promo_codes; uid uuid := auth.uid(); ends timestamptz;
+begin
+  if uid is null then raise exception 'Connectez-vous pour utiliser un code'; end if;
+  if exists (select 1 from public.profiles where id = uid and banned) then raise exception 'Ce compte ne peut pas utiliser de code'; end if;
+  if (select count(*) from public.promo_attempts where user_id = uid and at > now() - interval '1 hour') >= 10 then
+    raise exception 'Trop d''essais. Réessayez dans une heure.';
+  end if;
+  select * into pc from public.promo_codes where code = upper(trim(c)) for update;
+  if pc.code is null or not pc.active or (pc.expires_at is not null and pc.expires_at < now()) or (pc.max_uses is not null and pc.uses >= pc.max_uses) then
+    -- Pas d'exception ici : elle annulerait l'essai noté juste au-dessus.
+    insert into public.promo_attempts (user_id) values (uid);
+    return jsonb_build_object('error', 'Ce code n''est pas valable');
+  end if;
+  if exists (select 1 from public.promo_redemptions where code = pc.code and user_id = uid) then
+    raise exception 'Vous avez déjà utilisé ce code';
+  end if;
+  ends := public.give_days(uid, pc.days, 'code', 'Code ' || pc.code, null);
+  if ends is null then raise exception 'Vous êtes déjà Premium à vie'; end if;
+  insert into public.promo_redemptions (code, user_id) values (pc.code, uid);
+  update public.promo_codes set uses = uses + 1 where code = pc.code;
+  return jsonb_build_object('days', pc.days, 'until', ends);
+end $$;
+revoke all on function public.redeem_code(text) from public, anon;
+grant execute on function public.redeem_code(text) to authenticated;
+
+-- 8. Back office (administrateurs) -------------------------------------------------------------
+create or replace function public.admin_grant_premium(uid uuid, days int, note text default null) returns timestamptz
+language plpgsql security definer set search_path = public as $$
+declare ends timestamptz;
+begin
+  if not public.is_admin() then raise exception 'Réservé aux administrateurs'; end if;
+  ends := public.give_days(uid, days, 'gift', nullif(trim(coalesce(note, '')), ''), auth.uid());
+  if ends is null then raise exception 'Ce lecteur est déjà Premium à vie'; end if;
+  insert into public.audit_log (actor, action, target, detail)
+  values (auth.uid(), 'Premium offert', (select coalesce(pseudo, 'lecteur sans pseudo') from public.profiles where id = uid),
+          case when days is null or days <= 0 then 'à vie' else days || ' jours' end || coalesce(' · ' || note, ''));
+  return ends;
+end $$;
+revoke all on function public.admin_grant_premium(uuid, int, text) from public, anon;
+grant execute on function public.admin_grant_premium(uuid, int, text) to authenticated;
+
+-- Retire l'accès tout de suite. Un abonnement Apple ou Google continue d'être prélevé par le store :
+-- le rembourser se fait dans App Store Connect ou la Play Console.
+create or replace function public.admin_revoke_premium(uid uuid, note text default null) returns int
+language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
+declare n int;
+begin
+  if not public.is_admin() then raise exception 'Réservé aux administrateurs'; end if;
+  with x as (
+    update public.subscriptions set status = 'revoked', note = coalesce(nullif(trim(coalesce($2, '')), ''), note)
+     where user_id = uid and public.sub_live(status, expires_at) returning id, source)
+  insert into public.subscription_events (user_id, subscription_id, kind, source, detail)
+  select uid, id, 'retiré', source, nullif(trim(coalesce($2, '')), '') from x;
+  get diagnostics n = row_count;
+  insert into public.audit_log (actor, action, target, detail)
+  values (auth.uid(), 'Premium retiré', (select coalesce(pseudo, 'lecteur sans pseudo') from public.profiles where id = uid), nullif(trim(coalesce($2, '')), ''));
+  return n;
+end $$;
+revoke all on function public.admin_revoke_premium(uuid, text) from public, anon;
+grant execute on function public.admin_revoke_premium(uuid, text) to authenticated;
+
+-- Abonnés : l'abonnement le plus récent de chaque lecteur. filter : live, trial, paying, gift, cancelled, ended, all.
+create or replace function public.admin_subscribers(search text default '', filter text default 'live', uid uuid default null)
+returns table (user_id uuid, pseudo text, email text, sub_id uuid, status text, source text, plan text, started_at timestamptz,
+               expires_at timestamptz, auto_renew boolean, price_cents int, currency text, sandbox boolean, note text, live boolean)
+language plpgsql stable security definer set search_path = public as $$
+#variable_conflict use_column
+begin
+  if not public.is_admin() then raise exception 'Réservé aux administrateurs'; end if;
+  return query
+    select s.user_id, p.pseudo, u.email::text, s.id, s.status, s.source, pl.name, s.started_at, s.expires_at, s.auto_renew,
+           s.price_cents, s.currency, s.sandbox, s.note, public.sub_live(s.status, s.expires_at)
+      from (select distinct on (x.user_id) x.* from public.subscriptions x
+             order by x.user_id, public.sub_live(x.status, x.expires_at) desc, x.expires_at desc nulls first, x.created_at desc) s
+      join public.profiles p on p.id = s.user_id
+      left join auth.users u on u.id = s.user_id
+      left join public.plans pl on pl.id = s.plan_id
+     where (uid is null or s.user_id = uid)
+       and (coalesce(search, '') = '' or p.pseudo ilike '%' || search || '%' or u.email ilike '%' || search || '%')
+       and case coalesce(filter, 'live')
+             when 'live' then public.sub_live(s.status, s.expires_at)
+             when 'trial' then s.status = 'trial' and public.sub_live(s.status, s.expires_at)
+             when 'paying' then s.source in ('app_store', 'play_store', 'web') and s.status in ('active', 'grace', 'cancelled') and public.sub_live(s.status, s.expires_at)
+             when 'gift' then s.source in ('gift', 'code', 'promo') and public.sub_live(s.status, s.expires_at)
+             when 'cancelled' then s.status in ('cancelled', 'grace') and public.sub_live(s.status, s.expires_at)
+             when 'ended' then not public.sub_live(s.status, s.expires_at)
+             else true end
+     order by s.updated_at desc
+     limit 300;
+end $$;
+revoke all on function public.admin_subscribers(text, text, uuid) from public, anon;
+grant execute on function public.admin_subscribers(text, text, uuid) to authenticated;
+
+create or replace function public.admin_sub_events(uid uuid default null, lim int default 200)
+returns table (at timestamptz, pseudo text, kind text, source text, amount_cents int, currency text, sandbox boolean, detail text)
+language plpgsql stable security definer set search_path = public as $$
+#variable_conflict use_column
+begin
+  if not public.is_admin() then raise exception 'Réservé aux administrateurs'; end if;
+  return query
+    select e.at, p.pseudo, e.kind, e.source, e.amount_cents, e.currency, e.sandbox, e.detail
+      from public.subscription_events e left join public.profiles p on p.id = e.user_id
+     where uid is null or e.user_id = uid
+     order by e.at desc limit least(coalesce(lim, 200), 1000);
+end $$;
+revoke all on function public.admin_sub_events(uuid, int) from public, anon;
+grant execute on function public.admin_sub_events(uuid, int) to authenticated;
+
+-- Chiffres clés (hors achats de test). MRR = revenu mensuel récurrent : les abonnements payants qui
+-- se renouvellent, l'annuel compté pour un douzième.
+create or replace function public.premium_stats() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare r jsonb;
+begin
+  if not public.is_staff() then raise exception 'Réservé à l''équipe'; end if;
+  with live as (
+    select s.*, coalesce(pl.period, case when s.product_id ilike '%an%' then 'year' else 'month' end) as period,
+           coalesce(s.price_cents, pl.price_cents, 0) as price
+      from public.subscriptions s left join public.plans pl on pl.id = s.plan_id
+     where public.sub_live(s.status, s.expires_at) and not s.sandbox)
+  select jsonb_build_object(
+    'premium', (select count(*) from public.profiles where premium),
+    'paying', (select count(distinct user_id) from live where source in ('app_store', 'play_store', 'web') and status <> 'trial'),
+    'trial', (select count(distinct user_id) from live where status = 'trial'),
+    'gift', (select count(distinct user_id) from live where source in ('gift', 'code', 'promo')),
+    'cancelling', (select count(distinct user_id) from live where status in ('cancelled', 'grace')),
+    'mrr_cents', (select coalesce(sum(case period when 'year' then price / 12.0 when 'month' then price else 0 end), 0)::int
+                    from live where source in ('app_store', 'play_store', 'web') and status in ('active', 'grace') and auto_renew),
+    'revenue_30_cents', (select coalesce(sum(amount_cents), 0) from public.subscription_events where at > now() - interval '30 days' and not sandbox),
+    'revenue_all_cents', (select coalesce(sum(amount_cents), 0) from public.subscription_events where not sandbox),
+    'new_30', (select count(*) from public.subscription_events where at > now() - interval '30 days' and not sandbox and kind in ('achat', 'essai')),
+    'conversions_30', (select count(*) from public.subscription_events where at > now() - interval '30 days' and not sandbox and kind = 'conversion'),
+    'churn_30', (select count(*) from public.subscription_events where at > now() - interval '30 days' and not sandbox and kind in ('expiration', 'remboursement') and source in ('app_store', 'play_store', 'web')),
+    'by_source', (select coalesce(jsonb_object_agg(source, n), '{}'::jsonb) from (select source, count(distinct user_id) n from live group by source) x)
+  ) into r;
+  return r;
+end $$;
+revoke all on function public.premium_stats() from public, anon;
+grant execute on function public.premium_stats() to authenticated;
+
+-- 9. Premium déjà accordé avant ce système (case cochée à la main) : on le garde, à vie. -----------
+insert into public.subscriptions (user_id, source, status, expires_at, note)
+select id, 'gift', 'active', null, 'Premium accordé avant les abonnements'
+  from public.profiles p where premium and not exists (select 1 from public.subscriptions s where s.user_id = p.id);
+
+-- ===== supabase/migrations/0015_algorithme.sql
+-- Algorithme « Mon édition » (cahier des charges §16), sans IA : des points, des mots-clés et des règles réglables.
+--   • l'app note ce que fait le lecteur (temps sur la carte, « Lire », source, partage, « Moins de sujets comme ça ») ;
+--   • likes, dislikes et commentaires viennent des tables existantes ;
+--   • chaque signal donne des points à une rubrique et aux mots-clés de l'info, points qui perdent la moitié
+--     de leur valeur en 21 jours ;
+--   • l'édition = sujets majeurs pour tous + infos choisies selon les goûts + découverte.
+-- Tout se règle dans le back office (Lecteurs > Algorithme) : poids, proportions, mots-clés.
+
+-- 1. Réglages : un seul réglage ALGO (JSON), complété par les valeurs par défaut ------------------------
+insert into public.setting_keys (key) values ('ALGO') on conflict do nothing;
+
+create or replace function public.algo_defaults() returns jsonb language sql immutable as $$
+  select '{
+    "enabled": true,
+    "share_essential": 25, "share_discovery": 12,
+    "w_importance": 45, "w_affinity": 35, "w_collective": 10, "w_fresh": 10,
+    "affinity_start": 10, "ramp": 50, "half_life": 21, "smooth": 5,
+    "skip_ms": 2000, "long_ms": 12000, "min_views": 200, "max_rubric": 50, "keep_days": 90,
+    "signals": {"click": 3, "share": 3, "summary_end": 2, "like": 2, "comment": 2, "summary": 1.5,
+                "source": 1, "long": 1, "back": 0.5, "skip": -0.5, "dislike": -0.5, "less": -3}
+  }'::jsonb;
+$$;
+
+-- Réglages en vigueur : ceux du back office par-dessus les valeurs par défaut (un JSON abîmé est ignoré).
+create or replace function public.algo_conf() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare d jsonb := public.algo_defaults(); s jsonb;
+begin
+  begin s := (select value::jsonb from public.app_settings where key = 'ALGO'); exception when others then s := null; end;
+  if jsonb_typeof(s) is distinct from 'object' then return d; end if;
+  return d || (s - 'signals') || jsonb_build_object('signals', d->'signals' || coalesce(case when jsonb_typeof(s->'signals') = 'object' then s->'signals' end, '{}'));
+end $$;
+
+-- 2. Mots-clés (liste gérée par l'équipe) et mots-clés repérés dans chaque info -------------------------
+create table if not exists public.algo_keywords (
+  id bigint generated always as identity primary key,
+  label text not null unique check (char_length(label) between 2 and 40),
+  words text[] not null default '{}',   -- variantes cherchées dans le texte (le libellé est toujours cherché)
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+alter table public.algo_keywords enable row level security;
+drop policy if exists algo_keywords_staff on public.algo_keywords;
+create policy algo_keywords_staff on public.algo_keywords for all using (public.is_staff()) with check (public.is_staff());
+revoke all on public.algo_keywords from anon;
+
+create table if not exists public.article_topics (
+  article_id uuid primary key references public.articles (id) on delete cascade,
+  topics text[] not null default '{}'
+);
+alter table public.article_topics enable row level security;
+drop policy if exists article_topics_staff on public.article_topics;
+create policy article_topics_staff on public.article_topics for select using (public.is_staff());
+revoke all on public.article_topics from anon;
+
+-- Mots-clés d'une info, par fréquence : une occurrence dans le titre compte double, 6 mots-clés au plus.
+create or replace function public.find_topics(title text, body text) returns text[]
+language sql stable security definer set search_path = public as $$
+  with t as (select ' ' || public.norm_text(title) || ' ' as ti, ' ' || public.norm_text(body) || ' ' as bo),
+  hits as (
+    select k.label, sum(2 * regexp_count(t.ti, '\m' || w || '\M') + regexp_count(t.bo, '\m' || w || '\M')) as n
+      from public.algo_keywords k, t,
+           lateral (select distinct trim(public.norm_text(x)) as w from unnest(k.words || k.label) x) v
+     where k.active and v.w <> ''
+     group by k.label
+  )
+  select coalesce(array_agg(label order by n desc, label), '{}') from (select * from hits where n > 0 order by n desc, label limit 6) h;
+$$;
+
+create or replace function public.article_text(a public.articles) returns text language sql immutable as $$
+  select concat_ws(' ', a.key_sentence,
+    (select string_agg(f->>'text', ' ') from jsonb_array_elements(coalesce(a.facts, '[]')) f),
+    (select string_agg(s, ' ') from jsonb_array_elements_text(coalesce(a.summary, '[]')) s));
+$$;
+
+create or replace function public.tag_article() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.article_topics (article_id, topics) values (new.id, public.find_topics(new.title, public.article_text(new)))
+  on conflict (article_id) do update set topics = excluded.topics;
+  return new;
+end $$;
+drop trigger if exists articles_topics on public.articles;
+create trigger articles_topics after insert or update of title, key_sentence, facts, summary on public.articles
+for each row execute function public.tag_article();
+
+-- Liste de mots-clés modifiée : les infos récentes sont réétiquetées tout de suite.
+create or replace function public.retag_articles() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.article_topics (article_id, topics)
+  select a.id, public.find_topics(a.title, public.article_text(a)) from public.articles a
+   where a.edition_date >= current_date - (public.algo_conf()->>'keep_days')::int
+  on conflict (article_id) do update set topics = excluded.topics;
+  return null;
+end $$;
+drop trigger if exists algo_keywords_retag on public.algo_keywords;
+create trigger algo_keywords_retag after insert or update or delete on public.algo_keywords
+for each statement execute function public.retag_articles();
+
+-- 3. Journal de lecture (écrit par l'app, lu seulement par les calculs ci-dessous) ----------------------
+create table if not exists public.reading_events (
+  id bigint generated always as identity primary key,
+  device text not null check (char_length(device) between 8 and 64),
+  user_id uuid references auth.users (id) on delete cascade,
+  article_id uuid not null references public.articles (id) on delete cascade,
+  kind text not null check (kind in ('view', 'summary', 'summary_end', 'source', 'click', 'share', 'back', 'less')),
+  ms int,
+  at timestamptz not null default now()
+);
+create index if not exists reading_events_user on public.reading_events (user_id, at);
+create index if not exists reading_events_device on public.reading_events (device, at);
+create index if not exists reading_events_article on public.reading_events (article_id);
+alter table public.reading_events enable row level security;
+revoke all on public.reading_events from anon, authenticated;
+
+-- « Remettre mes goûts à zéro » : les signaux plus anciens sont ignorés (likes compris).
+create table if not exists public.taste_resets (
+  who text primary key,               -- identifiant du compte, ou « d: » + appareil sans compte
+  at timestamptz not null default now()
+);
+alter table public.taste_resets enable row level security;
+revoke all on public.taste_resets from anon, authenticated;
+
+-- L'app envoie ses signaux par paquets : [{ "a": id de l'info, "k": type, "ms": durée }].
+-- Au premier envoi connecté, les signaux de l'appareil passent sur le compte (rien n'est perdu à l'inscription).
+create or replace function public.track(d text, ev jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if char_length(coalesce(d, '')) not between 8 and 64 or jsonb_typeof(ev) <> 'array' then return; end if;
+  if auth.uid() is not null then
+    update public.reading_events set user_id = auth.uid() where device = d and user_id is null;
+  end if;
+  insert into public.reading_events (device, user_id, article_id, kind, ms)
+  select d, auth.uid(), a.id, e->>'k', least(greatest((e->>'ms')::int, 0), 600000)
+    from (select value e from jsonb_array_elements(ev) limit 100) x
+    join public.articles a on a.id::text = e->>'a' and a.status = 'published'
+   where e->>'k' in ('view', 'summary', 'summary_end', 'source', 'click', 'share', 'back', 'less');
+end $$;
+grant execute on function public.track(text, jsonb) to anon, authenticated;
+
+create or replace function public.reset_taste(d text) returns void
+language sql security definer set search_path = public as $$
+  delete from public.reading_events where (auth.uid() is not null and user_id = auth.uid()) or (device = d and user_id is null);
+  insert into public.taste_resets (who, at) values (coalesce(auth.uid()::text, 'd:' || d), now())
+  on conflict (who) do update set at = now();
+$$;
+grant execute on function public.reset_taste(text) to anon, authenticated;
+
+-- 4. Profil de goûts : points par rubrique et par mot-clé, qui s'effacent avec le temps --------------------
+-- Lecteur connecté : uid ; sans compte : son appareil (dev). Renvoie
+-- { rubrics: {id: points}, topics: {mot-clé: points}, n: nombre de signaux }.
+create or replace function public.reader_taste(uid uuid, dev text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  with c as (select public.algo_conf() c),
+  since as (
+    select greatest(now() - make_interval(days => (c->>'keep_days')::int),
+                    coalesce((select at from public.taste_resets where who = coalesce(uid::text, 'd:' || dev)), '-infinity')) t
+      from c
+  ),
+  sig as (
+    select e.article_id, e.at,
+           case when e.kind <> 'view' then (c->'signals'->>e.kind)::numeric
+                when e.ms < (c->>'skip_ms')::int then (c->'signals'->>'skip')::numeric
+                when e.ms >= (c->>'long_ms')::int then (c->'signals'->>'long')::numeric
+                else 0 end as w
+      from public.reading_events e, c, since
+     where e.at > since.t and ((uid is not null and e.user_id = uid) or (uid is null and e.device = dev and e.user_id is null))
+    union all
+    select r.article_id, r.created_at, (c->'signals'->>case when r.value = 1 then 'like' else 'dislike' end)::numeric
+      from public.reactions r, c, since where uid is not null and r.user_id = uid and r.created_at > since.t
+    union all
+    select distinct on (m.article_id) m.article_id, m.created_at, (c->'signals'->>'comment')::numeric
+      from public.comments m, c, since where uid is not null and m.user_id = uid and m.created_at > since.t
+  ),
+  w as (
+    select s.article_id, s.w * power(0.5, extract(epoch from now() - s.at) / 86400 / (c->>'half_life')::numeric) as w
+      from sig s, c where s.w <> 0
+  )
+  select jsonb_build_object(
+    'rubrics', coalesce((select jsonb_object_agg(rubric_id, round(p, 2)) from (
+        select a.rubric_id, sum(w.w) p from w join public.articles a on a.id = w.article_id group by a.rubric_id) x), '{}'),
+    'topics', coalesce((select jsonb_object_agg(t, round(p, 2)) from (
+        select t, sum(w.w) p from w join public.article_topics at on at.article_id = w.article_id, unnest(at.topics) t
+         group by t order by abs(sum(w.w)) desc limit 100) y), '{}'),
+    'n', (select count(*) from w));
+$$;
+revoke all on function public.reader_taste(uuid, text) from public, anon, authenticated;
+
+-- 5. L'édition d'un lecteur --------------------------------------------------------------------------
+-- Toutes les infos publiées de la dernière édition, dans l'ordre où le lecteur doit les voir : d'abord les
+-- `quota` cartes de son édition (slot ess / pv / dec), puis le reste pour « Charger plus » (slot more).
+create or replace function public.compose_edition(uid uuid, dev text, active text[], quota int, perso boolean default true)
+returns table (article_id uuid, slot text, reason text, score numeric, pos int)
+language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
+declare
+  c jsonb := public.algo_conf();
+  taste jsonb := case when perso and (c->>'enabled')::boolean then public.reader_taste(uid, dev) else '{"rubrics":{},"topics":{},"n":0}' end;
+  k numeric := greatest((c->>'smooth')::numeric, 0.1);
+  wa numeric; wi numeric;
+  n_ess int; n_dec int; cap int;
+  ed date := (select e.date from public.editions e where e.status = 'published' order by e.date desc limit 1);
+  r record; prev1 text; prev2 text; i int := 0; mid int;
+begin
+  quota := least(greatest(coalesce(quota, 8), 1), 100);
+  active := coalesce(active, '{}');
+  -- Le poids des goûts monte avec le nombre de signaux ; ce qu'il ne prend pas va à l'importance.
+  wa := case when not (perso and (c->>'enabled')::boolean) then 0
+             else (c->>'affinity_start')::numeric + ((c->>'w_affinity')::numeric - (c->>'affinity_start')::numeric)
+                  * least(1, (taste->>'n')::numeric / greatest((c->>'ramp')::numeric, 1)) end;
+  wi := (c->>'w_importance')::numeric + (c->>'w_affinity')::numeric - wa;
+  n_ess := greatest(1, round(quota * (c->>'share_essential')::numeric / 100));
+  n_dec := case when (c->>'share_discovery')::numeric > 0 then greatest(1, round(quota * (c->>'share_discovery')::numeric / 100)) else 0 end;
+  cap := case when cardinality(active) <= 2 then quota else greatest(1, ceil(quota * (c->>'max_rubric')::numeric / 100)) end;
+
+  create temp table if not exists _cand (id uuid, rubric text, rname text, essential boolean, importance int,
+    aff numeric, fav text, sc numeric, slot text, why text, ord int) on commit drop;
+  truncate _cand;
+
+  insert into _cand (id, rubric, rname, essential, importance, aff, fav, sc)
+  with art as (
+    select a.id, a.rubric_id, rb.name, a.essential, a.importance, coalesce(a.published_at, a.created_at) as at,
+           coalesce(t.topics, '{}') as topics
+      from public.articles a join public.rubrics rb on rb.id = a.rubric_id
+      left join public.article_topics t on t.article_id = a.id
+     where a.edition_date = ed and a.status = 'published'
+       -- « Moins de sujets comme ça » : cette info-là ne revient pas.
+       and not exists (select 1 from public.reading_events e where e.article_id = a.id and e.kind = 'less'
+                        and ((uid is not null and e.user_id = uid) or (uid is null and e.device = dev)))
+  ),
+  -- Intérêt collectif : part des lecteurs qui ouvrent, partagent ou cliquent (rang parmi les infos assez vues).
+  coll as (
+    select e.article_id, count(distinct e.device) filter (where e.kind = 'view') as views,
+           count(distinct e.device) filter (where e.kind = 'summary') + 2 * count(distinct e.device) filter (where e.kind in ('share', 'click')) as eng
+      from public.reading_events e where e.article_id in (select id from art) group by e.article_id
+  ),
+  coll_rank as (
+    select article_id, percent_rank() over (order by eng::numeric / views) as pr
+      from coll where views >= (c->>'min_views')::int
+  ),
+  aff as (
+    select art.*,
+           0.5 + 0.5 * coalesce((taste->'rubrics'->>art.rubric_id)::numeric, 0) / (abs(coalesce((taste->'rubrics'->>art.rubric_id)::numeric, 0)) + k) as ra,
+           (select t from unnest(art.topics) t where (taste->'topics'->>t)::numeric > 0 order by (taste->'topics'->>t)::numeric desc limit 1) as fav
+      from art
+  ),
+  aff2 as (
+    select aff.*, coalesce((select avg(case when taste->'topics' ? t
+                    then 0.5 + 0.5 * (taste->'topics'->>t)::numeric / (abs((taste->'topics'->>t)::numeric) + k) else aff.ra end)
+                  from unnest(aff.topics) t), aff.ra) as ta
+      from aff
+  )
+  select a2.id, a2.rubric_id, a2.name, a2.essential, a2.importance, (a2.ra + a2.ta) / 2, a2.fav,
+         (wi * a2.importance / 10.0
+          + wa * (a2.ra + a2.ta) / 2
+          + (c->>'w_collective')::numeric * coalesce((select pr from coll_rank where coll_rank.article_id = a2.id), 0.5)
+          + (c->>'w_fresh')::numeric * greatest(0, 1 - extract(epoch from now() - a2.at) / 86400)) / 100
+    from aff2 a2;
+
+  -- À ne pas manquer : les sujets majeurs du jour, pour tout le monde.
+  update _cand set slot = 'ess', why = 'Sujet majeur du jour, proposé à tout le monde.'
+   where id in (select id from _cand order by essential desc, importance desc, sc desc limit n_ess);
+  -- Découverte : un sujet important d'une rubrique non suivie (sinon de la rubrique la moins lue).
+  update _cand set slot = 'dec', why = 'Pour découvrir la rubrique ' || rname || '.'
+   where id in (select id from _cand where slot is null
+                 order by (rubric = any (active)), aff, importance desc, sc desc limit n_dec);
+  -- Pour vous : meilleurs scores dans les rubriques suivies, sans qu'une rubrique prenne plus que sa part.
+  for r in select * from _cand where slot is null order by (rubric = any (active)) desc, sc desc loop
+    exit when (select count(*) from _cand where slot is not null) >= quota;
+    continue when (select count(*) from _cand where _cand.rubric = r.rubric and slot is not null) >= cap
+              and exists (select 1 from _cand x where x.slot is null and x.id <> r.id and (select count(*) from _cand y where y.rubric = x.rubric and y.slot is not null) < cap);
+    update _cand set slot = 'pv', why = case when r.fav is not null then 'Vous lisez souvent : ' || r.fav || '.'
+                                             when r.rubric = any (active) then 'Vous suivez la rubrique ' || r.rname || '.'
+                                             else 'Une info importante du jour.' end
+     where id = r.id;
+  end loop;
+
+  -- Ordre : les sujets majeurs en tête (d'abord celui qui vous parle le plus), puis le meilleur score
+  -- en évitant trois infos de suite de la même rubrique ; la découverte au milieu.
+  update _cand set ord = 0 where id = (select id from _cand where slot = 'ess' order by aff desc, sc desc limit 1);
+  prev1 := (select rubric from _cand where ord = 0);
+  mid := (select count(*) from _cand where slot is not null) / 2;
+  loop
+    i := i + 1;
+    select * into r from _cand where ord is null and slot is not null
+     order by (slot = 'ess') desc, (slot = 'dec' and i >= mid) desc, (slot = 'dec') asc,
+              coalesce(rubric = prev1 and rubric = prev2, false) asc, aff desc, sc desc limit 1;
+    exit when not found;
+    update _cand set ord = i where id = r.id;
+    prev2 := prev1; prev1 := r.rubric;
+  end loop;
+  -- Après l'édition : tout le reste, pour « Charger plus ».
+  update _cand set slot = 'more', why = 'Pour aller plus loin aujourd''hui.',
+         ord = 1000 + x.n from (select id, row_number() over (order by sc desc) n from _cand where slot is null) x where _cand.id = x.id;
+
+  return query select _cand.id, _cand.slot, _cand.why, round(_cand.sc, 3), _cand.ord from _cand order by _cand.ord;
+end $$;
+revoke all on function public.compose_edition(uuid, text, text[], int, boolean) from public, anon, authenticated;
+
+-- Pour l'app : l'édition du lecteur connecté, ou de l'appareil sans compte.
+create or replace function public.my_edition(d text, active text[], quota int, perso boolean default true)
+returns table (article_id uuid, slot text, reason text, pos int)
+language sql security definer set search_path = public as $$
+  select e.article_id, e.slot, e.reason, e.pos from public.compose_edition(auth.uid(), d, active, quota, perso) e;
+$$;
+grant execute on function public.my_edition(text, text[], int, boolean) to anon, authenticated;
+
+-- 6. Back office ------------------------------------------------------------------------------------------
+-- Fiche d'un lecteur : ses goûts et l'édition qu'il recevrait maintenant (avec ses rubriques et son quota).
+create or replace function public.admin_reader_algo(uid uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare p public.profiles; act text[]; qt int;
+begin
+  if not public.is_staff() then raise exception 'Réservé à l''équipe'; end if;
+  select * into p from public.profiles where id = uid;
+  act := coalesce((select array_agg(x) from jsonb_array_elements_text(case when jsonb_typeof(p.prefs->'active') = 'array' then p.prefs->'active' end) x), '{}');
+  qt := coalesce((p.prefs->>'quota')::int, 8);
+  return jsonb_build_object(
+    'taste', public.reader_taste(uid, null), 'active', act, 'quota', qt,
+    'edition', coalesce((select jsonb_agg(jsonb_build_object('title', a.title, 'rubric', a.rubric_id, 'slot', e.slot, 'reason', e.reason, 'score', e.score) order by e.pos)
+                 from public.compose_edition(uid, null, act, qt) e join public.articles a on a.id = e.article_id where e.slot <> 'more'), '[]'));
+end $$;
+revoke all on function public.admin_reader_algo(uuid) from public, anon;
+grant execute on function public.admin_reader_algo(uuid) to authenticated;
+
+-- Statistiques des 7 derniers jours.
+create or replace function public.algo_stats() returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_staff() then raise exception 'Réservé à l''équipe'; end if;
+  return jsonb_build_object(
+    'readers_7', (select count(distinct coalesce(user_id::text, device)) from public.reading_events where at > now() - interval '7 days'),
+    'events_7', coalesce((select jsonb_object_agg(kind, n) from (select kind, count(*) n from public.reading_events where at > now() - interval '7 days' group by kind) x), '{}'),
+    'likes_7', (select count(*) from public.reactions where value = 1 and created_at > now() - interval '7 days'),
+    'dislikes_7', (select count(*) from public.reactions where value = -1 and created_at > now() - interval '7 days'),
+    'resets_7', (select count(*) from public.taste_resets where at > now() - interval '7 days'),
+    'topics', coalesce((select jsonb_agg(jsonb_build_object('topic', t, 'articles', n_a, 'reads', n_r) order by n_r desc) from (
+        select t.t, count(distinct x.article_id) n_a, count(e.id) filter (where e.kind in ('summary', 'click', 'share')) n_r
+          from public.article_topics x
+          join public.articles a on a.id = x.article_id
+          cross join lateral unnest(x.topics) t(t)
+          left join public.reading_events e on e.article_id = x.article_id and e.at > now() - interval '7 days'
+         where a.edition_date > current_date - 7 group by t.t order by 3 desc, 2 desc limit 15) y), '[]'),
+    'untagged', (select count(*) from public.articles a left join public.article_topics t on t.article_id = a.id
+                  where a.edition_date > current_date - 7 and a.status = 'published' and coalesce(cardinality(t.topics), 0) = 0));
+end $$;
+revoke all on function public.algo_stats() from public, anon;
+grant execute on function public.algo_stats() to authenticated;
+
+-- Journal de lecture plus vieux que la durée de conservation : effacé (appelé par le moteur).
+create or replace function public.purge_reading_events() returns int
+language sql security definer set search_path = public as $$
+  with d as (delete from public.reading_events where at < now() - make_interval(days => (public.algo_conf()->>'keep_days')::int) returning 1)
+  select count(*)::int from d;
+$$;
+revoke all on function public.purge_reading_events() from public, anon, authenticated;
+
+-- 7. Mots-clés de départ (modifiables dans le back office) ------------------------------------------------
+-- Volontairement aucun parti, candidat ni religion : on ne profile pas les opinions (RGPD art. 9).
+insert into public.algo_keywords (label, words) values
+  ('IA', '{intelligence artificielle,ChatGPT,OpenAI,Mistral AI,algorithme}'),
+  ('Cybersécurité', '{cyberattaque,piratage,rançongiciel,hacker,fuite de données}'),
+  ('Smartphones', '{iPhone,Android,smartphone,téléphone portable}'),
+  ('Espace', '{fusée,satellite,Nasa,ESA,astronaute,Lune}'),
+  ('Santé', '{hôpital,médecin,vaccin,épidémie,maladie,Sécurité sociale}'),
+  ('Climat', '{réchauffement,canicule,CO2,émissions,COP,sécheresse}'),
+  ('Énergie', '{électricité,nucléaire,EDF,pétrole,gaz,solaire,éolien}'),
+  ('Transports', '{SNCF,train,TGV,métro,aérien,avion,grève des transports}'),
+  ('Automobile', '{voiture,véhicule électrique,Renault,Stellantis,Tesla}'),
+  ('Immobilier', '{logement,loyer,crédit immobilier,prix de l''immobilier}'),
+  ('Emploi', '{chômage,embauche,licenciement,salaire,France Travail}'),
+  ('Inflation', '{pouvoir d''achat,hausse des prix,BCE,taux d''intérêt}'),
+  ('Impôts', '{fiscalité,impôt,taxe,TVA,budget}'),
+  ('Retraites', '{retraite,pension,réforme des retraites}'),
+  ('Bourse', '{CAC 40,marchés financiers,actionnaires,Wall Street}'),
+  ('Entreprises', '{start-up,startup,PME,rachat,chiffre d''affaires}'),
+  ('Agriculture', '{agriculteur,agricole,récolte,élevage,PAC}'),
+  ('Éducation', '{école,lycée,université,enseignant,bac,élève}'),
+  ('Justice', '{procès,tribunal,condamné,juge,enquête}'),
+  ('Sécurité', '{police,gendarmerie,délinquance,attentat}'),
+  ('Élections', '{élection,scrutin,vote,sondage,campagne électorale}'),
+  ('Parlement', '{Assemblée nationale,Sénat,député,sénateur,projet de loi}'),
+  ('Europe', '{Union européenne,UE,Bruxelles,Commission européenne,Parlement européen}'),
+  ('États-Unis', '{Washington,Maison Blanche,américain,Congrès américain}'),
+  ('Chine', '{Pékin,chinois}'),
+  ('Ukraine', '{Kiev,Russie,Moscou,Kremlin}'),
+  ('Proche-Orient', '{Israël,Gaza,Liban,Iran,Palestinien}'),
+  ('Afrique', '{africain,Sahel,Maghreb}'),
+  ('Football', '{Ligue 1,Ligue des champions,PSG,Mbappé,footballeur}'),
+  ('Rugby', '{XV de France,Top 14,Six Nations}'),
+  ('Tennis', '{Roland-Garros,Wimbledon,ATP,WTA}'),
+  ('Cyclisme', '{Tour de France,vélo,peloton}'),
+  ('Formule 1', '{F1,Grand Prix}'),
+  ('Jeux olympiques', '{JO,olympique,paralympique}'),
+  ('Cinéma', '{film,festival de Cannes,box-office,réalisateur}'),
+  ('Musique', '{concert,album,chanteur,chanteuse,festival}'),
+  ('Livres', '{roman,écrivain,prix Goncourt,librairie}'),
+  ('Séries', '{série,Netflix,streaming}'),
+  ('Jeux vidéo', '{jeu vidéo,console,PlayStation,Nintendo,Xbox}'),
+  ('Environnement', '{biodiversité,pollution,océan,forêt,recyclage}')
+on conflict (label) do nothing;
+
+-- ===== supabase/migrations/0016_sujets_sensibles.sql
+-- Sujets sensibles (drame, attentat, accident grave…) : une case sur chaque info, cochée par l'IA ou la rédaction.
+-- Effets : l'algorithme ne les pousse jamais parce qu'ils attirent les clics (intérêt collectif neutre),
+-- et l'app ne place pas de pub juste après. Leur place dépend seulement de leur importance.
+alter table public.articles add column if not exists sensitive boolean not null default false;
+
+create or replace function public.compose_edition(uid uuid, dev text, active text[], quota int, perso boolean default true)
+returns table (article_id uuid, slot text, reason text, score numeric, pos int)
+language plpgsql security definer set search_path = public as $$
+#variable_conflict use_column
+declare
+  c jsonb := public.algo_conf();
+  taste jsonb := case when perso and (c->>'enabled')::boolean then public.reader_taste(uid, dev) else '{"rubrics":{},"topics":{},"n":0}' end;
+  k numeric := greatest((c->>'smooth')::numeric, 0.1);
+  wa numeric; wi numeric;
+  n_ess int; n_dec int; cap int;
+  ed date := (select e.date from public.editions e where e.status = 'published' order by e.date desc limit 1);
+  r record; prev1 text; prev2 text; i int := 0; mid int;
+begin
+  quota := least(greatest(coalesce(quota, 8), 1), 100);
+  active := coalesce(active, '{}');
+  -- Le poids des goûts monte avec le nombre de signaux ; ce qu'il ne prend pas va à l'importance.
+  wa := case when not (perso and (c->>'enabled')::boolean) then 0
+             else (c->>'affinity_start')::numeric + ((c->>'w_affinity')::numeric - (c->>'affinity_start')::numeric)
+                  * least(1, (taste->>'n')::numeric / greatest((c->>'ramp')::numeric, 1)) end;
+  wi := (c->>'w_importance')::numeric + (c->>'w_affinity')::numeric - wa;
+  n_ess := greatest(1, round(quota * (c->>'share_essential')::numeric / 100));
+  n_dec := case when (c->>'share_discovery')::numeric > 0 then greatest(1, round(quota * (c->>'share_discovery')::numeric / 100)) else 0 end;
+  cap := case when cardinality(active) <= 2 then quota else greatest(1, ceil(quota * (c->>'max_rubric')::numeric / 100)) end;
+
+  create temp table if not exists _cand (id uuid, rubric text, rname text, essential boolean, importance int,
+    aff numeric, fav text, sc numeric, slot text, why text, ord int) on commit drop;
+  truncate _cand;
+
+  insert into _cand (id, rubric, rname, essential, importance, aff, fav, sc)
+  with art as (
+    select a.id, a.rubric_id, rb.name, a.essential, a.sensitive, a.importance, coalesce(a.published_at, a.created_at) as at,
+           coalesce(t.topics, '{}') as topics
+      from public.articles a join public.rubrics rb on rb.id = a.rubric_id
+      left join public.article_topics t on t.article_id = a.id
+     where a.edition_date = ed and a.status = 'published'
+       -- « Moins de sujets comme ça » : cette info-là ne revient pas.
+       and not exists (select 1 from public.reading_events e where e.article_id = a.id and e.kind = 'less'
+                        and ((uid is not null and e.user_id = uid) or (uid is null and e.device = dev)))
+  ),
+  -- Intérêt collectif : part des lecteurs qui ouvrent, partagent ou cliquent (rang parmi les infos assez vues).
+  coll as (
+    select e.article_id, count(distinct e.device) filter (where e.kind = 'view') as views,
+           count(distinct e.device) filter (where e.kind = 'summary') + 2 * count(distinct e.device) filter (where e.kind in ('share', 'click')) as eng
+      from public.reading_events e where e.article_id in (select id from art) group by e.article_id
+  ),
+  coll_rank as (
+    select article_id, percent_rank() over (order by eng::numeric / views) as pr
+      from coll where views >= (c->>'min_views')::int
+  ),
+  aff as (
+    select art.*,
+           0.5 + 0.5 * coalesce((taste->'rubrics'->>art.rubric_id)::numeric, 0) / (abs(coalesce((taste->'rubrics'->>art.rubric_id)::numeric, 0)) + k) as ra,
+           (select t from unnest(art.topics) t where (taste->'topics'->>t)::numeric > 0 order by (taste->'topics'->>t)::numeric desc limit 1) as fav
+      from art
+  ),
+  aff2 as (
+    select aff.*, coalesce((select avg(case when taste->'topics' ? t
+                    then 0.5 + 0.5 * (taste->'topics'->>t)::numeric / (abs((taste->'topics'->>t)::numeric) + k) else aff.ra end)
+                  from unnest(aff.topics) t), aff.ra) as ta
+      from aff
+  )
+  select a2.id, a2.rubric_id, a2.name, a2.essential, a2.importance, (a2.ra + a2.ta) / 2, a2.fav,
+         (wi * a2.importance / 10.0
+          + wa * (a2.ra + a2.ta) / 2
+          -- Sujet sensible : jamais poussé parce qu'il attire les clics (intérêt collectif neutre).
+          + (c->>'w_collective')::numeric * case when a2.sensitive then 0.5 else coalesce((select pr from coll_rank where coll_rank.article_id = a2.id), 0.5) end
+          + (c->>'w_fresh')::numeric * greatest(0, 1 - extract(epoch from now() - a2.at) / 86400)) / 100
+    from aff2 a2;
+
+  -- À ne pas manquer : les sujets majeurs du jour, pour tout le monde.
+  update _cand set slot = 'ess', why = 'Sujet majeur du jour, proposé à tout le monde.'
+   where id in (select id from _cand order by essential desc, importance desc, sc desc limit n_ess);
+  -- Découverte : un sujet important d'une rubrique non suivie (sinon de la rubrique la moins lue).
+  update _cand set slot = 'dec', why = 'Pour découvrir la rubrique ' || rname || '.'
+   where id in (select id from _cand where slot is null
+                 order by (rubric = any (active)), aff, importance desc, sc desc limit n_dec);
+  -- Pour vous : meilleurs scores dans les rubriques suivies, sans qu'une rubrique prenne plus que sa part.
+  for r in select * from _cand where slot is null order by (rubric = any (active)) desc, sc desc loop
+    exit when (select count(*) from _cand where slot is not null) >= quota;
+    continue when (select count(*) from _cand where _cand.rubric = r.rubric and slot is not null) >= cap
+              and exists (select 1 from _cand x where x.slot is null and x.id <> r.id and (select count(*) from _cand y where y.rubric = x.rubric and y.slot is not null) < cap);
+    update _cand set slot = 'pv', why = case when r.fav is not null then 'Vous lisez souvent : ' || r.fav || '.'
+                                             when r.rubric = any (active) then 'Vous suivez la rubrique ' || r.rname || '.'
+                                             else 'Une info importante du jour.' end
+     where id = r.id;
+  end loop;
+
+  -- Ordre : les sujets majeurs en tête (d'abord celui qui vous parle le plus), puis le meilleur score
+  -- en évitant trois infos de suite de la même rubrique ; la découverte au milieu.
+  update _cand set ord = 0 where id = (select id from _cand where slot = 'ess' order by aff desc, sc desc limit 1);
+  prev1 := (select rubric from _cand where ord = 0);
+  mid := (select count(*) from _cand where slot is not null) / 2;
+  loop
+    i := i + 1;
+    select * into r from _cand where ord is null and slot is not null
+     order by (slot = 'ess') desc, (slot = 'dec' and i >= mid) desc, (slot = 'dec') asc,
+              coalesce(rubric = prev1 and rubric = prev2, false) asc, aff desc, sc desc limit 1;
+    exit when not found;
+    update _cand set ord = i where id = r.id;
+    prev2 := prev1; prev1 := r.rubric;
+  end loop;
+  -- Après l'édition : tout le reste, pour « Charger plus ».
+  update _cand set slot = 'more', why = 'Pour aller plus loin aujourd''hui.',
+         ord = 1000 + x.n from (select id, row_number() over (order by sc desc) n from _cand where slot is null) x where _cand.id = x.id;
+
+  return query select _cand.id, _cand.slot, _cand.why, round(_cand.sc, 3), _cand.ord from _cand order by _cand.ord;
+end $$;
+revoke all on function public.compose_edition(uuid, text, text[], int, boolean) from public, anon, authenticated;
+
 -- ===== supabase/seed.sql
 -- Sources de départ : flux RSS publics (titre + chapô).
 -- À vérifier une par une : les adresses changent et certaines peuvent exiger un accord.

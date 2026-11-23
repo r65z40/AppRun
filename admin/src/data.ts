@@ -11,6 +11,8 @@ export type Article = {
   rank: number;
   importance: number;
   essential: boolean;
+  /** Sujet triste ou choquant : jamais poussé par l'algorithme, pas de pub juste après. */
+  sensitive?: boolean;
   title: string;
   key_sentence: string;
   facts: Fact[];
@@ -34,7 +36,7 @@ export type EngineRun = {
   id: string; kind: 'edition' | 'flash'; status: 'running' | 'ok' | 'error'; started_at: string; finished_at: string | null;
   summary: string | null; stats: Record<string, unknown>; log: string[];
   details: {
-    stories?: { label: string; rubric: string; importance: number; essential: boolean; items: { source: string; title: string }[] }[];
+    stories?: { label: string; rubric: string; importance: number; essential: boolean; sensitive?: boolean; items: { source: string; title: string }[] }[];
     left?: { source: string; title: string }[];
     cards?: { rubric: string; title: string; issues: string[]; error?: string; photo?: string }[];
     flashes?: { title: string; sources: string[]; rejected?: string }[];
@@ -260,6 +262,6 @@ function supabaseApi(sb: SupabaseClient): Api {
   };
 }
 
-/** Client Supabase partagé (null en mode démo). */
+/** Client Supabase partagé (null en mode démo), aussi utilisé par premium-data.ts. */
 export const sb: SupabaseClient | null = URL && KEY ? createClient(URL, KEY) : null;
 export const api: Api = sb ? supabaseApi(sb) : demoApi();

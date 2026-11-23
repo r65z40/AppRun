@@ -16,7 +16,10 @@ import { Bravo, End, Onboarding, Settings, Splash, Toast, Welcome, type OnbResul
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
 import { loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, type AppMessage } from './src/remote';
 import { Account } from './src/Account';
+import { Premium } from './src/Premium';
+import { storeLogin } from './src/purchases';
 import * as acc from './src/account';
+import { loadMyEdition, resetTaste, signal, type Pick, type Signal } from './src/algo';
 import { isAd, isArticle, type Article, type Card, type Comment } from './src/types';
 
 type Phase = 'splash' | 'onb' | 'feed';
@@ -26,6 +29,9 @@ type AccountAsk = { reason: string | null; then?: () => void };
 const editionSig = () => RUBRICS.map((r) => r.items.map((a) => a.id).join(',')).join('|');
 
 const DWELL_MS = 1200; // une info compte comme lue après ~1 s à l'écran
+/** L'édition de l'algorithme, ou null si la base ne répond pas vite (l'app compose alors elle-même). */
+const fetchPicks = (active: string[], quota: number, perso: boolean) =>
+  Promise.race([loadMyEdition(active, quota, perso), new Promise<null>((r) => setTimeout(() => r(null), 2500))]);
 
 // Sur ordinateur (version web), l'app s'affiche dans un cadre de téléphone au centre de la page.
 const framed = (w: number) => Platform.OS === 'web' && w > 560;
@@ -66,9 +72,13 @@ function Main() {
     if (!loaded || !splashDone || phase !== 'splash') return;
     const saved = acc.currentMe()?.prefs as Partial<Prefs> | undefined;
     if (saved?.active?.length) {
-      setP((x) => ({ ...x, ...pickSaved(saved) }));
-      setLimit(saved.quota ?? 24);
-      setPhase('feed');
+      // L'édition personnelle arrive avant la première carte, pour qu'elle ne change pas sous le doigt.
+      fetchPicks(saved.active, saved.quota ?? 24, saved.perso !== false).then((r) => {
+        setPicks(r);
+        setP((x) => ({ ...x, ...pickSaved(saved) }));
+        setLimit(saved.quota ?? 24);
+        setPhase('feed');
+      });
     } else setPhase('onb');
   }, [loaded, splashDone]);
   // L'édition se complète au fil de la journée : rechargée toutes les 10 minutes et au retour dans l'app.
@@ -100,8 +110,23 @@ function Main() {
   }, []);
   // Compte lecteur
   const me = acc.useMe();
-  const premium = p.premium || !!me?.premium;
-  const cols = useMemo(() => buildColumns(p.active, p.quota, premium, p.taste, p.adsPersonalized), [p.active, p.quota, premium, p.taste, p.adsPersonalized, flashVer, edVer]);
+  // Premium vient de la base (abonnement, code, cadeau de l'équipe). p.premium ne sert qu'à la démo sans base.
+  // bought : le store vient de confirmer un achat, la base le saura dans quelques secondes.
+  const [bought, setBought] = useState(false);
+  const [showPremium, setShowPremium] = useState(false);
+  const premiumFor = (np: Prefs) => (acc.accountsOn ? acc.isPremium(me) : np.premium) || bought;
+  const premium = premiumFor(p);
+  useEffect(() => { storeLogin(me?.uid ?? null); if (!me) setBought(false); }, [me?.uid]);
+  // Algorithme « Mon édition » : recalculé quand les réglages, le compte, les goûts ou l'édition changent.
+  const [picks, setPicks] = useState<Pick[] | null>(null);
+  const [tasteVer, setTasteVer] = useState(0);
+  useEffect(() => {
+    if (phase !== 'feed') return;
+    let live = true;
+    fetchPicks(p.active, p.quota, p.perso !== false).then((r) => live && r && setPicks(r));
+    return () => { live = false; };
+  }, [phase, p.active.join(','), p.quota, p.perso, me?.uid, edVer, tasteVer]);
+  const cols = useMemo(() => buildColumns(p.active, p.quota, premium, p.taste, p.adsPersonalized, picks), [p.active, p.quota, premium, p.taste, p.adsPersonalized, flashVer, edVer, picks]);
   const [ri, setRi] = useState(0);
   const [idx, setIdx] = useState<Record<string, number>>({});
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
@@ -158,9 +183,9 @@ function Main() {
     const saved = pickSaved(me.prefs as Partial<Prefs>);
     // Juste après la connexion, les réglages enregistrés priment : on attend qu'ils soient appliqués.
     if (syncedUid.current !== me.uid) { syncedUid.current = me.uid; if (saved.active) return; }
-    const next = { active: p.active, quota: p.quota, time: p.time, taste: p.taste ?? {} };
+    const next = { active: p.active, quota: p.quota, time: p.time, taste: p.taste ?? {}, perso: p.perso !== false };
     if (JSON.stringify(next) !== JSON.stringify({ taste: {}, ...saved })) acc.savePrefs(next).catch(() => {});
-  }, [me?.uid, phase, p.active, p.quota, p.time, p.taste]);
+  }, [me?.uid, phase, p.active, p.quota, p.time, p.taste, p.perso]);
   // Message de l'équipe à l'ouverture : le plus récent qui s'adresse à ce lecteur et qu'il n'a pas encore vu.
   useEffect(() => {
     if (phase !== 'feed') return;
@@ -241,7 +266,9 @@ function Main() {
     const id = current.id;
     const t = setTimeout(() => markSeen(id), DWELL_MS);
     return () => {
-      readMs.current += Math.min(60000, Date.now() - shownAt.current);
+      const ms = Date.now() - shownAt.current;
+      readMs.current += Math.min(60000, ms);
+      signal(id, 'view', ms); // temps passé sur la carte : passée trop vite ou lue longuement
       clearTimeout(t);
     };
   }, [current, phase, overlay]);
@@ -390,6 +417,7 @@ function Main() {
   };
   const openRead = (a: Article) => {
     markSeen(a.id);
+    signal(a.id, 'summary');
     feel('light', 'whoosh');
     setSummary(a);
   };
@@ -399,17 +427,21 @@ function Main() {
     reloadComments(a);
   };
 
-  const onOnb = (r: OnbResult) => {
-    setP((x) => ({ ...x, active: r.active.length ? r.active : x.active, quota: r.quota, time: r.time, adsPersonalized: r.adsPersonalized, premium: !!r.premium }));
+  const onOnb = async (r: OnbResult) => {
+    setPicks(await fetchPicks(r.active.length ? r.active : p.active, r.quota, true));
+    setP((x) => ({ ...x, active: r.active.length ? r.active : x.active, quota: r.quota, time: r.time, adsPersonalized: r.adsPersonalized }));
     setLimit(r.quota);
     setPhase('feed');
     if (r.account) setTimeout(() => setAccount({ reason: 'Votre compte gratuit : une édition qui apprend de vos likes et dislikes, sur tous vos appareils.' }), 500);
+    else if (r.premium) setTimeout(() => setShowPremium(true), 500);
   };
 
   const onSave = (np: Prefs) => {
     // On revient sur la même carte si elle existe encore dans le nouveau fil.
     const prev = current;
-    const next = buildColumns(np.active, np.quota, np.premium || !!me?.premium, np.taste, np.adsPersonalized);
+    // Premium ne se règle pas ici (volet Premium) : on garde la valeur actuelle.
+    np = { ...np, premium: p.premium };
+    const next = buildColumns(np.active, np.quota, premiumFor(np), np.taste, np.adsPersonalized, picks);
     let nri = Math.min(ri, next.length - 1);
     const nidx: Record<string, number> = {};
     if (prev) {
@@ -428,6 +460,16 @@ function Main() {
     setOverlay(null);
     feel('success', 'ding');
     showToast('Réglages enregistrés');
+  };
+
+  const onResetTaste = () =>
+    resetTaste()
+      .then(() => { setP((x) => ({ ...x, taste: {} })); setTasteVer((v) => v + 1); showToast('Vos goûts sont remis à zéro. Votre édition repart des sujets majeurs.'); })
+      .catch(() => showToast('Pas de connexion. Réessayez.'));
+  const onLess = (a: Article) => {
+    signal(a.id, 'less');
+    feel('select');
+    showToast('Compris : moins de sujets comme celui-ci dans vos prochaines éditions.');
   };
 
   const moreCount = Math.min(p.quota, remaining);
@@ -473,6 +515,9 @@ function Main() {
           canEnter={canEnter}
           onEndOfColumn={onEndOfColumn}
           setPos={(nri, colId, n) => {
+            // Retour en arrière sur une info : elle a retenu l'attention.
+            const back = nri === ri && n < (idx[colId] ?? 0) ? cols[nri]?.cards[n] : undefined;
+            if (back && isArticle(back)) signal(back.id, 'back');
             setRi(nri);
             setIdx((m) => ({ ...m, [colId]: n }));
           }}
@@ -483,6 +528,8 @@ function Main() {
           myEmoji={myEmoji}
           onEmoji={onEmoji}
           onToast={showToast}
+          onSignal={(a: Article, k: Signal) => signal(a.id, k)}
+          onLess={onLess}
           onSettings={() => { feel('light'); setOverlay('settings'); }}
         />
       ) : null}
@@ -497,6 +544,7 @@ function Main() {
         onComments={() => { if (summary) { const a = summary; setSummary(null); setTimeout(() => openComments(a), 250); } }}
         commentCount={summary ? commentCount(summary) : 0}
         emojiMode={commentsMode === 'emoji'}
+        onSignal={(k) => summary && signal(summary.id, k)}
       />
       <CommentsSheet
         a={cmts}
@@ -521,6 +569,9 @@ function Main() {
           onClose={() => setOverlay(null)}
           account={me ? me.pseudo ?? '' : null}
           onAccount={() => (acc.accountsOn ? setAccount({ reason: null }) : showToast('Les comptes arrivent avec la vraie base (mode démo).'))}
+          onResetTaste={onResetTaste}
+          premium={premium}
+          onPremium={() => setShowPremium(true)}
         />
       ) : null}
       {overlay === 'bravo' ? (
@@ -535,6 +586,18 @@ function Main() {
       ) : null}
       {overlay === 'end' ? <End n={seen.size} realMs={readMs.current} allRead={allRead} left={remaining} onReread={onReread} /> : null}
 
+      {showPremium ? (
+        <Premium
+          W={W}
+          demo={!acc.accountsOn}
+          demoOn={p.premium}
+          onDemo={(on) => setP((x) => ({ ...x, premium: on }))}
+          onBought={() => setBought(true)}
+          onToast={showToast}
+          onClose={() => setShowPremium(false)}
+          onNeedAccount={(then) => setAccount({ reason: 'Premium est lié à votre compte : vous le retrouvez sur tous vos appareils.', then })}
+        />
+      ) : null}
       {account ? (
         <Account
           W={W}
@@ -563,6 +626,7 @@ function pickSaved(s: Partial<Prefs> | undefined): Partial<Prefs> {
   if (typeof s.quota === 'number') o.quota = s.quota;
   if (typeof s.time === 'string') o.time = s.time;
   if (s.taste && typeof s.taste === 'object') o.taste = s.taste;
+  if (typeof s.perso === 'boolean') o.perso = s.perso;
   return o;
 }
 

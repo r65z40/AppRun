@@ -1,8 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { PremiumPage, ReaderSubscription } from './Premium';
+import { premiumApi, type PremiumStats } from './premium-data';
 import { AdsPage } from './Ads';
+import { AlgoPage, ReaderTaste } from './Algo';
 import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'dashboard' | 'readers' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'team' | 'settings';
+type Page = 'dashboard' | 'readers' | 'algo' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
 const PAGES: [Page, string, string][] = [
   ['dashboard', 'Tableau de bord', ''],
@@ -12,7 +15,9 @@ const PAGES: [Page, string, string][] = [
   ['readers', 'Lecteurs', 'Lecteurs'],
   ['moderation', 'Modération', 'Lecteurs'],
   ['messages', 'Messages', 'Lecteurs'],
+  ['algo', 'Algorithme', 'Lecteurs'],
   ['ads', 'Publicité', 'Revenus'],
+  ['premium', 'Abonnements', 'Revenus'],
   ['team', 'Équipe', 'Administration'],
   ['audit', 'Journal', 'Administration'],
   ['settings', 'Réglages', 'Administration'],
@@ -29,8 +34,8 @@ const ago = (iso: string | null) => {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   return m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`;
 };
-// Modération : seulement les commentaires. Rédaction : tout sauf les lecteurs, la publicité, l'équipe, le journal et les réglages.
-const ADMIN_ONLY: Page[] = ['readers', 'ads', 'team', 'audit', 'settings'];
+// Modération : seulement les commentaires. Rédaction : tout sauf les lecteurs, l'algorithme, la publicité, les abonnements, l'équipe, le journal et les réglages.
+const ADMIN_ONLY: Page[] = ['readers', 'algo', 'ads', 'premium', 'team', 'audit', 'settings'];
 const allowed = (role: Role, p: Page) => role === 'admin' || (role === 'editor' ? !ADMIN_ONLY.includes(p) : p === 'moderation');
 const plain = (s: string) => s.replace(/<\/?b>/g, '');
 
@@ -85,8 +90,10 @@ export default function App() {
         {page === 'ai' && allowed(me.role, page) && <AIPage say={say} admin={me.role === 'admin'} />}
         {page === 'moderation' && <ModerationPage say={say} />}
         {page === 'readers' && allowed(me.role, page) && <ReadersPage say={say} />}
+        {page === 'premium' && allowed(me.role, page) && <PremiumPage say={say} />}
         {page === 'audit' && allowed(me.role, page) && <AuditPage />}
         {page === 'ads' && allowed(me.role, page) && <AdsPage say={say} />}
+        {page === 'algo' && allowed(me.role, page) && <AlgoPage say={say} />}
         {page === 'team' && allowed(me.role, page) && <TeamPage say={say} me={me} />}
         {page === 'settings' && allowed(me.role, page) && <SettingsPage say={say} />}
       </main>
@@ -150,6 +157,7 @@ type Filter = 'all' | 'review' | 'draft' | 'published' | 'rejected';
 /* ---------------- Tableau de bord ---------------- */
 const usd = (n: number) => `${n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
 const int = (n: number) => n.toLocaleString('fr-FR');
+const eur = (c: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(c / 100);
 // Un passage en panne, bloqué, ou trop ancien (édition : 1 par jour ; Dernière minute : toutes les 10 min de 6 h à 23 h).
 function engineAlert(r: Dashboard['last_runs'][number] | undefined, kind: 'edition' | 'flash'): string | null {
   if (!r) return 'Aucun passage enregistré pour l’instant.';
@@ -165,9 +173,10 @@ function DashboardPage({ go }: { go: (p: Page) => void }) {
   const [d, setD] = useState<Dashboard | null>(null);
   const [top, setTop] = useState<TopArticle[]>([]);
   const [mod, setMod] = useState<ModerationCost | null>(null);
+  const [prem, setPrem] = useState<PremiumStats | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    const load = () => Promise.all([api.dashboard().then(setD), api.topArticles().then(setTop), api.moderationCost().then(setMod)]).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    const load = () => Promise.all([api.dashboard().then(setD), api.topArticles().then(setTop), api.moderationCost().then(setMod), premiumApi.stats().then(setPrem).catch(() => null)]).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
     load();
     const t = setInterval(load, 60000);
     return () => clearInterval(t);
@@ -212,7 +221,7 @@ function DashboardPage({ go }: { go: (p: Page) => void }) {
         <Tile label="Coût de l'IA, 7 jours" value={usd(d.ai_7)} />
         <Tile label="Coût de l'IA, 30 jours" value={usd(d.ai_30)} sub="Estimé d'après les jetons consommés et le tarif du modèle" />
         <Tile label="Modération par l'IA, 30 jours" value={usd(mod?.cost ?? 0)} sub={`${int(mod?.judged ?? 0)} commentaire${(mod?.judged ?? 0) > 1 ? 's' : ''} tranché${(mod?.judged ?? 0) > 1 ? 's' : ''} · ${fmtTok((mod?.input ?? 0) + (mod?.output ?? 0))} jetons (déjà compris dans le coût de l'IA)`} />
-        <Tile label="Revenus Premium" value="—" sub={`${int(d.premium)} abonné${d.premium > 1 ? 's' : ''} · s'affichera quand Premium sera branché`} />
+        <Tile label="Revenus Premium, 30 jours" value={eur(prem?.revenue_30_cents ?? 0)} sub={`${int(prem?.premium ?? d.premium)} abonné${(prem?.premium ?? d.premium) > 1 ? 's' : ''} · revenu mensuel récurrent ${eur(prem?.mrr_cents ?? 0)}`} />
         <Tile label="Revenus publicité" value="→" sub="Détail par campagne dans la page Publicité" />
       </div>
     </>
@@ -230,7 +239,7 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
   const [auto, setAuto] = useState<boolean | null>(null);
   const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
   const blank = (): Article => ({
-    id: '', edition_date: date ?? today, rubric_id: 'france', status: 'draft', rank: 0, importance: 5, essential: false, title: '', key_sentence: '',
+    id: '', edition_date: date ?? today, rubric_id: 'france', status: 'draft', rank: 0, importance: 5, essential: false, sensitive: false, title: '', key_sentence: '',
     facts: [0, 1, 2].map(() => ({ text: '', source: '', url: '' })), summary: ['', '', ''], photo_tag: null, photo_url: null, review_notes: [], model: null, published_at: null, created_at: '',
   });
   const reload = useCallback(async (d = date) => {
@@ -330,6 +339,7 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
                 <div className="line">
                   <span className={`pill ${a.status}`}>{STATUS_LABEL[a.status]}</span>
                   {a.essential ? <span className="pill ess">Essentiel</span> : null}
+                  {a.sensitive ? <span className="pill">Sensible</span> : null}
                   <span className="muted small">importance {a.importance}/10</span>
                 </div>
                 <h3>{a.title}</h3>
@@ -379,7 +389,7 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
   const set = <K extends keyof Article>(k: K, v: Article[K]) => setD((x) => ({ ...x, [k]: v }));
   const setFact = (i: number, k: keyof Fact, v: string) => setD((x) => ({ ...x, facts: x.facts.map((f, j) => (j === i ? { ...f, [k]: v } : f)) }));
   const over = plain(d.title).length > LIMITS.title || d.key_sentence.length > LIMITS.key || d.facts.some((f) => plain(f.text).length > LIMITS.fact) || d.summary.some((s) => s.length > LIMITS.summary);
-  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, rubric_id: d.rubric_id, essential: d.essential, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
+  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, rubric_id: d.rubric_id, essential: d.essential, sensitive: d.sensitive, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     addEventListener('keydown', k);
@@ -393,6 +403,7 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
             <label>Rubrique<select value={d.rubric_id} onChange={(e) => set('rubric_id', e.target.value)}>{Object.entries(RUBRICS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
             <label>Importance<input type="number" min={1} max={10} value={d.importance} onChange={(e) => set('importance', Number(e.target.value))} /></label>
             <label className="check"><input type="checkbox" checked={d.essential} onChange={(e) => set('essential', e.target.checked)} /> Essentiel (pour tout le monde)</label>
+            <label className="check" title="Sujet triste ou choquant : il garde sa place selon son importance, mais n'est jamais poussé parce qu'il attire les clics, et aucune pub ne le suit."><input type="checkbox" checked={!!d.sensitive} onChange={(e) => set('sensitive', e.target.checked)} /> Sujet sensible (pas de mise en avant, pas de pub juste après)</label>
           </div>
           <label>Titre <Count v={d.title} max={LIMITS.title} /><input value={d.title} onChange={(e) => set('title', e.target.value)} /></label>
           <label>Phrase clé <Count v={d.key_sentence} max={LIMITS.key} /><textarea rows={2} value={d.key_sentence} onChange={(e) => set('key_sentence', e.target.value)} /></label>
@@ -753,7 +764,7 @@ function RunDetails({ r }: { r: EngineRun }) {
           <h3>Sujets retenus ({d.stories.length})</h3>
           {d.stories.map((s, i) => (
             <div key={i} className="story">
-              <div><b>{s.label}</b> <span className="muted small">· {RUBRICS[s.rubric] ?? s.rubric} · importance {s.importance}/10{s.essential ? ' · essentiel' : ''}</span></div>
+              <div><b>{s.label}</b> <span className="muted small">· {RUBRICS[s.rubric] ?? s.rubric} · importance {s.importance}/10{s.essential ? ' · essentiel' : ''}{s.sensitive ? ' · sensible' : ''}</span></div>
               <ul>{s.items.map((it, k) => <li key={k} className="muted small">{it.source} : {it.title}</li>)}</ul>
             </div>
           ))}
@@ -1086,7 +1097,8 @@ function ReaderSheet({ p, act }: { p: Reader; act: (f: () => Promise<unknown>, m
     <div className="body">
       {p.banned || suspended ? <p className="warn small">{p.banned ? 'Banni' : `Suspendu jusqu'au ${until(p.suspended_until!)}`}{p.ban_reason ? ` · motif : ${p.ban_reason}` : ''}</p> : null}
       {d ? <p className="muted small">{d.days_30} jour{d.days_30 > 1 ? 's' : ''} d'ouverture sur 30 · {d.likes} like{d.likes > 1 ? 's' : ''} donnés · {d.reports_made} signalement{d.reports_made > 1 ? 's' : ''} faits · bloqué par {d.blocked_by} lecteur{d.blocked_by > 1 ? 's' : ''}</p> : <p className="muted small">Chargement…</p>}
-      {/* abonnement */}
+      <ReaderTaste uid={p.id} />
+      <ReaderSubscription id={p.id} />
       <div className="btns">
         {p.role === 'reader' && !p.banned ? <>
           {suspended ? <button className="btn sm" onClick={() => run(() => api.suspend(p.id, 0), 'Suspension levée')}>Lever la suspension</button>

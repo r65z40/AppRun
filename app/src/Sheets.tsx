@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, TextInput, View, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
 import Animated, { Easing, interpolate, Extrapolation, useAnimatedStyle, useSharedValue, withTiming, withSpring, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -67,13 +67,16 @@ export function Sheet({ open, onClose, H, children, bg, header }: {
   );
 }
 
-export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComments, commentCount, emojiMode }: {
+export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComments, commentCount, emojiMode, onSignal }: {
   a: Article | null; open: boolean; onClose: () => void; H: number; reaction: number; onReact: (v: 1 | -1) => void; onComments: () => void; commentCount: number;
   /** Commentaires remplacés par les emoji : pas de bouton commentaires. */
   emojiMode?: boolean;
+  /** Résumé lu jusqu'en bas, lien vers l'article complet : pour l'algorithme « Mon édition ». */
+  onSignal: (k: 'summary_end' | 'click') => void;
 }) {
   const insets = useSafeAreaInsets();
   const heads = ['Contexte', 'Ce qui change', 'Et après'];
+  const endSent = useRef<string | null>(null);
   return (
     <Sheet open={open} onClose={onClose} H={H} bg={a} header={
       <View style={styles.sheetHead}>
@@ -83,7 +86,15 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
     }>
       {a ? (
         <>
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 30, paddingBottom: 30 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingHorizontal: 30, paddingBottom: 30 }}
+            scrollEventThrottle={250}
+            // Résumé lu jusqu'en bas (80 %) : un signal fort pour l'algorithme, envoyé une fois.
+            onScroll={({ nativeEvent: e }) => {
+              if (a && endSent.current !== a.id && e.contentOffset.y + e.layoutMeasurement.height >= e.contentSize.height * 0.8) { endSent.current = a.id; onSignal('summary_end'); }
+            }}
+          >
             <Text style={styles.h2}>{a.title.toUpperCase()}</Text>
             <Text style={styles.date}>{todayLabel()} {yearLabel()} · lecture 1 min</Text>
             {summaryOf(a).map((t, i) => (
@@ -95,7 +106,7 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
             <View style={styles.srcList}>
               <Text style={styles.lbl}>SOURCES CONSULTÉES</Text>
               {[...new Map(a.facts.map((f) => [f.source, f.doc])).entries()].map(([m, url]) => (
-                <Text key={m} style={styles.srcLink} onPress={() => typeof url === 'string' && url.startsWith('http') && Linking.openURL(url)}>Lire l'article complet sur {m} ›</Text>
+                <Text key={m} style={styles.srcLink} onPress={() => { onSignal('click'); if (typeof url === 'string' && url.startsWith('http')) Linking.openURL(url); }}>Lire l'article complet sur {m} ›</Text>
               ))}
               {a.credit ? <Text style={[styles.srcLink, { color: C.text3, fontSize: 12, marginTop: 8 }]}>Photo : {a.credit}</Text> : null}
             </View>
