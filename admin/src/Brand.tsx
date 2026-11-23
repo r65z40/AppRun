@@ -400,9 +400,10 @@ function Mail({ get, save }: { get: (k: string) => string; save: Save }) {
 }
 
 /* ---------- Règles de l'app ---------- */
-// Mêmes valeurs par défaut que RULES dans app/src/brand.ts.
+// Mêmes valeurs par défaut que RULES dans app/src/brand.ts. La fréquence des pubs (ad_*) se règle page Publicité :
+// ces clés restent dans APP_RULES et sont gardées telles quelles ici.
 const RULES_DEF = {
-  default_rubrics: ['france', 'monde', 'eco', 'tech'], default_quota: 24, quota_max: 60, ad_first: 3, ad_every: 6, next_edition: '6 h 00',
+  default_rubrics: ['france', 'monde', 'eco', 'tech'], default_quota: 24, quota_max: 60, next_edition: '6 h 00',
   emojis: ['❤️', '😂', '😮', '😢', '😡', '👏'], premium_benefits: ['Zéro pub dans votre fil', 'Le badge Premium à côté de votre pseudo', 'Vous soutenez {nom} directement'],
   edition_refresh_min: 10, live_refresh_min: 3,
 };
@@ -444,11 +445,7 @@ function Rules({ raw, save }: { raw: string; save: Save }) {
         {pick('default_quota', 'Infos par jour proposées', 'Valeur de départ de la roue « Combien d’infos par jour ? ».', opts(Array.from({ length: 25 }, (_, i) => (i + 1) * 4).filter((n) => n <= r.quota_max), ' infos'))}
         {pick('quota_max', 'Maximum de la roue', 'Le lecteur choisit de 4 en 4 jusqu’à ce nombre.', opts([16, 24, 32, 40, 48, 60, 80, 100], ' infos'))}
       </section>
-      <section className="panel settings">
-        <h2>Publicité (version gratuite)</h2>
-        {pick('ad_first', 'Première pub', 'Après combien d’infos arrive la première carte sponsorisée.', opts([1, 2, 3, 4, 5, 6, 8, 10], 'e info'))}
-        {pick('ad_every', 'Ensuite, une pub toutes les', 'Jamais juste après un sujet sensible : elle glisse après l’info suivante.', opts([3, 4, 5, 6, 8, 10, 12, 15, 20], ' infos'))}
-      </section>
+      <p className="muted small">La fréquence des pubs se règle maintenant dans la page Publicité.</p>
       <section className="panel settings">
         <h2>Lecture</h2>
         {pick('next_edition', 'Heure annoncée de la prochaine édition', 'Affichée sur l’écran de fin de journée. Le moteur prépare l’édition vers 5 h 30.', HOURS.map((h) => [h, h] as [string, string]), false)}
@@ -467,7 +464,7 @@ function Rules({ raw, save }: { raw: string; save: Save }) {
         </div>
       </section>
       <div className="setting-actions sticky-actions">
-        <button className="btn ghost" disabled={!raw} onClick={() => save('APP_RULES', '', 'Règles d’origine rétablies')}>Revenir aux règles d’origine</button>
+        <button className="btn ghost" disabled={!raw} onClick={() => { const ads = Object.fromEntries(Object.entries(parse(raw, {} as Record<string, unknown>)).filter(([k]) => /^(ad_|flash_ad_|rubric_ad_)/.test(k))); save('APP_RULES', Object.keys(ads).length ? JSON.stringify(ads) : '', 'Règles d’origine rétablies (la fréquence des pubs est gardée)'); }}>Revenir aux règles d’origine</button>
         <button className="btn primary" disabled={!changed || bad} onClick={() => save('APP_RULES', Object.keys(diff).length ? JSON.stringify(diff) : '')}>{bad ? 'Vérifiez les champs' : 'Enregistrer'}</button>
       </div>
     </>

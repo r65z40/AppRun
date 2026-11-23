@@ -1,7 +1,7 @@
 import { FLASHES, RUBRICS } from './content';
 import { pickAds } from './ads';
 import { RECOG, RULES } from './brand';
-import type { Article, Badge, Column, Comment, ReaderCard, Tag } from './types';
+import type { Article, Badge, Column, Comment, Flash, Placement, ReaderCard, Tag } from './types';
 import type { Pick } from './algo';
 
 export const MEDIA = "D'après L'Écho national, Agence Presse Europe, Radio Horizon";
@@ -60,26 +60,37 @@ export function buildColumns(active: string[], quota: number, premium: boolean, 
   }
 
   const edCards: Column['cards'] = [...picked];
-  // Version gratuite : une pub après la 3e info, puis une toutes les six (§4.6), réglable dans le back office. Premium les retire.
-  // Les pubs viennent des campagnes en cours ; sans campagne, aucune carte sponsorisée.
-  if (!premium) {
-    const { ad_first: first, ad_every: every } = RULES;
-    const ads = pickAds(Math.max(0, Math.ceil((edCards.length - first) / every)), active, adsPersonalized);
-    ads.forEach((c, n) => {
-      // Jamais de pub juste après un sujet sensible (drame, attentat…) : elle glisse après l'info suivante.
-      let at = first + n * (every + 1);
-      while (at < edCards.length && (edCards[at - 1] as Article).sensitive) at++;
-      edCards.splice(at, 0, { ad: true, id: `ad-${n}-${c.id}`, c });
-    });
-  }
+  const flashes: Column['cards'] = [...FLASHES].sort((a, b) => b.at.localeCompare(a.at));
+  const withAds = (cards: Column['cards'], place: Placement, column: string) => (premium ? cards : insertAds(cards, place, column, active, adsPersonalized));
   return [
-    { id: 'edition', name: 'Mon édition', cards: edCards, tags, why },
+    { id: 'edition', name: 'Mon édition', cards: withAds(edCards, 'edition', 'edition'), tags, why },
     // Dernière minute : juste après l'édition, la plus récente en haut.
-    ...(FLASHES.length ? [{ id: 'flash', name: 'Dernière minute', cards: [...FLASHES].sort((a, b) => b.at.localeCompare(a.at)), tags: {} }] : []),
-    ...act.map((r) => ({ id: r.id, name: r.name, cards: r.items, tags: {} })),
+    ...(FLASHES.length ? [{ id: 'flash', name: 'Dernière minute', cards: withAds(flashes, 'flash', 'flash'), tags: {} }] : []),
+    ...act.map((r) => ({ id: r.id, name: r.name, cards: withAds(r.items, 'rubrics', r.id), tags: {} })),
     // Puis les rubriques non suivies : toujours accessibles en continuant à glisser.
-    ...others.map((r) => ({ id: r.id, name: r.name, cards: r.items, tags: {}, extra: true })),
+    ...others.map((r) => ({ id: r.id, name: r.name, cards: withAds(r.items, 'rubrics', r.id), tags: {}, extra: true })),
   ];
+}
+
+/**
+ * Version gratuite : pubs glissées dans une colonne, au rythme réglé dans le back office (page Publicité).
+ * Mon édition : une après la 3e info, puis une toutes les six (par défaut). Dernière minute et rubriques : une
+ * toutes les N infos (0 = jamais). Jamais juste après un sujet sensible (drame, attentat…) : elle glisse après
+ * l'info suivante. Sans campagne en cours pour cet emplacement, aucune carte sponsorisée. Premium : aucune.
+ */
+export function insertAds(cards: Column['cards'], place: Placement, column: string, active: string[], personalized: boolean): Column['cards'] {
+  const every = place === 'edition' ? RULES.ad_every : place === 'flash' ? RULES.flash_ad_every : RULES.rubric_ad_every;
+  const first = place === 'edition' ? RULES.ad_first : every;
+  if (!every || cards.length < first) return cards;
+  const out = [...cards];
+  const ads = pickAds(Math.ceil((cards.length - first + 1) / every), place, column, active, personalized);
+  ads.forEach((c, n) => {
+    let at = first + n * (every + 1);
+    while (at < out.length && (out[at - 1] as Article | Flash).sensitive) at++;
+    if (at > out.length) return;
+    out.splice(at, 0, { ad: true, id: `ad-${column}-${n}-${c.id}`, c, place });
+  });
+  return out;
 }
 
 const PSEUDOS: [string, string][] = [

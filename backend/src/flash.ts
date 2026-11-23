@@ -47,6 +47,7 @@ async function flash() {
   // Abonnements Premium arrivés à échéance (même moteur en pause : c'est de l'argent, pas du contenu).
   const ended = await q<{ n: number }>('select public.expire_premium() as n').catch(() => [{ n: 0 }]);
   if (ended[0]?.n) log(`Premium : ${ended[0].n} abonnement(s) arrivé(s) à échéance`);
+  await q('select public.ad_purge()').catch(() => {}); // détail des affichages pub de plus de 35 jours (les totaux restent)
   if (cfg.paused()) { const msg = await pauseMessage(); log(msg); return J.finish('ok', msg, { paused: true }); }
   await budget.check(); // IA coupée ou budget atteint : arrêt propre (voir main), ni modération ni Dernière minute
   const mod = await moderate(log).catch((e) => { log(`Modération impossible : ${e instanceof Error ? e.message : e}`); return null; });

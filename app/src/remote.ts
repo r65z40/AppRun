@@ -138,7 +138,7 @@ export async function loadMessages(): Promise<AppMessage[]> {
   }
 }
 
-type FlashRow = { id: string; title: string; sentence: string; sources: { source: string; url: string }[]; published_at: string };
+type FlashRow = { id: string; title: string; sentence: string; sources: { source: string; url: string }[]; published_at: string; sensitive?: boolean };
 
 /** Dernière minute : remplace les flashs de démo par les vrais. Renvoie true si la liste a changé. */
 export async function loadFlashes(timeoutMs = 4000): Promise<boolean> {
@@ -146,9 +146,9 @@ export async function loadFlashes(timeoutMs = 4000): Promise<boolean> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const rows = await get<FlashRow[]>('flashes?select=id,title,sentence,sources,published_at&status=eq.published&order=published_at.desc&limit=30', ctl.signal);
-    const next: Flash[] = rows.map((r) => ({ flash: true, id: `flash-${r.id}`, title: r.title, sentence: r.sentence, at: r.published_at, sources: r.sources ?? [] }));
-    const same = next.length === FLASHES.length && next.every((f, i) => f.id === FLASHES[i].id && f.title === FLASHES[i].title && f.sentence === FLASHES[i].sentence);
+    const rows = await get<FlashRow[]>('flashes?select=id,title,sentence,sources,published_at,sensitive&status=eq.published&order=published_at.desc&limit=30', ctl.signal);
+    const next: Flash[] = rows.map((r) => ({ flash: true, id: `flash-${r.id}`, title: r.title, sentence: r.sentence, at: r.published_at, sources: r.sources ?? [], sensitive: !!r.sensitive }));
+    const same = next.length === FLASHES.length && next.every((f, i) => f.id === FLASHES[i].id && f.title === FLASHES[i].title && f.sentence === FLASHES[i].sentence && f.sensitive === FLASHES[i].sensitive);
     if (same) return false;
     FLASHES.splice(0, FLASHES.length, ...next);
     return true;

@@ -31,10 +31,12 @@ export type Article = {
 export type Rubric = { id: string; name: string; items: Article[] };
 
 /** Une pub d'une campagne en cours (back office > Publicité). */
-export type AdCreative = { id: string; advertiser: string; title: string; body: string; cta: string; url: string; image_url: string | null; rubrics: string[]; weight: number };
-export type Ad = { ad: true; id: string; c: AdCreative };
+export type AdCreative = { id: string; advertiser: string; title: string; body: string; cta: string; url: string; image_url: string | null; rubrics: string[]; weight: number; placements: Placement[] };
+/** Où passe une pub : Mon édition, Dernière minute, ou les autres rubriques. */
+export type Placement = 'edition' | 'flash' | 'rubrics';
+export type Ad = { ad: true; id: string; c: AdCreative; place: Placement };
 /** Dernière minute : une info majeure, datée à la minute. */
-export type Flash = { flash: true; id: string; title: string; sentence: string; at: string; sources: { source: string; url: string }[] };
+export type Flash = { flash: true; id: string; title: string; sentence: string; at: string; sources: { source: string; url: string }[]; sensitive?: boolean };
 export type Card = Article | Ad | Flash;
 export const isAd = (c: Card): c is Ad => 'ad' in c;
 export const isFlash = (c: Card): c is Flash => 'flash' in c;
