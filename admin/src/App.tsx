@@ -3,10 +3,12 @@ import { PremiumPage, ReaderSubscription } from './Premium';
 import { premiumApi, type PremiumStats } from './premium-data';
 import { AdsPage } from './Ads';
 import { AlgoPage, ReaderTaste } from './Algo';
+import { BadgesPage } from './Badges';
+import { ReferralPage } from './Referral';
 import { BrandPage } from './Brand';
 import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'dashboard' | 'readers' | 'algo' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings' | 'brand';
+type Page = 'dashboard' | 'readers' | 'algo' | 'badges' | 'referral' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings' | 'brand';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
 const PAGES: [Page, string, string][] = [
   ['dashboard', 'Tableau de bord', ''],
@@ -17,6 +19,8 @@ const PAGES: [Page, string, string][] = [
   ['moderation', 'Modération', 'Lecteurs'],
   ['messages', 'Messages', 'Lecteurs'],
   ['algo', 'Algorithme', 'Lecteurs'],
+  ['badges', 'Reconnaissance', 'Lecteurs'],
+  ['referral', 'Parrainage', 'Lecteurs'],
   ['ads', 'Publicité', 'Revenus'],
   ['premium', 'Abonnements', 'Revenus'],
   ['brand', 'Personnalisation', 'Administration'],
@@ -37,7 +41,7 @@ const ago = (iso: string | null) => {
   return m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`;
 };
 // Modération : seulement les commentaires. Rédaction : tout sauf les lecteurs, l'algorithme, la publicité, les abonnements, l'équipe, le journal et les réglages.
-const ADMIN_ONLY: Page[] = ['readers', 'algo', 'ads', 'premium', 'team', 'audit', 'settings', 'brand'];
+const ADMIN_ONLY: Page[] = ['readers', 'algo', 'badges', 'referral', 'ads', 'premium', 'team', 'audit', 'settings', 'brand'];
 const allowed = (role: Role, p: Page) => role === 'admin' || (role === 'editor' ? !ADMIN_ONLY.includes(p) : p === 'moderation');
 const plain = (s: string) => s.replace(/<\/?b>/g, '');
 /** Recherche sans accents ni majuscules. */
@@ -106,6 +110,8 @@ export default function App() {
         {page === 'audit' && allowed(me.role, page) && <AuditPage />}
         {page === 'ads' && allowed(me.role, page) && <AdsPage say={say} />}
         {page === 'algo' && allowed(me.role, page) && <AlgoPage say={say} />}
+        {page === 'badges' && allowed(me.role, page) && <BadgesPage say={say} />}
+        {page === 'referral' && allowed(me.role, page) && <ReferralPage say={say} go={setPage} />}
         {page === 'team' && allowed(me.role, page) && <TeamPage say={say} me={me} />}
         {page === 'settings' && allowed(me.role, page) && <SettingsPage say={say} />}
         {page === 'brand' && allowed(me.role, page) && <BrandPage say={say} />}
@@ -1378,15 +1384,18 @@ function TeamPage({ say, me }: { say: (m: string) => void; me: Me }) {
   const [role, setRole] = useState<Role>('editor');
   const load = () => api.team().then(setList);
   useEffect(() => { load(); }, []);
+  const admins = list.filter((p) => p.role === 'admin');
   return (
     <>
-      <header className="head"><div><div className="eyebrow">Équipe</div><h1>Qui a accès</h1><p className="muted">Modération : les commentaires seulement (masquer, bannir). Rédaction : les infos, la Dernière minute, les sources et la modération. Administrateur : tout, y compris l'équipe et les réglages.</p></div></header>
+      <header className="head"><div><div className="eyebrow">Équipe</div><h1>Qui a accès</h1><p className="muted">Modération : les commentaires seulement (masquer, bannir). Rédaction : les infos, la Dernière minute, les sources et la modération. Administrateur : tout, y compris l'équipe et les réglages.</p>
+        {admins.length ? <p className="muted">Administrateur{admins.length > 1 ? 's' : ''} : {admins.map((p, i) => <Fragment key={p.id}>{i ? ', ' : ''}<b>{p.email || p.pseudo}</b></Fragment>)}</p> : null}</div></header>
       <table className="table">
-        <thead><tr><th>Pseudo</th><th>Rôle</th><th>Depuis</th></tr></thead>
+        <thead><tr><th>Pseudo</th><th>Adresse e-mail</th><th>Rôle</th><th>Depuis</th></tr></thead>
         <tbody>
           {list.map((p) => (
             <tr key={p.id}>
               <td><b>{p.pseudo ?? '—'}</b></td>
+              <td className="muted">{p.email ?? '—'}</td>
               <td>
                 <select value={p.role} disabled={p.id === me.id} onChange={async (e) => { await api.setRole(p.id, e.target.value as Role); load(); say('Rôle mis à jour'); }}>
                   {(Object.keys(ROLE) as Role[]).map((r) => <option key={r} value={r}>{r === 'reader' ? 'Retirer l’accès' : ROLE[r]}</option>)}

@@ -1,7 +1,7 @@
 import { FLASHES, RUBRICS } from './content';
 import { pickAds } from './ads';
-import { RULES } from './brand';
-import type { Article, Column, Comment, Tag } from './types';
+import { RECOG, RULES } from './brand';
+import type { Article, Badge, Column, Comment, ReaderCard, Tag } from './types';
 import type { Pick } from './algo';
 
 export const MEDIA = "D'après L'Écho national, Agence Presse Europe, Radio Horizon";
@@ -89,6 +89,22 @@ const PSEUDOS: [string, string][] = [
   ['Yanis75', '#4fb0ff'],
   ['marie.l', '#9a7bff'],
 ];
+// Badges de démonstration (les vrais se règlent dans le back office, Lecteurs > Reconnaissance).
+const DEMO_BADGES: Badge[][] = [
+  [{ label: 'Premium', description: 'Abonné Premium : soutient l’app.', icon: '💎', color: '#C86BFA', kind: 'premium' }, { label: 'Érudit', description: 'A lu plus de 1 000 infos.', icon: '🧠', color: '#9A7BFF', kind: 'reads' }],
+  [{ label: 'Bienfaiteur', description: 'A proposé des idées pour améliorer l’app.', icon: '💌', color: '#FFB547', kind: 'manual' }, { label: 'Curieux', description: 'A lu plus de 50 infos.', icon: '📖', color: '#5AD1B5', kind: 'reads' }],
+  [{ label: 'Assidu', description: 'A lu plus de 250 infos.', icon: '📚', color: '#4FB0FF', kind: 'reads' }],
+  [],
+  [{ label: 'Pionnier', description: 'Parmi les 1 000 premiers comptes.', icon: '🚀', color: '#FF8A7A', kind: 'early' }],
+];
+const DEMO_READS = [1240, 86, 310, 12, 45];
+
+/** Fiche de démonstration, en touchant un pseudo. */
+export const demoCard = (c: Comment): ReaderCard => {
+  const i = Math.max(0, PSEUDOS.findIndex((p) => p[0] === c.who));
+  return { pseudo: c.who, hidden: false, reads: DEMO_READS[i], minutes_saved: DEMO_READS[i] * RECOG.minutes_per_article, badges: c.badges ?? [], since: '2026-11-01T00:00:00Z' };
+};
+
 const BASE: [string, number, number, string][] = [
   ['Enfin une info claire, sans titre racoleur.', 42, 2, 'il y a 12 min'],
   ['Ça mériterait un suivi dans quelques semaines.', 18, 1, 'il y a 25 min'],
@@ -107,4 +123,5 @@ export const seedComments = (): Comment[] =>
     ago: b[3],
     mine: 0,
     order: i,
+    badges: DEMO_BADGES[i],
   }));

@@ -88,7 +88,17 @@ export const NUDGES = {
   premium: { enabled: true, every_days: 5, after_cards: 6 },
 };
 
-type Config = { brand?: Record<string, unknown> | null; texts?: Record<string, unknown> | null; notifications?: Record<string, unknown> | null; rules?: Record<string, unknown> | null; nudges?: Record<string, unknown> | null };
+/** Reconnaissance (back office > Lecteurs > Reconnaissance). */
+export const RECOG = {
+  /** Minutes gagnées par info lue, par rapport à un article classique. */
+  minutes_per_article: 3,
+  /** Icônes de badges à côté du pseudo (les autres se voient en touchant le pseudo). */
+  max_icons: 3,
+  /** Le pseudo prend la couleur de son premier badge. */
+  color_pseudo: true,
+};
+
+type Config = { recognition?: Record<string, unknown> | null; brand?: Record<string, unknown> | null; texts?: Record<string, unknown> | null; notifications?: Record<string, unknown> | null; rules?: Record<string, unknown> | null; nudges?: Record<string, unknown> | null };
 
 const URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -96,7 +106,7 @@ const CACHE = 'titre.config';
 const isHex = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 const str = (v: unknown, max = 400) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
 
-const DEF = { share: { ...SHARE }, brand: { ...BRAND }, texts: { ...TEXTS }, notif: { ...NOTIF }, rules: JSON.parse(JSON.stringify(RULES)) as typeof RULES, nudges: JSON.parse(JSON.stringify(NUDGES)) as typeof NUDGES };
+const DEF = { share: { ...SHARE }, recog: { ...RECOG }, brand: { ...BRAND }, texts: { ...TEXTS }, notif: { ...NOTIF }, rules: JSON.parse(JSON.stringify(RULES)) as typeof RULES, nudges: JSON.parse(JSON.stringify(NUDGES)) as typeof NUDGES };
 const int = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : null);
 const strs = (v: unknown, max: number, len = 120) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim().slice(0, len)).slice(0, max) : []);
 
@@ -122,6 +132,12 @@ function apply(c: Config) {
   const nt = str(n.title, 80); if (nt) NOTIF.title = nt;
   const nb = str(n.body, 200); if (nb) NOTIF.body = nb;
   applyRules(c.rules ?? {}, c.nudges ?? {});
+  Object.assign(RECOG, DEF.recog);
+  const g = c.recognition ?? {};
+  const mp = typeof g.minutes_per_article === 'number' && g.minutes_per_article >= 0 && g.minutes_per_article <= 60 ? g.minutes_per_article : null;
+  if (mp !== null) RECOG.minutes_per_article = mp;
+  const mi = int(g.max_icons, 0, 6); if (mi !== null) RECOG.max_icons = mi;
+  if (typeof g.color_pseudo === 'boolean') RECOG.color_pseudo = g.color_pseudo;
 }
 
 function applyShare(x: Record<string, unknown>) {
@@ -191,9 +207,17 @@ export async function bootBrand(): Promise<void> {
   const fresh = await fetchConfig(1500);
   if (fresh) {
     apply(fresh);
-    setLocal(CACHE, JSON.stringify({ brand: fresh.brand, texts: fresh.texts, notifications: fresh.notifications, rules: fresh.rules, nudges: fresh.nudges }));
+    setLocal(CACHE, JSON.stringify({ brand: fresh.brand, texts: fresh.texts, notifications: fresh.notifications, rules: fresh.rules, nudges: fresh.nudges, recognition: fresh.recognition }));
   }
   await loadFont(BRAND.font, 3000);
+}
+
+/** Temps gagné, lisible : « 45 min », « 3 h 20 », « 52 h ». */
+export function savedLabel(min: number) {
+  const m = Math.round(min);
+  if (m < 60) return `${m} min`;
+  if (m < 600) return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+  return `${Math.round(m / 60).toLocaleString('fr-FR')} h`;
 }
 
 /** Texte de la notification pour ce lecteur. */

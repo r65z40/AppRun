@@ -10,12 +10,13 @@ import { C } from './src/theme';
 import { NOTIF, NUDGES, RULES } from './src/brand';
 import { notifWanted, setNotif, syncNotif } from './src/notify';
 import { RUBRICS } from './src/content';
-import { buildColumns, rubricOf, seedComments } from './src/edition';
+import { buildColumns, demoCard, rubricOf, seedComments } from './src/edition';
 import { adHit, loadAds } from './src/ads';
 import { Feed } from './src/Feed';
 import { SummarySheet, CommentsSheet } from './src/Sheets';
 import { Bravo, End, Onboarding, Settings, Splash, Toast, Welcome, type OnbResult, type Prefs } from './src/Screens';
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
+import { syncWidget } from './src/headline';
 import { loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, type AppMessage } from './src/remote';
 import { Account } from './src/Account';
 import { Premium } from './src/Premium';
@@ -23,7 +24,8 @@ import { ShareCardHost } from './src/ShareCard';
 import { storeLogin } from './src/purchases';
 import * as acc from './src/account';
 import { loadMyEdition, resetTaste, signal, type Pick, type Signal } from './src/algo';
-import { isAd, isArticle, type Article, type Card, type Comment } from './src/types';
+import { isAd, isArticle, type Article, type Badge, type Card, type Comment } from './src/types';
+import { BadgeToast } from './src/Badges';
 
 type Phase = 'splash' | 'onb' | 'feed';
 type Overlay = null | 'bravo' | 'end' | 'settings';
@@ -100,6 +102,8 @@ function Main() {
     const sub = AppState.addEventListener('change', (s) => s === 'active' && refresh());
     return () => { clearInterval(t); sub.remove(); };
   }, []);
+  // Widget de l'écran d'accueil : l'info principale du jour, remise à jour à chaque édition chargée.
+  useEffect(() => { if (loaded) syncWidget(); }, [loaded, edVer]);
   const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded, edVer]);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [p, setP] = useState<Prefs>({ active: [...RULES.default_rubrics], quota: RULES.default_quota, sound: true, haptic: true, parallax: true, premium: false, time: NOTIF.default_time, adsPersonalized: false });
@@ -172,6 +176,29 @@ function Main() {
       if (kind === 'account') setAccount({ reason: NUDGES.account.text }); else setShowPremium(true);
     });
   }, [seen.size, phase, overlay, summary, cmts, account, showPremium, me?.uid, premium]);
+  // Nouveaux badges : vérifiés à l'ouverture, au retour dans l'app et toutes les 3 minutes, fêtés un par un.
+  // La toute première fois sur un appareil, les badges déjà obtenus sont notés sans animation.
+  const [newBadges, setNewBadges] = useState<Badge[]>([]);
+  useEffect(() => {
+    if (!me || phase !== 'feed') return;
+    const check = async () => {
+      const card = await acc.readerCard();
+      if (!card?.badges) return;
+      const key = `titre.badges.${me.uid}`;
+      const raw = await acc.getLocal(key);
+      let known: string[] = [];
+      try { known = raw ? JSON.parse(raw) : []; } catch {}
+      const fresh = card.badges.filter((b) => !known.includes(b.label));
+      if (!fresh.length) return;
+      await acc.setLocal(key, JSON.stringify([...known, ...fresh.map((b) => b.label)]));
+      if (raw !== null) setNewBadges((q) => [...q, ...fresh]);
+    };
+    check();
+    const t = setInterval(check, 3 * 60000);
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && check());
+    return () => { clearInterval(t); sub.remove(); };
+  }, [me?.uid, phase]);
+  useEffect(() => { if (newBadges[0]) feel('success', 'ding'); }, [newBadges[0]]);
   // Lien reçu par e-mail (version web) : nouveau mot de passe, compte activé ou lien périmé, traité après l'écran de lancement.
   const [linkEv, setLinkEv] = useState<acc.LinkEvent>(null);
   useEffect(() => { acc.restore().then(() => setLinkEv(acc.takeLinkEvent())); }, []);
@@ -602,6 +629,7 @@ function Main() {
         onFlag={flagComment}
         onDelete={deleteComment}
         onBlock={blockComment}
+        loadCard={(c) => (acc.isLive(c.id) ? acc.readerCard(c.id) : Promise.resolve(demoCard(c)))}
       />
 
       {overlay === 'settings' ? (
@@ -659,6 +687,11 @@ function Main() {
 
       <ShareCardHost />
       <Toast msg={toast} top={insets.top + 96} />
+      {newBadges[0] ? (
+        <BadgeToast key={newBadges[0].label} badge={newBadges[0]} top={insets.top + 8}
+          onDone={() => setNewBadges((q) => q.slice(1))}
+          onOpen={() => { setNewBadges([]); setAccount({ reason: null }); }} />
+      ) : null}
     </View>
   );
 }

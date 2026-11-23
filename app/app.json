@@ -20,6 +20,7 @@
       }
     },
     "android": {
+      "package": "app.titre.prototype",
       "adaptiveIcon": {
         "backgroundColor": "#7B5CFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -36,6 +37,29 @@
         "expo-notifications",
         {
           "color": "#7B5CFF"
+        }
+      ],
+      [
+        "expo-widgets",
+        {
+          "enableAndroid": true,
+          "widgets": [
+            {
+              "name": "TitreDuJour",
+              "displayName": "Titre du jour",
+              "description": "L'info principale du jour.",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium"
+                ]
+              },
+              "android": {
+                "targetCellWidth": 4,
+                "targetCellHeight": 2
+              }
+            }
+          ]
         }
       ]
     ],

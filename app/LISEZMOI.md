@@ -27,3 +27,19 @@ Si le QR code ne marche pas (Wi-Fi d'entreprise, partage de connexion…), relan
 - Roue crantée : réglages (rubriques, quota, sons, vibrations, Premium sans pub).
 
 Les sons sont coupés quand l'iPhone est en mode silencieux.
+
+## Le widget « Titre du jour » (écran d'accueil)
+Le widget affiche l'info principale du jour (jamais un sujet sensible) et se met à jour
+chaque fois que l'app est ouverte. **Il ne marche pas dans Expo Go** : il faut une vraie
+version de l'app, fabriquée par Expo (service EAS, gratuit pour quelques versions par mois).
+
+1. Créez un compte gratuit sur https://expo.dev.
+2. Dans le dossier `app`, tapez `npx eas-cli login`, puis
+   `npx eas-cli build --profile preview --platform android` (ou `--platform ios`).
+   Pour le vrai contenu, ajoutez d'abord `EXPO_PUBLIC_SUPABASE_URL` et `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+   dans expo.dev > votre projet > Environment variables (environnement « preview »).
+3. Au bout de 15 à 30 minutes, Expo donne un lien : ouvrez-le sur le téléphone pour installer l'app.
+   - Android : rien d'autre à prévoir.
+   - iPhone : il faut un compte Apple Developer (99 €/an) ; la commande demande vos identifiants
+     Apple et enregistre l'iPhone.
+4. Ouvrez l'app une fois, puis appui long sur l'écran d'accueil > Widgets > TITRE.

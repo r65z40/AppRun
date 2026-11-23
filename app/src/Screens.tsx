@@ -222,7 +222,7 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
               {account === null ? (
                 <Row label="Se connecter ou créer un compte" hint="Pour aimer les infos et commenter" last={premium}><Text style={styles.v}>›</Text></Row>
               ) : (
-                <Row label="Mon compte" last={premium}><Text style={styles.v}>{account || 'Choisir un pseudo'} ›</Text></Row>
+                <Row label="Mon compte" hint="Badges et invitations d’amis" last={premium}><Text style={styles.v}>{account || 'Choisir un pseudo'} ›</Text></Row>
               )}
             </Pressable>
             {!premium ? (

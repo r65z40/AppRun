@@ -26,7 +26,7 @@ type Row = {
   published_at: string | null;
   created_at: string;
 };
-type Stat = { article_id: string; likes: number; comments: number };
+type Stat = { article_id: string; likes: number; dislikes?: number; views?: number; comments: number };
 
 // Nouvelle clé « publishable » (sb_publishable_…) : seulement dans apikey. Ancienne clé « anon » (JWT) : aussi en Bearer.
 const headers = (): Record<string, string> => (KEY!.startsWith('sb_') ? { apikey: KEY! } : { apikey: KEY!, Authorization: `Bearer ${KEY}` });
@@ -57,7 +57,10 @@ export async function loadEdition(timeoutMs = 4000): Promise<string | null> {
     const [rows, rubs, stats] = await Promise.all([
       get<Row[]>(`articles?select=*&edition_date=eq.${date}&status=eq.published&order=rank.asc`, ctl.signal),
       get<{ id: string; name: string }[]>('rubrics?select=id,name&active=eq.true&order=position.asc', ctl.signal),
-      get<Stat[]>('article_stats?select=article_id,likes,comments', ctl.signal).catch(() => [] as Stat[]),
+      get<Stat[]>('article_stats?select=article_id,likes,dislikes,views,comments', ctl.signal)
+        // Base pas encore à jour (sans la colonne views) : on garde au moins les likes.
+        .catch(() => get<Stat[]>('article_stats?select=article_id,likes,comments', ctl.signal))
+        .catch(() => [] as Stat[]),
     ]);
     if (!rows.length) return null;
     // Toujours les infos les plus importantes en tête, puis les plus récentes (l'édition se complète dans la journée).
@@ -82,6 +85,8 @@ export async function loadEdition(timeoutMs = 4000): Promise<string | null> {
           photo: a.photo_url ? { uri: a.photo_url } : (PHOTOS as Record<string, number>)[a.photo_tag ?? ''] ?? null,
           grad: null,
           likes: st.get(a.id)?.likes ?? 0,
+          dislikes: st.get(a.id)?.dislikes ?? 0,
+          views: st.get(a.id)?.views ?? 0,
           comments: st.get(a.id)?.comments ?? 0,
           summary: a.summary,
           essential: a.essential,
