@@ -4,3 +4,7 @@ node_modules
 !.env.example
 .DS_Store
 dist
+# Graphify : seuls la carte et son résumé sont gardés dans le dépôt
+graphify-out/*
+!graphify-out/graph.json
+!graphify-out/GRAPH_REPORT.md

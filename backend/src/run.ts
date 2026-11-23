@@ -17,7 +17,7 @@ import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
 import { findPhoto, pexelsOn } from './pexels.js';
-import { AiStopped, budget, model, checkCard, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
+import { AiStopped, budget, model, checkCard, minorIssue, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 import { sendTopicAlerts } from './alerts.js';
@@ -193,7 +193,7 @@ async function edition() {
         return { text: f.text, source: r.source, url: r.link };
       });
       const photo = pexelsOn() ? await findPhoto(card.photo_query).catch((e) => { log(`   photo introuvable (${e instanceof Error ? e.message : e})`); return null; }) : null;
-      const publish = AUTO_PUBLISH && (issues.length === 0 || cfg.publishFlagged()) && s.importance >= cfg.publishMinImportance();
+      const publish = AUTO_PUBLISH && (issues.every(minorIssue) || cfg.publishFlagged()) && s.importance >= cfg.publishMinImportance();
       await q(
         `insert into articles (edition_date, rubric_id, status, rank, importance, essential, title, key_sentence, facts, summary,
                                photo_tag, raw_item_ids, review_notes, model, published_at, photo_url, photo_credit, sensitive)

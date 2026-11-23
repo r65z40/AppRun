@@ -239,6 +239,9 @@ export function checkCard(c: CardOut, items: Item[]): string[] {
   return [...new Set(issues)];
 }
 
+/** Alerte simple (longueur, ponctuation, gras) : la carte reste publiable, ce n'est qu'un avertissement. */
+export const minorIssue = (i: string) => /trop long|ponctuation|en gras/.test(i);
+
 const norm = (s: string) => s.toLowerCase().replace(/<\/?b>/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, Math.round(v)));
 
