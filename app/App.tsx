@@ -16,6 +16,7 @@ import { Feed } from './src/Feed';
 import { SummarySheet, CommentsSheet } from './src/Sheets';
 import { Bravo, End, Onboarding, Settings, Splash, Toast, Welcome, type OnbResult, type Prefs } from './src/Screens';
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
+import { syncWidget } from './src/headline';
 import { loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, type AppMessage } from './src/remote';
 import { Account } from './src/Account';
 import { Premium } from './src/Premium';
@@ -100,6 +101,8 @@ function Main() {
     const sub = AppState.addEventListener('change', (s) => s === 'active' && refresh());
     return () => { clearInterval(t); sub.remove(); };
   }, []);
+  // Widget de l'écran d'accueil : l'info principale du jour, remise à jour à chaque édition chargée.
+  useEffect(() => { if (loaded) syncWidget(); }, [loaded, edVer]);
   const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded, edVer]);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [p, setP] = useState<Prefs>({ active: [...RULES.default_rubrics], quota: RULES.default_quota, sound: true, haptic: true, parallax: true, premium: false, time: NOTIF.default_time, adsPersonalized: false });
