@@ -166,6 +166,7 @@ export function demoApi(): Api {
     sources: () => wait(sources),
     async deleteSource(id) { sources = sources.filter((x) => x.id !== id); },
     aiSpend: () => wait({ today: 1.84, month: 37.5 }),
+    dispatchStatus: () => wait({ cron: true, token: false, last: null }),
     rubrics: () => wait((rubricHints ??= Object.entries(RUBRICS).map(([id, name]) => ({ id, name, ai_hint: null })))),
     async saveRubricHint(id, ai_hint) { rubricHints = (rubricHints ?? []).map((r) => (r.id === id ? { ...r, ai_hint: ai_hint.trim() || null } : r)); },
     async saveSource(s) { sources = s.id ? sources.map((x) => (x.id === s.id ? { ...x, ...s } : x)) : [...sources, { id: `s${Date.now()}`, name: '', url: '', rubric_hint: null, active: true, last_fetch_at: null, last_error: null, ...s }]; },

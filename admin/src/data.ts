@@ -109,6 +109,8 @@ export interface Api {
   rubrics(): Promise<RubricHint[]>;
   /** Dépense estimée de l'IA en dollars, aujourd'hui et ce mois-ci. */
   aiSpend(): Promise<{ today: number; month: number }>;
+  /** Relance automatique depuis Supabase : pg_cron présent, jeton GitHub saisi, dernière relance. */
+  dispatchStatus(): Promise<{ cron: boolean; token: boolean; last: string | null } | null>;
   saveRubricHint(id: string, ai_hint: string): Promise<void>;
   reports(): Promise<Report[]>;
   resolveReport(r: Report, hide: boolean): Promise<void>;
@@ -255,6 +257,7 @@ function supabaseApi(sb: SupabaseClient): Api {
     },
     async deleteSource(id) { ok(await sb.from('sources').delete().eq('id', id)); },
     async aiSpend() { const s = ok(await sb.rpc('ai_spend')) as { today: number; month: number }; return { today: Number(s.today), month: Number(s.month) }; },
+    async dispatchStatus() { const { data } = await sb.rpc('dispatch_status'); return (data as { cron: boolean; token: boolean; last: string | null } | null) ?? null; },
     rubrics: async () => sb.from('rubrics').select('id, name, ai_hint').order('position').then(ok<RubricHint[]>),
     async saveRubricHint(id, ai_hint) { ok(await sb.from('rubrics').update({ ai_hint: ai_hint.trim() || null }).eq('id', id)); },
     async saveSource(s) {

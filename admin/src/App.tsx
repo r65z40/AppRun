@@ -792,6 +792,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
           <section className="panel settings">
             <h2>Clés</h2>
             {st.Key({ k: "ANTHROPIC_API_KEY", label: "Clé Claude", help: "Pour choisir les sujets et écrire les cartes. Elle commence par sk-ant-.", link: ['https://console.anthropic.com/settings/keys', 'Créer une clé'] })}
+            <DispatchKey st={st} />
             {st.Key({ k: "UNSPLASH_ACCESS_KEY", label: "Clé Unsplash (photos)", help: "Facultatif. Une vraie photo libre de droits par article, créditée à son auteur ; sans clé, les photos d'ambiance de l'app. Collez l'« Access Key ».", link: ['https://unsplash.com/oauth/applications/new', 'Créer une clé gratuite'] })}
             {st.Key({ k: "PEXELS_API_KEY", label: "Clé Pexels (ancienne)", help: "Seulement si vous en avez déjà une : Pexels ne délivre plus de nouvelles clés. Utilisée si Unsplash ne trouve rien.", link: ['https://www.pexels.com/api/', 'Pexels'] })}
           </section>
@@ -799,6 +800,18 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
       ) : null}
       {tab === 'sources' ? <SourcesPage say={say} /> : null}
       {tab === 'history' ? <EnginePage /> : null}
+    </>
+  );
+}
+
+/* Relance automatique : GitHub saute ses passages programmés, la base les déclenche elle-même. */
+function DispatchKey({ st }: { st: ReturnType<typeof useSettings> }) {
+  const [d, setD] = useState<{ cron: boolean; token: boolean; last: string | null } | null>(null);
+  useEffect(() => { api.dispatchStatus().then(setD).catch(() => {}); }, [st.get('GITHUB_DISPATCH_KEY')]);
+  return (
+    <>
+      {st.Key({ k: 'GITHUB_DISPATCH_KEY', label: 'Jeton GitHub (relance automatique)', help: "Recommandé. GitHub saute souvent ses passages programmés : avec ce jeton, la base lance elle-même l'édition, les mises à jour et la Dernière minute à l'heure. Créez un jeton « Fine-grained », dépôt AppRun seulement, permission « Actions : Read and write », puis collez-le ici.", link: ['https://github.com/settings/personal-access-tokens/new', 'Créer le jeton'] })}
+      {d ? <p className="muted small">{!d.cron ? 'Relance automatique indisponible sur cette base (extension pg_cron absente).' : !d.token ? 'Relance automatique en attente du jeton.' : d.last ? `Relance automatique active · dernier lancement ${ago(d.last)}.` : 'Relance automatique active · premier lancement dans les 10 minutes.'}</p> : null}
     </>
   );
 }

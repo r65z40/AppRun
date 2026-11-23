@@ -33,7 +33,7 @@ VIDE=${DB/titre_test/titre_vide}
 psql "$VIDE" -v ON_ERROR_STOP=1 -q -f test/supabase-stub.sql
 DATABASE_URL="$VIDE" npx tsx src/install.ts
 DATABASE_URL="$VIDE" npx tsx src/install.ts
-psql "$VIDE" -tAc "select case when count(*) = 21 then 'OK  base vide installée toute seule (20 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
+psql "$VIDE" -tAc "select case when count(*) = 22 then 'OK  base vide installée toute seule (21 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
 psql "$VIDE" -tAc "select case when count(*) >= 10 then 'OK  sources de départ présentes' else 'ÉCHEC  sources absentes' end from sources"
 
 echo "--- Pilote automatique (réglage par défaut) : l'édition se publie seule"
@@ -72,6 +72,9 @@ DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/flash.ts --fixtures test/feeds >/dev/
 psql "$VIDE" -tAc "select case when summary like 'Budget du jour atteint : 1.20 \$ sur 1 \$%' and status = 'ok' then 'OK  budget du jour atteint : arrêt propre, sans ticket de panne' else 'ÉCHEC  budget : ' || coalesce(summary, '?') end from engine_runs where kind = 'flash' order by started_at desc limit 1"
 psql "$VIDE" -qc "delete from app_settings where key = 'AI_BUDGET_DAY'" -c "delete from engine_runs where stats->'ai'->>'input' = '200000'"
 psql "$VIDE" -tAc "select case when not has_function_privilege('anon', 'public.ai_spend()', 'execute') then 'OK  dépense de l''IA fermée au public' else 'ÉCHEC  ai_spend public' end"
+
+psql "$VIDE" -qc "select public.dispatch_workflow('flash.yml')"
+psql "$VIDE" -tAc "select case when not exists (select 1 from dispatch_log) and not has_function_privilege('anon', 'public.dispatch_workflow(text, jsonb)', 'execute') and not has_function_privilege('authenticated', 'public.dispatch_workflow(text, jsonb)', 'execute') then 'OK  relance automatique : rien sans jeton, réservée à la base' else 'ÉCHEC  relance automatique' end"
 
 echo "--- Rattrapages automatiques : une seule édition par jour"
 psql "$VIDE" -qc "delete from app_settings where key = 'ENGINE_PAUSED'"
