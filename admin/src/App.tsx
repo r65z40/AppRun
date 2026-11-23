@@ -239,7 +239,7 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
   const [auto, setAuto] = useState<boolean | null>(null);
   const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
   const blank = (): Article => ({
-    id: '', edition_date: date ?? today, rubric_id: 'france', status: 'draft', rank: 0, importance: 5, essential: false, title: '', key_sentence: '',
+    id: '', edition_date: date ?? today, rubric_id: 'france', status: 'draft', rank: 0, importance: 5, essential: false, sensitive: false, title: '', key_sentence: '',
     facts: [0, 1, 2].map(() => ({ text: '', source: '', url: '' })), summary: ['', '', ''], photo_tag: null, photo_url: null, review_notes: [], model: null, published_at: null, created_at: '',
   });
   const reload = useCallback(async (d = date) => {
@@ -339,6 +339,7 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
                 <div className="line">
                   <span className={`pill ${a.status}`}>{STATUS_LABEL[a.status]}</span>
                   {a.essential ? <span className="pill ess">Essentiel</span> : null}
+                  {a.sensitive ? <span className="pill">Sensible</span> : null}
                   <span className="muted small">importance {a.importance}/10</span>
                 </div>
                 <h3>{a.title}</h3>
@@ -388,7 +389,7 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
   const set = <K extends keyof Article>(k: K, v: Article[K]) => setD((x) => ({ ...x, [k]: v }));
   const setFact = (i: number, k: keyof Fact, v: string) => setD((x) => ({ ...x, facts: x.facts.map((f, j) => (j === i ? { ...f, [k]: v } : f)) }));
   const over = plain(d.title).length > LIMITS.title || d.key_sentence.length > LIMITS.key || d.facts.some((f) => plain(f.text).length > LIMITS.fact) || d.summary.some((s) => s.length > LIMITS.summary);
-  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, rubric_id: d.rubric_id, essential: d.essential, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
+  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, rubric_id: d.rubric_id, essential: d.essential, sensitive: d.sensitive, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     addEventListener('keydown', k);
@@ -402,6 +403,7 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
             <label>Rubrique<select value={d.rubric_id} onChange={(e) => set('rubric_id', e.target.value)}>{Object.entries(RUBRICS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
             <label>Importance<input type="number" min={1} max={10} value={d.importance} onChange={(e) => set('importance', Number(e.target.value))} /></label>
             <label className="check"><input type="checkbox" checked={d.essential} onChange={(e) => set('essential', e.target.checked)} /> Essentiel (pour tout le monde)</label>
+            <label className="check" title="Sujet triste ou choquant : il garde sa place selon son importance, mais n'est jamais poussé parce qu'il attire les clics, et aucune pub ne le suit."><input type="checkbox" checked={!!d.sensitive} onChange={(e) => set('sensitive', e.target.checked)} /> Sujet sensible (pas de mise en avant, pas de pub juste après)</label>
           </div>
           <label>Titre <Count v={d.title} max={LIMITS.title} /><input value={d.title} onChange={(e) => set('title', e.target.value)} /></label>
           <label>Phrase clé <Count v={d.key_sentence} max={LIMITS.key} /><textarea rows={2} value={d.key_sentence} onChange={(e) => set('key_sentence', e.target.value)} /></label>
@@ -762,7 +764,7 @@ function RunDetails({ r }: { r: EngineRun }) {
           <h3>Sujets retenus ({d.stories.length})</h3>
           {d.stories.map((s, i) => (
             <div key={i} className="story">
-              <div><b>{s.label}</b> <span className="muted small">· {RUBRICS[s.rubric] ?? s.rubric} · importance {s.importance}/10{s.essential ? ' · essentiel' : ''}</span></div>
+              <div><b>{s.label}</b> <span className="muted small">· {RUBRICS[s.rubric] ?? s.rubric} · importance {s.importance}/10{s.essential ? ' · essentiel' : ''}{s.sensitive ? ' · sensible' : ''}</span></div>
               <ul>{s.items.map((it, k) => <li key={k} className="muted small">{it.source} : {it.title}</li>)}</ul>
             </div>
           ))}

@@ -14,6 +14,8 @@ export type Article = {
   summary?: string[];
   /** Sujet majeur du jour (choisi par la rédaction). */
   essential?: boolean;
+  /** Sujet triste ou choquant : aucune pub juste après. */
+  sensitive?: boolean;
   /** « D'après … » : médias d'où viennent les faits. */
   media?: string;
   credit?: string;

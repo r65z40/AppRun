@@ -51,6 +51,7 @@ const Selection = z.object({
       item_numbers: z.array(z.number().int()).describe('Numéros des dépêches qui parlent de ce même sujet'),
       importance: z.number().int().describe('1 (anecdotique) à 10 (majeur pour tout le pays)'),
       essential: z.boolean().describe('Sujet que tout le monde doit connaître aujourd’hui'),
+      sensitive: z.boolean().describe('Sujet triste ou choquant : mort, attentat, accident grave, violence, drame humain'),
       label: z.string().describe('Le sujet en quelques mots, pour le journal du moteur'),
     }),
   ),
@@ -67,6 +68,7 @@ Règles :
 - Préfère les sujets confirmés par plusieurs médias. Une rumeur isolée n'est pas un sujet.
 - « essential » : au plus MAX_ESSENTIAL sujets, ceux qu'une personne bien informée doit absolument connaître aujourd'hui.
 - Au plus PER_RUBRIC sujets par rubrique, les plus importants d'abord.
+- « sensitive » : vrai pour un sujet triste ou choquant (mort, attentat, accident grave, violence, drame humain, maladie grave). Il ne change pas l'importance : il évite seulement que l'app pousse ce sujet parce qu'il attire les clics.
 
 Rubriques :
 ${Object.entries(RUBRICS).map(([k, v]) => `- ${k} : ${v}`).join('\n')}`;
@@ -202,7 +204,8 @@ function mockSelect(items: Item[], perRubric: number): Story[] {
   const byRub: Record<string, Story[]> = {};
   for (const i of items) {
     const r = guessRubric(i.title + ' ' + i.description);
-    (byRub[r] ??= []).push({ rubric: r, item_numbers: [i.n], importance: 5, essential: false, label: i.title.slice(0, 40) });
+    const sensitive = /\bmorts?\b|attentat|tué|décès|accident/i.test(i.title + ' ' + i.description);
+    (byRub[r] ??= []).push({ rubric: r, item_numbers: [i.n], importance: 5, essential: false, sensitive, label: i.title.slice(0, 40) });
   }
   const out = Object.values(byRub).flatMap((l) => l.slice(0, perRubric));
   out.slice(0, 2).forEach((s) => ((s.essential = true), (s.importance = 9)));
