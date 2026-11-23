@@ -10,6 +10,9 @@ export type Article = {
   photo: number | { uri: string } | null;
   grad: string[] | null;
   likes: number;
+  /** Dislikes et lecteurs qui ont vu l'info : les pouces se remplissent selon la part de lecteurs qui ont réagi. */
+  dislikes?: number;
+  views?: number;
   comments: number;
   summary?: string[];
   /** Sujet majeur du jour (choisi par la rédaction). */
@@ -64,4 +67,11 @@ export type Comment = {
   own?: boolean;
   /** L'auteur est abonné Premium. */
   premium?: boolean;
+  /** Badges de l'auteur (vides s'il les cache). */
+  badges?: Badge[];
 };
+
+/** Reconnaissance d'un lecteur (réglée dans le back office, Lecteurs > Reconnaissance). */
+export type Badge = { label: string; description: string; icon: string; color: string; kind: string };
+/** Fiche ouverte en touchant un pseudo. hidden : le lecteur cache ses badges. */
+export type ReaderCard = { pseudo: string | null; hidden: boolean; show?: boolean; since?: string; reads?: number; minutes_saved?: number; badges?: Badge[] };

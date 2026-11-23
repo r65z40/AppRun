@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import type { Comment } from './types';
+import type { Comment, ReaderCard } from './types';
 
 const URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -21,7 +21,7 @@ let linkEvent: LinkEvent = null;
 export const takeLinkEvent = () => { const e = linkEvent; linkEvent = null; return e; };
 
 type Session = { access: string; refresh: string; exp: number; uid: string; email: string };
-export type Me = { uid: string; email: string; pseudo: string | null; premium: boolean; premiumUntil: string | null; prefs: Record<string, unknown> };
+export type Me = { uid: string; email: string; pseudo: string | null; premium: boolean; premiumUntil: string | null; prefs: Record<string, unknown>; showBadges: boolean };
 /** Premium en cours : l'échéance est vérifiée ici aussi, sans attendre que le serveur l'éteigne. */
 export const isPremium = (m: Me | null) => !!m?.premium && (!m.premiumUntil || new Date(m.premiumUntil).getTime() > Date.now());
 
@@ -124,8 +124,8 @@ async function api<T = unknown>(path: string, init: { method?: string; body?: un
 
 async function loadMe() {
   if (!session) { me = null; return emit(); }
-  const rows = await api<{ pseudo: string | null; premium: boolean; premium_until?: string | null; prefs: Record<string, unknown> | null }[]>(`profiles?select=*&id=eq.${session.uid}`).catch(() => []);
-  me = { uid: session.uid, email: session.email, pseudo: rows[0]?.pseudo ?? null, premium: !!rows[0]?.premium, premiumUntil: rows[0]?.premium_until ?? null, prefs: rows[0]?.prefs ?? {} };
+  const rows = await api<{ pseudo: string | null; premium: boolean; premium_until?: string | null; prefs: Record<string, unknown> | null; show_badges?: boolean }[]>(`profiles?select=*&id=eq.${session.uid}`).catch(() => []);
+  me = { uid: session.uid, email: session.email, pseudo: rows[0]?.pseudo ?? null, premium: !!rows[0]?.premium, premiumUntil: rows[0]?.premium_until ?? null, prefs: rows[0]?.prefs ?? {}, showBadges: rows[0]?.show_badges !== false };
   emit();
 }
 
@@ -278,7 +278,7 @@ function ago(iso: string) {
   return h < 24 ? `il y a ${h} h` : `il y a ${Math.round(h / 24)} j`;
 }
 
-type Row = { id: string; text: string; pseudo: string; created_at: string; likes: number; dislikes: number; mine: number; own: boolean; premium?: boolean };
+type Row = { id: string; text: string; pseudo: string; created_at: string; likes: number; dislikes: number; mine: number; own: boolean; premium?: boolean; badges?: Comment['badges'] };
 export async function loadComments(articleId: string): Promise<Comment[]> {
   const rows = await api<Row[]>('rpc/article_comments', { method: 'POST', body: { aid: articleId } });
   // L'app ajoute elle-même le vote du lecteur aux compteurs : on le retire des totaux reçus.
@@ -294,7 +294,19 @@ export async function loadComments(articleId: string): Promise<Comment[]> {
     order: i,
     own: r.own,
     premium: !!r.premium,
+    badges: r.badges,
   }));
+}
+
+/** Fiche d'un lecteur (badges, infos lues, temps gagné), depuis un de ses commentaires ; sans commentaire : la mienne. */
+export async function readerCard(commentId?: string): Promise<ReaderCard | null> {
+  return api<ReaderCard | null>('rpc/reader_card', { method: 'POST', body: commentId ? { cid: commentId } : {} }).catch(() => null);
+}
+
+/** Montrer ou cacher mes badges aux autres lecteurs. */
+export async function setShowBadges(show: boolean) {
+  await api(`profiles?id=eq.${session!.uid}`, { method: 'PATCH', body: { show_badges: show } });
+  if (me) { me = { ...me, showBadges: show }; emit(); }
 }
 
 export async function postComment(articleId: string, text: string) {

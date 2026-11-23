@@ -61,6 +61,8 @@ export const RUBRICS: Rubric[] = [
      "#0b0a24"
     ],
     "likes": 942,
+    "dislikes": 75,
+    "views": 1507,
     "comments": 128,
     "summary": [
      "Les trains de nuit entre Paris et l'Italie avaient été suspendus fin 2020, faute de voyageurs pendant la crise sanitaire et à cause du coût de rénovation des voitures-couchettes. Depuis, plusieurs liaisons de nuit ont rouvert en Europe, portées par la demande de voyages moins émetteurs que l'avion.",
@@ -98,6 +100,8 @@ export const RUBRICS: Rubric[] = [
      "#0b0a24"
     ],
     "likes": 611,
+    "dislikes": 49,
+    "views": 978,
     "comments": 86
    },
    {
@@ -130,6 +134,8 @@ export const RUBRICS: Rubric[] = [
      "#141a3e"
     ],
     "likes": 388,
+    "dislikes": 31,
+    "views": 621,
     "comments": 41
    }
   ]
@@ -168,6 +174,8 @@ export const RUBRICS: Rubric[] = [
      "#08142e"
     ],
     "likes": 504,
+    "dislikes": 40,
+    "views": 806,
     "comments": 57
    },
    {
@@ -200,6 +208,8 @@ export const RUBRICS: Rubric[] = [
      "#0a0d26"
     ],
     "likes": 355,
+    "dislikes": 28,
+    "views": 568,
     "comments": 23
    }
   ]
@@ -238,6 +248,8 @@ export const RUBRICS: Rubric[] = [
      "#0b0a24"
     ],
     "likes": 520,
+    "dislikes": 42,
+    "views": 832,
     "comments": 94
    },
    {
@@ -270,6 +282,8 @@ export const RUBRICS: Rubric[] = [
      "#100a26"
     ],
     "likes": 468,
+    "dislikes": 37,
+    "views": 749,
     "comments": 37
    },
    {
@@ -302,6 +316,8 @@ export const RUBRICS: Rubric[] = [
      "#0b0a24"
     ],
     "likes": 301,
+    "dislikes": 24,
+    "views": 482,
     "comments": 52
    }
   ]
@@ -340,6 +356,8 @@ export const RUBRICS: Rubric[] = [
      "#06071a"
     ],
     "likes": 577,
+    "dislikes": 46,
+    "views": 923,
     "comments": 44
    },
    {
@@ -372,6 +390,8 @@ export const RUBRICS: Rubric[] = [
      "#0a0d26"
     ],
     "likes": 432,
+    "dislikes": 35,
+    "views": 691,
     "comments": 66
    }
   ]
@@ -410,6 +430,8 @@ export const RUBRICS: Rubric[] = [
      "#120a1e"
     ],
     "likes": 298,
+    "dislikes": 24,
+    "views": 477,
     "comments": 29
    },
    {
@@ -442,6 +464,8 @@ export const RUBRICS: Rubric[] = [
      "#061430"
     ],
     "likes": 812,
+    "dislikes": 65,
+    "views": 1299,
     "comments": 48
    },
    {
@@ -474,6 +498,8 @@ export const RUBRICS: Rubric[] = [
      "#08140e"
     ],
     "likes": 640,
+    "dislikes": 51,
+    "views": 1024,
     "comments": 112
    }
   ]
@@ -512,6 +538,8 @@ export const RUBRICS: Rubric[] = [
      "#120a22"
     ],
     "likes": 401,
+    "dislikes": 32,
+    "views": 642,
     "comments": 33
    },
    {
@@ -544,6 +572,8 @@ export const RUBRICS: Rubric[] = [
      "#0b0618"
     ],
     "likes": 530,
+    "dislikes": 42,
+    "views": 848,
     "comments": 61
    }
   ]
