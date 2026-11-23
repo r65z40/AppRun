@@ -66,6 +66,22 @@ export const RULES = {
   live_refresh_min: 3,
 };
 
+/** Carte image créée quand un lecteur partage une info (Personnalisation > Carte de partage). */
+export const SHARE = {
+  /** Coupé : le bouton Partager envoie seulement le titre et le lien, sans image. */
+  enabled: true,
+  /** story = 9:16 (Stories Instagram, statut WhatsApp), portrait = 4:5 (fil Instagram), square = carré. */
+  format: 'story' as 'story' | 'portrait' | 'square',
+  /** Photo de l'info en fond (sinon le dégradé de l'app). */
+  photo: true,
+  /** Nombre de faits repris sous la phrase clé (0 à 3). */
+  facts: 2,
+  /** Phrase en bas de la carte ({nom} = nom de l'app). */
+  tagline: "Toute l'actu qui compte, 80 % plus vite.",
+  /** Adresse affichée sur la carte et jointe au message ; vide = le site de l'app. */
+  link: '',
+};
+
 /** Rappels de temps en temps : créer un compte (sans compte) ou passer Premium (compte gratuit). */
 export const NUDGES = {
   account: { enabled: true, every_days: 3, after_cards: 4, text: 'Votre compte gratuit : une édition qui apprend de vos likes et dislikes, sur tous vos appareils.' },
@@ -90,7 +106,7 @@ const CACHE = 'titre.config';
 const isHex = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 const str = (v: unknown, max = 400) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
 
-const DEF = { recog: { ...RECOG }, brand: { ...BRAND }, texts: { ...TEXTS }, notif: { ...NOTIF }, rules: JSON.parse(JSON.stringify(RULES)) as typeof RULES, nudges: JSON.parse(JSON.stringify(NUDGES)) as typeof NUDGES };
+const DEF = { share: { ...SHARE }, recog: { ...RECOG }, brand: { ...BRAND }, texts: { ...TEXTS }, notif: { ...NOTIF }, rules: JSON.parse(JSON.stringify(RULES)) as typeof RULES, nudges: JSON.parse(JSON.stringify(NUDGES)) as typeof NUDGES };
 const int = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : null);
 const strs = (v: unknown, max: number, len = 120) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim().slice(0, len)).slice(0, max) : []);
 
@@ -103,6 +119,7 @@ function apply(c: Config) {
   const logo = str(b.logo, 500);
   BRAND.logo = logo && /^https:\/\//.test(logo) ? logo : '';
   if (typeof b.font === 'string' && FONTS[b.font]) BRAND.font = b.font;
+  applyShare((b.share ?? {}) as Record<string, unknown>);
   const col = (b.colors ?? {}) as Record<string, unknown>;
   const next = { ...BASE } as BaseColors;
   (Object.keys(BASE) as (keyof BaseColors)[]).forEach((k) => { if (isHex(col[k])) next[k] = col[k] as string; });
@@ -121,6 +138,16 @@ function apply(c: Config) {
   if (mp !== null) RECOG.minutes_per_article = mp;
   const mi = int(g.max_icons, 0, 6); if (mi !== null) RECOG.max_icons = mi;
   if (typeof g.color_pseudo === 'boolean') RECOG.color_pseudo = g.color_pseudo;
+}
+
+function applyShare(x: Record<string, unknown>) {
+  Object.assign(SHARE, DEF.share);
+  if (typeof x.enabled === 'boolean') SHARE.enabled = x.enabled;
+  if (x.format === 'story' || x.format === 'portrait' || x.format === 'square') SHARE.format = x.format;
+  if (typeof x.photo === 'boolean') SHARE.photo = x.photo;
+  const n = int(x.facts, 0, 3); if (n !== null) SHARE.facts = n;
+  const t = str(x.tagline, 90); if (t) SHARE.tagline = t;
+  const l = str(x.link, 120); if (l) SHARE.link = l;
 }
 
 function applyRules(r: Record<string, unknown>, g: Record<string, unknown>) {

@@ -213,3 +213,20 @@ label.btn { cursor: pointer; }
 .chip { border: 1px solid var(--line); background: none; border-radius: 999px; padding: 7px 14px; cursor: pointer; color: var(--text2); font-weight: 600; }
 .chip.on { background: rgba(123,92,255,.22); border-color: var(--violet); color: #fff; }
 .login-links { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+/* Carte de partage (Personnalisation) : aperçu à l'échelle de l'image envoyée */
+.share-prev { width: 220px; border-radius: 6px; overflow: hidden; padding: 16px; display: flex; flex-direction: column; color: #fff; background-size: cover; background-position: center; box-shadow: 0 10px 30px rgba(0,0,0,.35); transition: height .2s; }
+.share-head { display: flex; align-items: center; gap: 6px; font-size: 10px; }
+.share-head img, .share-head .mini-icon.sm { width: 18px; height: 18px; border-radius: 5px; object-fit: cover; }
+.share-head b { font-size: 11px; font-weight: 800; letter-spacing: .3px; }
+.share-head span { margin-left: auto; font-size: 7px; letter-spacing: 1px; opacity: .75; }
+.share-title { font-weight: 800; line-height: 1.02; letter-spacing: -.3px; }
+.share-key { font-size: 9.5px; line-height: 1.4; opacity: .86; margin-top: 6px; }
+.share-facts { margin-top: 8px; font-size: 8.5px; line-height: 1.35; }
+.share-facts div { border-top: 1px solid rgba(255,255,255,.16); padding: 5px 0; }
+.share-facts div:last-child { border-bottom: 1px solid rgba(255,255,255,.16); }
+.share-facts small { display: block; font-size: 6.5px; opacity: .6; margin-top: 2px; }
+.share-bar { display: block; width: 27px; height: 2px; border-radius: 2px; margin-top: 12px; }
+.share-foot { display: flex; align-items: flex-end; gap: 8px; margin-top: 6px; font-size: 8px; line-height: 1.3; }
+.share-foot span { flex: 1; opacity: .72; font-weight: 600; }
+.share-foot b { font-weight: 600; opacity: .9; }

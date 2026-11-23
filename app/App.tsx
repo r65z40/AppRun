@@ -20,6 +20,7 @@ import { syncWidget } from './src/headline';
 import { loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, type AppMessage } from './src/remote';
 import { Account } from './src/Account';
 import { Premium } from './src/Premium';
+import { ShareCardHost } from './src/ShareCard';
 import { storeLogin } from './src/purchases';
 import * as acc from './src/account';
 import { loadMyEdition, resetTaste, signal, type Pick, type Signal } from './src/algo';
@@ -684,6 +685,7 @@ function Main() {
       ) : null}
       {phase === 'splash' ? <Splash onDone={() => setSplashDone(true)} /> : null}
 
+      <ShareCardHost />
       <Toast msg={toast} top={insets.top + 96} />
       {newBadges[0] ? (
         <BadgeToast key={newBadges[0].label} badge={newBadges[0]} top={insets.top + 8}
