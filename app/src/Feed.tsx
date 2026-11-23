@@ -28,6 +28,7 @@ import { flashTime } from './dates';
 import { EMOJIS, PHOTOS } from './content';
 import { Icon, Press, Rich } from './ui';
 import { feel } from './feel';
+import { adHit } from './ads';
 
 const EXT = 140; // les photos débordent sur les côtés pour se fondre entre rubriques
 const MAX_COLS = 14; // Mon édition + Dernière minute + 12 rubriques
@@ -245,7 +246,7 @@ function ColumnStack({ y, W, H, ci, children }: { y: SharedValue<number>; W: num
 function Background({ card, k, ci, W, H, colX, y, tiltX, tiltY, parallax }: {
   card: Card; k: number; ci: number; W: number; H: number; colX: SharedValue<number>; y: SharedValue<number>; tiltX: SharedValue<number>; tiltY: SharedValue<number>; parallax: boolean;
 }) {
-  const photo = isAd(card) ? PHOTOS.lampe : isFlash(card) ? null : card.photo;
+  const photo = isAd(card) ? (card.c.image_url ? { uri: card.c.image_url } : PHOTOS.lampe) : isFlash(card) ? null : card.photo;
   const grad = isArticle(card) ? card.grad : isFlash(card) ? FLASH_GRAD : null;
   const a = useAnimatedStyle(() => {
     const ox = ci * W + colX.value;
@@ -320,11 +321,18 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
     return (
       <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
         <Animated.View style={[styles.content, pad, depth]}>
-          <Text style={styles.kicker}>SPONSORISÉ · MAISON LUMEN</Text>
-          <Text style={styles.title}>LIRE LE SOIR, SANS FATIGUER VOS YEUX</Text>
-          <Text style={styles.key}>Une lampe de lecture rechargeable à lumière chaude, pensée pour les liseuses et les livres papier.</Text>
-          <Press onPress={() => api.onToast("Ouvre le site de l'annonceur")} style={styles.adCta}>
-            <Text style={{ color: '#fff', fontFamily: F.semi, fontSize: 15 }}>Découvrir l'offre</Text>
+          <Text style={styles.kicker}>SPONSORISÉ · {card.c.advertiser.toUpperCase()}</Text>
+          <Text style={styles.title}>{card.c.title.toUpperCase()}</Text>
+          {card.c.body ? <Text style={styles.key}>{card.c.body}</Text> : null}
+          <Press
+            onPress={() => {
+              if (!card.c.url) return api.onToast("Ouvre le site de l'annonceur");
+              adHit(card.id, card.c, true);
+              Linking.openURL(card.c.url).catch(() => api.onToast('Lien indisponible'));
+            }}
+            style={styles.adCta}
+          >
+            <Text style={{ color: '#fff', fontFamily: F.semi, fontSize: 15 }}>{card.c.cta}</Text>
           </Press>
         </Animated.View>
       </View>

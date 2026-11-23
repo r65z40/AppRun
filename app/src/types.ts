@@ -25,7 +25,9 @@ export type Article = {
 
 export type Rubric = { id: string; name: string; items: Article[] };
 
-export type Ad = { ad: true; id: string };
+/** Une pub d'une campagne en cours (back office > Publicité). */
+export type AdCreative = { id: string; advertiser: string; title: string; body: string; cta: string; url: string; image_url: string | null; rubrics: string[]; weight: number };
+export type Ad = { ad: true; id: string; c: AdCreative };
 /** Dernière minute : une info majeure, datée à la minute. */
 export type Flash = { flash: true; id: string; title: string; sentence: string; at: string; sources: { source: string; url: string }[] };
 export type Card = Article | Ad | Flash;
