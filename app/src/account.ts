@@ -254,7 +254,13 @@ export async function voteComment(commentId: string, v: -1 | 0 | 1) {
 }
 
 export async function reportComment(commentId: string) {
-  await api('reports?on_conflict=comment_id,user_id', { method: 'POST', body: { comment_id: commentId, user_id: session!.uid }, prefer: 'resolution=ignore-duplicates' });
+  try {
+    await api('reports?on_conflict=comment_id,user_id', { method: 'POST', body: { comment_id: commentId, user_id: session!.uid }, prefer: 'resolution=ignore-duplicates' });
+  } catch (e) {
+    // Seul cas refusé par la base : compte suspendu ou banni.
+    if (e instanceof UserError && e.message.includes('row-level security')) throw new UserError('Votre compte ne peut pas signaler pour le moment.');
+    throw e;
+  }
 }
 
 /** Ne plus voir les commentaires de l'auteur de ce commentaire. */
