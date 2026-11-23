@@ -1,5 +1,5 @@
 // Données fictives : le back office fonctionne sans Supabase pour qu'on puisse l'essayer.
-import { RUBRICS, type Api, type AppMessage, type Article, type AuditEntry, type Dashboard, type Comment, type EngineRun, type Setting, type Edition, type Flash, type Profile, type Report, type RubricHint, type Source } from './data';
+import { RUBRICS, type Api, type AppMessage, type Article, type AuditEntry, type Dashboard, type EngineStatus, type Comment, type EngineRun, type Setting, type Edition, type Flash, type Profile, type Report, type RubricHint, type Source } from './data';
 
 const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 const yday = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date(Date.now() - 86400e3));
@@ -191,6 +191,15 @@ export function demoApi(): Api {
       reports_open: reports.filter((r) => !r.resolved).length, banned: readers.filter((p) => p.banned).length, ai_today: 1.84, ai_7: 12.9, ai_30: 51.3,
       last_runs: [{ kind: 'edition', status: 'ok', started_at: at(15 * 60), finished_at: at(15 * 60 - 6), summary: runs[2].summary }, { kind: 'flash', status: 'error', started_at: at(9), finished_at: at(8), summary: 'Échec : clé Claude refusée (exemple de panne)' }],
     }),
+    engineStatus: () => {
+      const v = settings.find((x) => x.key === 'ENGINE_PAUSED');
+      const paused = !!v && (v.value === '1' || new Date(v.value).getTime() > Date.now());
+      return wait<EngineStatus>({
+        paused, paused_until: paused && v!.value !== '1' ? v!.value : null, paused_at: paused ? v!.updated_at : null, paused_by: paused ? 'vous@exemple.fr' : null,
+        ai_off: settings.some((x) => x.key === 'AI_OFF' && x.value === '1'), articles_today: 24, flashes_today: 2, last_published: at(12),
+        failing_sources: [{ name: '20 Minutes', error: 'HTTP 403 (le média bloque les robots)', fails: 3 }],
+      });
+    },
     uploadPhoto: async (file) => URL.createObjectURL(file),
     moderationCost: () => wait({ judged: 64, input: 182_400, output: 21_300, cost: 1.16 }),
     topArticles: () => wait(articles.slice(0, 4).map((a, i) => ({ title: a.title, rubric_id: a.rubric_id, likes: 412 - i * 87, comments: 38 - i * 9 }))),

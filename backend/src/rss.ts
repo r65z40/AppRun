@@ -55,6 +55,8 @@ function toDate(s: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
+
 export type Fetched = { items: FeedItem[] | null; etag: string | null; lastModified: string | null };
 
 /** items = null : le flux n'a pas changé depuis le dernier passage (réponse 304, rien à relire). */
@@ -62,9 +64,15 @@ export async function fetchFeed(url: string, timeoutMs = 15000, since: { etag?: 
   const headers: Record<string, string> = { 'user-agent': 'TITRE-bot/0.2 (agrégateur de titres)', accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' };
   if (since.etag) headers['if-none-match'] = since.etag;
   if (since.lastModified) headers['if-modified-since'] = since.lastModified;
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  let res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  // Certains médias (20 Minutes…) refusent les robots inconnus (403) ou saturent un instant (429, 5xx) :
+  // un second essai, deux secondes plus tard, avec l'identité d'un navigateur ordinaire.
+  if (res.status === 403 || res.status === 429 || res.status >= 500) {
+    await new Promise((r) => setTimeout(r, 2000));
+    res = await fetch(url, { headers: { ...headers, 'user-agent': BROWSER_UA, 'accept-language': 'fr-FR,fr;q=0.9' }, signal: AbortSignal.timeout(timeoutMs) });
+  }
   if (res.status === 304) return { items: null, etag: since.etag ?? null, lastModified: since.lastModified ?? null };
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw new Error(res.status === 403 ? 'HTTP 403 (le média bloque les robots)' : res.status >= 500 ? `HTTP ${res.status} (site du média indisponible)` : `HTTP ${res.status}`);
   const body = await res.text();
   const items = parseFeed(body);
   if (!items.length && /<html/i.test(body.slice(0, 500))) throw new Error("page web au lieu d'un flux RSS (adresse à corriger)");

@@ -7,7 +7,7 @@ import { FollowPage } from './Follow';
 import { BadgesPage } from './Badges';
 import { ReferralPage } from './Referral';
 import { BrandPage } from './Brand';
-import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type EngineStatus, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
 type Page = 'dashboard' | 'readers' | 'algo' | 'follow' | 'badges' | 'referral' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings' | 'brand';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
@@ -100,6 +100,7 @@ export default function App() {
         </div>
       </aside>
       <main className="main">
+        <EngineBanner page={page} go={setPage} say={say} admin={me.role === 'admin'} />
         {!allowed(me.role, page) ? <ModerationPage say={say} /> : null}
         {page === 'dashboard' && allowed(me.role, page) && <DashboardPage go={setPage} />}
         {page === 'edition' && allowed(me.role, page) && <EditionPage say={say} go={setPage} />}
@@ -122,6 +123,47 @@ export default function App() {
       {toast ? <div className="toast">{toast}</div> : null}
     </div>
   );
+}
+
+const when = (iso: string) => new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+/** Bandeau en haut de chaque page : moteur en pause, IA coupée, ou rien de publié aujourd'hui. Impossible à manquer. */
+function EngineBanner({ page, go, say, admin }: { page: Page; go: (p: Page) => void; say: (m: string) => void; admin: boolean }) {
+  const [s, setS] = useState<EngineStatus | null>(null);
+  const load = useCallback(() => { api.engineStatus().then(setS).catch(() => setS(null)); }, []);
+  useEffect(load, [page]);
+  useEffect(() => {
+    const t = setInterval(load, 60000);
+    window.addEventListener('titre-settings', load);
+    return () => { clearInterval(t); window.removeEventListener('titre-settings', load); };
+  }, [load]);
+  if (!s) return null;
+  const fix = (k: string, msg: string) => api.setSetting(k, '').then(() => { say(msg); load(); window.dispatchEvent(new Event('titre-settings')); }).catch((e) => say(e instanceof Error ? e.message : 'Impossible'));
+  const parisHour = Number(new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
+  if (s.paused)
+    return (
+      <div className="engine-banner off" role="alert">
+        <div>
+          <b>Moteur en pause : aucune nouvelle info n'est publiée</b>
+          <span className="small">{s.paused_at ? `Depuis ${when(s.paused_at)}${s.paused_by ? ` (par ${s.paused_by})` : ''}. ` : ''}{s.paused_until ? `Reprise automatique ${when(s.paused_until)}.` : 'Pas de reprise automatique.'}</span>
+        </div>
+        {admin ? <button className="btn primary" onClick={() => fix('ENGINE_PAUSED', 'Moteur relancé : prochain passage dans 10 minutes au plus')}>Relancer le moteur</button> : <span className="small">Un administrateur peut le relancer dans IA &gt; Pilotage.</span>}
+      </div>
+    );
+  if (s.ai_off)
+    return (
+      <div className="engine-banner off" role="alert">
+        <div><b>IA coupée : aucune nouvelle info n'est publiée</b><span className="small">Ce qui est en ligne reste visible. Interrupteur « Couper l'IA » dans IA &gt; Pilotage.</span></div>
+        {admin ? <button className="btn primary" onClick={() => fix('AI_OFF', 'IA rallumée')}>Rallumer l'IA</button> : null}
+      </div>
+    );
+  if (parisHour >= 10 && s.articles_today + s.flashes_today === 0)
+    return (
+      <div className="engine-banner warn-bar" role="alert">
+        <div><b>Aucune info publiée aujourd'hui</b><span className="small">{s.last_published ? `Dernière publication ${when(s.last_published)}. ` : ''}Le journal du moteur explique pourquoi.</span></div>
+        {page !== 'ai' ? <button className="btn" onClick={() => go('ai')}>Voir le journal</button> : null}
+      </div>
+    );
+  return null;
 }
 
 function Glyph() {
@@ -240,6 +282,7 @@ function engineAlert(r: Dashboard['last_runs'][number] | undefined, kind: 'editi
   if (!r) return 'Aucun passage enregistré pour l’instant.';
   const h = (Date.now() - new Date(r.started_at).getTime()) / 3600e3;
   if (r.status === 'error') return `Le dernier passage a planté : ${r.summary ?? 'voir IA > Historique'}`;
+  if (r.summary?.startsWith('Moteur en pause') || r.summary?.startsWith('IA coupée')) return r.summary;
   if (r.status === 'running' && h > 0.75) return 'Le passage semble bloqué depuis plus de 45 minutes.';
   const parisHour = Number(new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric' }).format(new Date()));
   if (kind === 'edition' && h > 26) return `Aucune édition depuis ${Math.round(h)} heures.`;
@@ -252,8 +295,9 @@ function DashboardPage({ go }: { go: (p: Page) => void }) {
   const [mod, setMod] = useState<ModerationCost | null>(null);
   const [prem, setPrem] = useState<PremiumStats | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [eng, setEng] = useState<EngineStatus | null>(null);
   useEffect(() => {
-    const load = () => Promise.all([api.dashboard().then(setD), api.topArticles().then(setTop), api.moderationCost().then(setMod), premiumApi.stats().then(setPrem).catch(() => null)]).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    const load = () => Promise.all([api.engineStatus().then(setEng).catch(() => null), api.dashboard().then(setD), api.topArticles().then(setTop), api.moderationCost().then(setMod), premiumApi.stats().then(setPrem).catch(() => null)]).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
     load();
     const t = setInterval(load, 60000);
     return () => clearInterval(t);
@@ -276,6 +320,12 @@ function DashboardPage({ go }: { go: (p: Page) => void }) {
           </button>
         );
       })}
+      {eng ? (
+        <button className={`status-bar ${eng.failing_sources.length ? 'off' : ''}`} style={{ width: '100%', textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit' }} onClick={() => go('ai')}>
+          <b>Aujourd'hui : {eng.articles_today} info{eng.articles_today > 1 ? 's' : ''} publiée{eng.articles_today > 1 ? 's' : ''} · {eng.flashes_today} en Dernière minute</b>
+          <span className="muted small">{eng.failing_sources.length ? `Sources en échec : ${eng.failing_sources.map((x) => `${x.name} (${x.error ?? 'erreur'})`).join(', ')}. Les autres médias suffisent ; détail dans IA > Sources.` : 'Toutes les sources répondent.'}</span>
+        </button>
+      ) : null}
       <h2>Lecteurs</h2>
       <div className="tiles">
         <Tile label="Actifs aujourd'hui" value={int(d.active_today)} />
@@ -598,7 +648,7 @@ function useSettings(say: (m: string) => void, enabled = true) {
   useEffect(() => { if (enabled) load(); }, []);
   const get = (k: string) => list?.find((s) => s.key === k)?.value ?? '';
   const save = async (k: string, v: string, msg = 'Réglage enregistré') => {
-    try { await api.setSetting(k, v); setDraft((d) => { const n = { ...d }; delete n[k]; return n; }); await load(); say(msg); }
+    try { await api.setSetting(k, v); setDraft((d) => { const n = { ...d }; delete n[k]; return n; }); await load(); say(msg); window.dispatchEvent(new Event('titre-settings')); }
     catch (e) { say(e instanceof Error ? e.message : 'Enregistrement impossible'); }
   };
   const Key = ({ k, label, help, link }: { k: string; label: string; help: string; link: [string, string] }) => (
@@ -617,10 +667,10 @@ function useSettings(say: (m: string) => void, enabled = true) {
   const Toggle = ({ k, label, help, def }: { k: string; label: string; help: string; def: boolean }) => {
     const on = get(k) ? get(k) === '1' : def;
     return (
-      <label className="setting toggle">
+      <div className="setting toggle">
         <div><b>{label}</b><p className="muted small">{help}</p></div>
-        <input type="checkbox" checked={on} onChange={(e) => save(k, e.target.checked ? '1' : '0')} />
-      </label>
+        <input type="checkbox" checked={on} aria-label={label} onChange={(e) => save(k, e.target.checked ? '1' : '0')} />
+      </div>
     );
   };
   const Pick = ({ k, label, help, def, options }: { k: string; label: string; help: string; def: string; options: [string, string][] }) => (
@@ -646,7 +696,7 @@ function useSettings(say: (m: string) => void, enabled = true) {
       </div>
     );
   };
-  return { list, get, Key, Toggle, Pick, Text, nums };
+  return { list, get, save, Key, Toggle, Pick, Text, nums };
 }
 
 function SettingsPage({ say }: { say: (m: string) => void }) {
@@ -688,7 +738,8 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
     await api.runEngine!((s) => setSteps((l) => [...(l ?? []), s]));
   };
   const get = st.get;
-  const paused = get('ENGINE_PAUSED') === '1';
+  const pauseV = get('ENGINE_PAUSED');
+  const paused = pauseV === '1' || (!!pauseV && pauseV !== '0' && new Date(pauseV).getTime() > Date.now());
   const auto = get('AUTO_PUBLISH') ? get('AUTO_PUBLISH') === '1' : true;
   const noKey = admin && st.list && !get('ANTHROPIC_API_KEY');
   const aiOff = get('AI_OFF') === '1';
@@ -736,7 +787,25 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
           </section>
           <section className="panel settings">
             <h2>Pilotage</h2>
-            {st.Toggle({ k: 'ENGINE_PAUSED', label: 'Mettre le moteur en pause', help: "Arrêt d'urgence : plus aucune édition ni Dernière minute. Ce qui est déjà en ligne reste visible.", def: false })}
+            <div className="setting">
+              <div>
+                <b>Pause du moteur</b> {paused ? <span className="pill rejected">En pause{pauseV !== '1' ? ` jusqu'à ${when(pauseV)}` : ''}</span> : <span className="pill published">En marche</span>}
+                <p className="muted small">Arrêt d'urgence : plus aucune édition ni Dernière minute tant que la pause dure. Ce qui est déjà en ligne reste visible. Une pause s'affiche en rouge en haut de toutes les pages.</p>
+              </div>
+              <select aria-label="Pause du moteur" value={paused ? (pauseV === '1' ? 'forever' : 'until') : ''} onChange={(e) => {
+                const v = e.target.value;
+                if (!v) return st.save('ENGINE_PAUSED', '', 'Moteur relancé');
+                if (v === 'until') return;
+                const label = v === 'forever' ? "jusqu'à ce que vous le relanciez" : `pendant ${v} h`;
+                if (!window.confirm(`Mettre le moteur en pause ${label} ? Plus aucune info ne sera publiée pendant ce temps.`)) return;
+                st.save('ENGINE_PAUSED', v === 'forever' ? '1' : new Date(Date.now() + Number(v) * 3600e3).toISOString(), 'Moteur en pause');
+              }}>
+                <option value="">En marche</option>
+                {paused && pauseV !== '1' ? <option value="until">En pause jusqu'à {when(pauseV)}</option> : null}
+                {['1', '3', '6', '12', '24'].map((h) => <option key={h} value={h}>Pause {h} h</option>)}
+                <option value="forever">Pause jusqu'à ce que je relance</option>
+              </select>
+            </div>
             {st.Toggle({ k: 'AUTO_PUBLISH', label: 'Pilote automatique', help: "L'IA publie l'édition seule chaque matin. Coupé : les cartes arrivent en brouillon et vous les publiez dans Articles.", def: true })}
           </section>
           <section className="panel settings">
@@ -779,6 +848,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
             {st.Toggle({ k: 'LIVE_UPDATES', label: 'Compléter l’édition au fil de la journée', help: "Toutes les heures de 9 h à 22 h, l'IA lit les dépêches des 4 dernières heures et ajoute les sujets nouveaux et importants, sans reprendre ceux déjà publiés. Dans l'app, les infos les plus importantes passent toujours en tête. Coût : un choix de sujets par heure, plus une carte par sujet ajouté.", def: true })}
             {st.Pick({ k: 'UPDATE_WINDOW_HOURS', label: 'Période lue à chaque mise à jour', help: 'Les dépêches des dernières heures, déjà traitées exclues.', def: '4', options: st.nums([1, 2, 3, 4, 6, 8, 12], ' h') })}
             {st.Pick({ k: 'LIVE_MAX_CARDS', label: 'Cartes ajoutées par mise à jour, au plus', help: 'Automatique = un quart du plafond de cartes de l’édition.', def: '0', options: [['0', 'Automatique'], ...st.nums([1, 2, 3, 5, 8, 10, 15, 20])] })}
+            {st.Pick({ k: 'LIVE_MIN_CARDS', label: 'Cartes ajoutées par mise à jour, au moins', help: "S'il y a des dépêches nouvelles, chaque mise à jour ajoute au moins ce nombre de cartes, même sous l'importance minimum ci-dessous (les plus importantes d'abord). 0 = seulement les sujets au-dessus du seuil.", def: '1', options: st.nums([0, 1, 2, 3, 5]) })}
             {st.Pick({ k: 'LIVE_MIN_IMPORTANCE', label: 'Importance minimum pour une mise à jour', help: "Plus haut = moins d'ajouts, seulement les sujets qui comptent vraiment (et moins de coût). Au plus un quart du plafond de cartes par passage.", def: '6', options: st.nums(range(3, 10), ' sur 10') })}
           </section>
         </>
@@ -792,6 +862,8 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
             {st.Pick({ k: 'FLASH_MIN_IMPORTANCE', label: 'Importance minimum', help: 'Seuil pour publier une info en Dernière minute (sur 10).', def: '8', options: st.nums(range(6, 10), ' sur 10') })}
             {st.Pick({ k: 'FLASH_MIN_SOURCES', label: 'Médias minimum', help: 'Nombre de médias différents qui doivent annoncer le fait.', def: '2', options: st.nums([1, 2, 3, 4]) })}
             {st.Pick({ k: 'FLASH_WINDOW_HOURS', label: 'Période lue', help: 'Les dépêches des dernières heures que l’IA examine à chaque passage.', def: '2', options: st.nums([1, 2, 3, 4, 6], ' h') })}
+            {st.Pick({ k: 'FLASH_MIN_PER_DAY', label: 'Infos par jour, au moins', help: "Pour que la rubrique ne reste jamais vide : si la journée (6 h-23 h) est en retard sur ce rythme, le moteur accepte aussi des infos un peu moins importantes, toujours confirmées par plusieurs médias. Exemple avec 3 : une info dès le matin, deux vers 14 h, trois le soir.", def: '3', options: [['0', 'Pas de minimum (seulement les infos majeures)'], ...st.nums([1, 2, 3, 4, 5, 6, 8, 10])] })}
+            {st.Pick({ k: 'FLASH_RELAX_IMPORTANCE', label: 'Importance acceptée pour tenir le minimum', help: "Seuil utilisé seulement quand la journée est en retard sur le minimum ci-dessus.", def: '6', options: st.nums([4, 5, 6, 7], ' sur 10') })}
             {st.Pick({ k: 'FLASH_MAX_PER_DAY', label: 'Infos par jour, au plus', help: 'Au-delà, le moteur arrête de publier jusqu’au lendemain.', def: '12', options: st.nums([3, 5, 8, 12, 20, 30, 50]) })}
           </section>
         </>
@@ -914,7 +986,8 @@ const CONFIG_LABEL: Record<string, string> = {
   cartes_max: 'Cartes au total', essentiels_max: 'Essentiels', importance_min: 'Importance minimum', medias_min: 'Médias minimum', pilote_auto: 'Pilote automatique',
   autocorrection: 'Autocorrection', publier_alertes: 'Publier avec alerte', importance_min_publication: 'Publication à partir de', active: 'Activée',
   publication_auto: 'Publication sans relecture', max_par_jour: 'Infos par jour', mises_a_jour: 'Mises à jour', importance_min_mise_a_jour: 'Importance min. mise à jour',
-  fenetre_mise_a_jour_h: 'Période mise à jour (h)', cartes_max_mise_a_jour: 'Cartes par mise à jour', depeches_max: 'Dépêches lues', ia_en_parallele: 'Cartes en parallèle',
+  fenetre_mise_a_jour_h: 'Période mise à jour (h)', cartes_max_mise_a_jour: 'Cartes par mise à jour', cartes_min_mise_a_jour: 'Cartes au moins par mise à jour',
+  min_par_jour: 'Infos par jour, au moins', importance_si_retard: 'Importance si en retard', depeches_max: 'Dépêches lues', ia_en_parallele: 'Cartes en parallèle',
 };
 function RunDetails({ r }: { r: EngineRun }) {
   const d = r.details ?? {};

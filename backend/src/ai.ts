@@ -309,7 +309,11 @@ Règles :
 - « sensitive » : vrai pour un sujet triste ou choquant (mort, attentat, accident grave, violence, drame humain, maladie grave). Il ne change rien à la publication : il évite seulement d'envoyer une alerte aux lecteurs qui suivent ce sujet.
 - Si rien ne mérite la dernière minute, renvoie une liste vide. C'est le cas le plus fréquent.`;
 
-export async function selectFlashes(items: Item[], published: string[]): Promise<FlashOut[]> {
+/**
+ * catchUp : la journée est en retard sur le minimum d'infos réglé (FLASH_MIN_PER_DAY) ; l'IA propose alors
+ * aussi l'info la plus marquante des dernières heures, avec un seuil d'importance plus bas (minImportance).
+ */
+export async function selectFlashes(items: Item[], published: string[], minImportance = cfg.flashMinImportance(), catchUp = false): Promise<FlashOut[]> {
   if (MOCK) return mockFlashes(items, published);
   const list = items.map((i) => `[${i.n}] ${from(i)} ${i.title}${i.description ? ' — ' + i.description.slice(0, 240) : ''}`).join('\n');
   const res = track(await (await api()).beta.messages.parse({
@@ -317,7 +321,9 @@ export async function selectFlashes(items: Item[], published: string[]): Promise
     max_tokens: 8000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    system: FLASH_SYSTEM.replace('MIN_SOURCES', String(cfg.flashMinSources())) + `\n- N'en retiens aucune dont l'importance est inférieure à ${cfg.flashMinImportance()} sur 10.` + editorialNotes(),
+    system: FLASH_SYSTEM.replace('MIN_SOURCES', String(cfg.flashMinSources())) + `\n- N'en retiens aucune dont l'importance est inférieure à ${minImportance} sur 10.`
+      + (catchUp ? `\n\nAujourd'hui, la rubrique est en retard sur son rythme habituel. Propose donc aussi l'info nationale ou internationale la plus marquante de ces dernières heures, même si elle n'est pas exceptionnelle, à condition qu'elle soit d'importance ${minImportance} sur 10 au moins et annoncée par assez de médias. Toujours pas de faits divers locaux, ni de rumeur.` : '')
+      + editorialNotes(),
     output_config: { effort: 'low', format: betaZodOutputFormat(Flashes) },
     messages: [{
       role: 'user',
@@ -330,12 +336,12 @@ export async function selectFlashes(items: Item[], published: string[]): Promise
 }
 
 /** Contrôles : deux médias différents, importance suffisante, longueurs, pas de reprise mot pour mot. */
-export function checkFlash(f: FlashOut, items: Item[]): string[] {
+export function checkFlash(f: FlashOut, items: Item[], minImportance = cfg.flashMinImportance()): string[] {
   const issues: string[] = [];
   const its = f.item_numbers.map((n) => items.find((i) => i.n === n)).filter(Boolean) as Item[];
   const n = new Set(its.map((i) => i.source)).size;
   if (n < cfg.flashMinSources()) issues.push(n === 1 ? 'un seul média' : `${n} médias seulement`);
-  if (f.importance < cfg.flashMinImportance()) issues.push('importance insuffisante');
+  if (f.importance < minImportance) issues.push('importance insuffisante');
   if (f.title.length > 70 || f.sentence.length > 200) issues.push('trop long');
   const src = its.map((i) => norm(i.title + ' ' + i.description)).join(' | ');
   const w = norm(f.sentence).split(' ');

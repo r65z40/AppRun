@@ -175,6 +175,10 @@ a.btn { text-decoration: none; color: inherit; display: inline-flex; align-items
 .setting textarea { width: 100%; min-height: 96px; resize: vertical; font: inherit; }
 .setting-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .status-bar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; padding: 12px 16px; border-radius: 14px; margin-bottom: 18px; background: rgba(123,92,255,.14); border: 1px solid rgba(123,92,255,.35); }
+.engine-banner { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 14px 18px; border-radius: 14px; margin-bottom: 20px; }
+.engine-banner > div { display: flex; flex-direction: column; gap: 4px; }
+.engine-banner.off { background: rgba(255,122,107,.18); border: 1px solid rgba(255,122,107,.6); }
+.engine-banner.warn-bar { background: rgba(255,190,90,.14); border: 1px solid rgba(255,190,90,.5); }
 .status-bar.off { background: rgba(255,122,107,.12); border-color: rgba(255,122,107,.4); }
 .config { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 12.5px; margin: 8px 0 0; }
 .config dt { color: var(--text2); } .config dd { margin: 0; white-space: pre-wrap; }

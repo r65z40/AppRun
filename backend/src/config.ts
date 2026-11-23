@@ -9,9 +9,23 @@ const num = (k: string, def: number, min: number, max: number) => {
 const on = (k: string, def: boolean) => (process.env[k] ? process.env[k] === '1' : def);
 const text = (k: string) => (process.env[k] ?? '').trim().slice(0, 2000);
 
+function pauseState(): { paused: boolean; until: Date | null } {
+  const v = (process.env.ENGINE_PAUSED ?? '').trim();
+  if (!v || v === '0') return { paused: false, until: null };
+  if (v === '1') return { paused: true, until: null };
+  const t = new Date(v);
+  // Valeur illisible : on ne bloque pas le moteur pour rien.
+  if (Number.isNaN(t.getTime())) return { paused: false, until: null };
+  return { paused: t.getTime() > Date.now(), until: t };
+}
+
 export const cfg = {
-  /** Pause générale : plus aucun passage de l'édition ni de la Dernière minute. */
-  paused: () => on('ENGINE_PAUSED', false),
+  /**
+   * Pause générale : plus aucun passage de l'édition ni de la Dernière minute.
+   * Valeur « 1 » = jusqu'à ce qu'on relance ; une date = reprise automatique à cette heure-là.
+   */
+  paused: () => pauseState().paused,
+  pauseUntil: () => pauseState().until,
 
   // IA
   /** Interrupteur général : plus aucun appel à Claude, nulle part. */
@@ -50,6 +64,8 @@ export const cfg = {
   updateWindowHours: () => num('UPDATE_WINDOW_HOURS', 4, 1, 12),
   /** Cartes ajoutées au plus par mise à jour ; 0 = un quart du plafond de l'édition. */
   liveMaxCards: () => num('LIVE_MAX_CARDS', 0, 0, 40),
+  /** Cartes ajoutées au moins par mise à jour, même sous le seuil d'importance (s'il y a du neuf). 0 = aucune garantie. */
+  liveMinCards: () => num('LIVE_MIN_CARDS', 1, 0, 10),
 
   // Dernière minute
   flashEnabled: () => on('FLASH_ENABLED', true),
@@ -58,6 +74,10 @@ export const cfg = {
   flashMinSources: () => num('FLASH_MIN_SOURCES', 2, 1, 4),
   flashMaxPerDay: () => num('FLASH_MAX_PER_DAY', 12, 1, 50),
   flashWindowHours: () => num('FLASH_WINDOW_HOURS', 2, 1, 6),
+  /** Minimum d'infos par jour : si la journée est en retard sur ce rythme, le seuil d'importance baisse. 0 = jamais. */
+  flashMinPerDay: () => num('FLASH_MIN_PER_DAY', 3, 0, 20),
+  /** Importance acceptée quand la journée est en retard sur le minimum. */
+  flashRelaxImportance: () => num('FLASH_RELAX_IMPORTANCE', 6, 4, 9),
 
   // Modération : l'IA tranche les commentaires signalés.
   aiModeration: () => process.env.MODERATION !== 'words', // 'both' (défaut), 'words' ou 'ai'
@@ -72,12 +92,13 @@ export function snapshot(kind: 'edition' | 'flash') {
         importance_min: cfg.minImportance(), medias_min: cfg.minSources(), pilote_auto: cfg.autoPublish(), autocorrection: cfg.autoFix(),
         publier_alertes: cfg.publishFlagged(), importance_min_publication: cfg.publishMinImportance(),
         mises_a_jour: cfg.liveUpdates(), importance_min_mise_a_jour: cfg.liveMinImportance(),
-        fenetre_mise_a_jour_h: cfg.updateWindowHours(), cartes_max_mise_a_jour: cfg.liveMaxCards() || 'auto',
+        fenetre_mise_a_jour_h: cfg.updateWindowHours(), cartes_max_mise_a_jour: cfg.liveMaxCards() || 'auto', cartes_min_mise_a_jour: cfg.liveMinCards(),
         depeches_max: cfg.maxItems(), ia_en_parallele: cfg.aiConcurrency(),
       }
     : {
         ...common, active: cfg.flashEnabled(), publication_auto: cfg.flashAutoPublish(), importance_min: cfg.flashMinImportance(),
         medias_min: cfg.flashMinSources(), max_par_jour: cfg.flashMaxPerDay(), fenetre_h: cfg.flashWindowHours(),
+        min_par_jour: cfg.flashMinPerDay(), importance_si_retard: cfg.flashRelaxImportance(),
       };
 }
 
