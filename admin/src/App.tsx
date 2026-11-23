@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { AdsPage } from './Ads';
-import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
 type Page = 'dashboard' | 'readers' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'team' | 'settings';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
@@ -922,18 +922,30 @@ function SourcesPage({ say }: { say: (m: string) => void }) {
 }
 
 /* ---------------- Modération ---------------- */
+const until = (iso: string) => new Date(iso).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
 function ModerationPage({ say }: { say: (m: string) => void }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [banned, setBanned] = useState<Profile[]>([]);
   const [tab, setTab] = useState<'reports' | 'recent' | 'banned'>('reports');
+  const [autoSuspend, setAutoSuspend] = useState<string | null>(null); // null = réglage réservé aux admins
   const load = () => Promise.all([api.reports().then(setReports), api.comments().then(setComments), api.banned().then(setBanned)]);
-  const ban = async (c?: Comment) => {
-    if (!c || !confirm(`Bannir ${c.pseudo ?? 'ce lecteur'} ? Ses commentaires disparaissent de l'app et il ne pourra plus commenter ni signaler.`)) return;
-    try { await api.setBanned(c.user_id, true); load(); say(`${c.pseudo ?? 'Lecteur'} banni`); }
-    catch (e) { say(e instanceof Error ? e.message : 'Bannissement impossible'); }
+  const act = async (f: () => Promise<void>, msg: string) => {
+    try { await f(); await load(); say(msg); } catch (e) { say(e instanceof Error ? e.message : 'Action impossible'); }
   };
-  useEffect(() => { load(); }, []);
+  const ban = (c?: Comment) => {
+    const reason = c && prompt(`Bannir ${c.pseudo ?? 'ce lecteur'} ? Ses commentaires disparaissent de l'app et il ne pourra plus commenter ni signaler.\nMotif (facultatif) :`, '');
+    if (c && reason !== null) act(() => api.setBanned(c.user_id, true, reason), `${c.pseudo ?? 'Lecteur'} banni`);
+  };
+  const suspend = (c?: Comment) => {
+    const reason = c && prompt(`Suspendre ${c.pseudo ?? 'ce lecteur'} 7 jours ? Il lit toujours l'app mais ne commente plus.\nMotif (facultatif) :`, '');
+    if (c && reason !== null) act(() => api.suspend(c.user_id, 7, reason), `${c.pseudo ?? 'Lecteur'} suspendu 7 jours`);
+  };
+  useEffect(() => {
+    load();
+    api.settings().then((l) => setAutoSuspend(l.find((x) => x.key === 'AUTO_SUSPEND')?.value ?? '3')).catch(() => setAutoSuspend(null));
+  }, []);
   const grouped = useMemo(() => {
     const m = new Map<string, Report[]>();
     reports.forEach((r) => m.set(r.comment_id, [...(m.get(r.comment_id) ?? []), r]));
@@ -941,11 +953,11 @@ function ModerationPage({ say }: { say: (m: string) => void }) {
   }, [reports]);
   return (
     <>
-      <header className="head"><div><div className="eyebrow">Modération</div><h1>Commentaires</h1><p className="muted">70 caractères maximum, signalables par les lecteurs. Les insultes sont refusées automatiquement (liste modifiable dans Réglages). Un commentaire masqué disparaît de l'app ; un lecteur banni ne peut plus commenter.</p></div></header>
+      <header className="head"><div><div className="eyebrow">Modération</div><h1>Commentaires</h1><p className="muted">70 caractères maximum, signalables par les lecteurs. Les insultes sont refusées automatiquement (liste modifiable dans Réglages). Un commentaire masqué disparaît de l'app ; un lecteur suspendu ne commente plus pendant quelques jours ; un lecteur banni, plus jamais.</p></div></header>
       <div className="tabs">
         <button className={tab === 'reports' ? 'on' : ''} onClick={() => setTab('reports')}>Signalements <b>{grouped.length}</b></button>
         <button className={tab === 'recent' ? 'on' : ''} onClick={() => setTab('recent')}>Derniers commentaires <b>{comments.length}</b></button>
-        <button className={tab === 'banned' ? 'on' : ''} onClick={() => setTab('banned')}>Bannis <b>{banned.length}</b></button>
+        <button className={tab === 'banned' ? 'on' : ''} onClick={() => setTab('banned')}>Sanctions <b>{banned.length}</b></button>
       </div>
       {tab === 'reports' ? (
         grouped.length ? grouped.map((rs) => {
@@ -960,18 +972,32 @@ function ModerationPage({ say }: { say: (m: string) => void }) {
               <div className="btns">
                 <button className="btn primary sm" onClick={async () => { await api.resolveReport(rs[0], true); load(); say('Commentaire masqué'); }}>Masquer</button>
                 <button className="btn sm" onClick={async () => { await api.resolveReport(rs[0], false); load(); say('Signalement classé'); }}>Laisser</button>
+                <button className="btn ghost sm" onClick={() => suspend(c)}>Suspendre 7 j</button>
                 <button className="btn ghost sm" onClick={() => ban(c)}>Bannir l'auteur</button>
               </div>
             </article>
           );
         }) : <p className="muted empty">Aucun signalement en attente.</p>
       ) : tab === 'banned' ? (
-        banned.length ? banned.map((p) => (
-          <article key={p.id} className="card">
-            <div className="body"><h3>{p.pseudo ?? 'Lecteur sans pseudo'}</h3><p className="muted small">compte créé {ago(p.created_at)}</p></div>
-            <div className="btns"><button className="btn sm" onClick={async () => { await api.setBanned(p.id, false); load(); say('Bannissement levé'); }}>Lever le bannissement</button></div>
-          </article>
-        )) : <p className="muted empty">Personne n'est banni.</p>
+        <>
+          {autoSuspend !== null ? (
+            <p className="muted small">Suspension automatique : après{' '}
+              <select value={autoSuspend} onChange={(e) => { const v = e.target.value; act(() => api.setSetting('AUTO_SUSPEND', v).then(() => setAutoSuspend(v)), 'Réglage enregistré'); }} aria-label="Seuil de suspension automatique">
+                {['2', '3', '5', '10'].map((n) => <option key={n} value={n}>{n}</option>)}<option value="0">jamais</option>
+              </select>{' '}commentaires masqués en 30 jours, le lecteur est suspendu 7 jours.</p>
+          ) : null}
+          {banned.length ? banned.map((p) => (
+            <article key={p.id} className="card">
+              <div className="body">
+                <div className="line">{p.banned ? <span className="pill rejected">Banni</span> : <span className="pill ready">Suspendu jusqu'au {until(p.suspended_until!)}</span>}</div>
+                <h3>{p.pseudo ?? 'Lecteur sans pseudo'}</h3><p className="muted small">{p.ban_reason ? `Motif : ${p.ban_reason} · ` : ''}compte créé {ago(p.created_at)}</p>
+              </div>
+              <div className="btns">{p.banned
+                ? <button className="btn sm" onClick={() => act(() => api.setBanned(p.id, false), 'Bannissement levé')}>Lever le bannissement</button>
+                : <button className="btn sm" onClick={() => act(() => api.suspend(p.id, 0), 'Suspension levée')}>Lever la suspension</button>}</div>
+            </article>
+          )) : <p className="muted empty">Personne n'est suspendu ni banni.</p>}
+        </>
       ) : (
         comments.map((c) => (
           <article key={c.id} className={`card ${c.status === 'hidden' ? 'rejected' : ''}`}>
@@ -981,6 +1007,7 @@ function ModerationPage({ say }: { say: (m: string) => void }) {
             </div>
             <div className="btns">
               <button className="btn sm" onClick={async () => { await api.setComment(c.id, c.status === 'hidden' ? 'visible' : 'hidden'); load(); say(c.status === 'hidden' ? 'Commentaire rétabli' : 'Commentaire masqué'); }}>{c.status === 'hidden' ? 'Rétablir' : 'Masquer'}</button>
+              <button className="btn ghost sm" onClick={() => suspend(c)}>Suspendre 7 j</button>
               <button className="btn ghost sm" onClick={() => ban(c)}>Bannir l'auteur</button>
             </div>
           </article>
@@ -991,39 +1018,95 @@ function ModerationPage({ say }: { say: (m: string) => void }) {
 }
 
 /* ---------------- Lecteurs (admins) ---------------- */
+const FILTERS: [ReaderFilter, string][] = [['all', 'Tous'], ['reported', 'Signalés'], ['suspended', 'Suspendus'], ['banned', 'Bannis'], ['team', 'Équipe'], ['premium', 'Premium']];
 function ReadersPage({ say }: { say: (m: string) => void }) {
   const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<ReaderFilter>('all');
+  const [page, setPage] = useState(0);
   const [list, setList] = useState<Reader[] | null>(null);
-  const load = useCallback(() => api.readers(search.trim()).then(setList).catch((e) => { setList([]); say(e instanceof Error ? e.message : 'Lecture impossible'); }), [search, say]);
+  const [open, setOpen] = useState<string | null>(null);
+  const load = useCallback(() => api.readers(search.trim(), filter, page).then(setList).catch((e) => { setList([]); say(e instanceof Error ? e.message : 'Lecture impossible'); }), [search, filter, page, say]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
-  const act = async (f: () => Promise<void>, msg: string) => {
+  const act = async (f: () => Promise<unknown>, msg: string) => {
     try { await f(); await load(); say(msg); } catch (e) { say(e instanceof Error ? e.message : 'Action impossible'); }
   };
+  const total = list?.[0]?.total ?? 0;
+  const now = new Date().toISOString();
   return (
     <>
-      <header className="head"><div><div className="eyebrow">Lecteurs</div><h1>Tous les comptes</h1><p className="muted">Les 200 derniers comptes, ou ceux qui correspondent à votre recherche. Supprimer un compte efface aussi ses commentaires et ses likes, sans retour possible (droit à l'effacement).</p></div></header>
-      <input className="search" placeholder="Chercher un pseudo ou une adresse e-mail" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Chercher un lecteur" />
+      <header className="head"><div><div className="eyebrow">Lecteurs</div><h1>Tous les comptes</h1><p className="muted">Cliquez sur un compte pour voir sa fiche : commentaires, historique des sanctions, export de ses données. Supprimer un compte efface aussi ses commentaires et ses likes, sans retour possible (droit à l'effacement).</p></div></header>
+      <input className="search" placeholder="Chercher un pseudo ou une adresse e-mail" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} aria-label="Chercher un lecteur" />
+      <div className="tabs">{FILTERS.map(([k, label]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => { setFilter(k); setPage(0); }}>{label}{filter === k && list ? <b>{total}</b> : null}</button>)}</div>
       {!list ? <p className="muted">Chargement…</p> : !list.length ? <p className="muted empty">Aucun compte.</p> : (
         <table className="table">
           <thead><tr><th>Lecteur</th><th>Inscrit</th><th>Vu</th><th>Commentaires</th><th>Statut</th><th></th></tr></thead>
           <tbody>
             {list.map((p) => (
-              <tr key={p.id}>
-                <td><b>{p.pseudo ?? '—'}</b><div className="muted small">{p.email}</div></td>
-                <td className="muted">{ago(p.created_at)}</td>
-                <td className="muted">{p.last_seen ? dateLabel(p.last_seen) : 'jamais'}</td>
-                <td>{p.comments}{p.hidden ? <span className="muted small"> · {p.hidden} masqué{p.hidden > 1 ? 's' : ''}</span> : null}{p.reports ? <span className="warn small"> · {p.reports} signalement{p.reports > 1 ? 's' : ''}</span> : null}</td>
-                <td>{p.banned ? <span className="pill rejected">Banni</span> : p.role !== 'reader' ? <span className="pill published">{ROLE[p.role]}</span> : p.premium ? <span className="pill published">Premium</span> : <span className="muted small">Lecteur</span>}</td>
-                <td className="btns">
-                  {p.role === 'reader' ? <button className="btn sm" onClick={() => act(() => api.setBanned(p.id, !p.banned), p.banned ? 'Bannissement levé' : 'Lecteur banni')}>{p.banned ? 'Débannir' : 'Bannir'}</button> : null}
-                  {p.role !== 'admin' ? <button className="btn ghost sm" onClick={() => confirm(`Supprimer définitivement le compte ${p.pseudo ?? p.email} et tout ce qu'il a écrit ?`) && act(() => api.deleteUser(p.id), 'Compte supprimé')}>Supprimer</button> : null}
-                </td>
-              </tr>
+              <Fragment key={p.id}>
+                <tr onClick={() => setOpen(open === p.id ? null : p.id)} style={{ cursor: 'pointer' }}>
+                  <td><b>{p.pseudo ?? '—'}</b><div className="muted small">{p.email}</div></td>
+                  <td className="muted">{ago(p.created_at)}</td>
+                  <td className="muted">{p.last_seen ? dateLabel(p.last_seen) : 'jamais'}</td>
+                  <td>{p.comments}{p.hidden ? <span className="muted small"> · {p.hidden} masqué{p.hidden > 1 ? 's' : ''}</span> : null}{p.reports ? <span className="warn small"> · {p.reports} signalement{p.reports > 1 ? 's' : ''}</span> : null}</td>
+                  <td>{p.banned ? <span className="pill rejected">Banni</span> : (p.suspended_until ?? '') > now ? <span className="pill ready">Suspendu</span> : p.role !== 'reader' ? <span className="pill published">{ROLE[p.role]}</span> : p.premium ? <span className="pill published">Premium</span> : <span className="muted small">Lecteur</span>}</td>
+                  <td className="muted small">{open === p.id ? 'Fermer' : 'Fiche'}</td>
+                </tr>
+                {open === p.id ? <tr><td colSpan={6}><ReaderSheet p={p} act={act} /></td></tr> : null}
+              </Fragment>
             ))}
           </tbody>
         </table>
       )}
+      {total > 50 ? (
+        <div className="btns">
+          <button className="btn sm" disabled={!page} onClick={() => setPage(page - 1)}>Précédents</button>
+          <span className="muted small">{page * 50 + 1}–{Math.min(total, page * 50 + 50)} sur {total}</span>
+          <button className="btn sm" disabled={(page + 1) * 50 >= total} onClick={() => setPage(page + 1)}>Suivants</button>
+        </div>
+      ) : null}
     </>
+  );
+}
+
+function ReaderSheet({ p, act }: { p: Reader; act: (f: () => Promise<unknown>, msg: string) => Promise<void> }) {
+  const [d, setD] = useState<ReaderDetail | null>(null);
+  const refresh = useCallback(() => api.readerDetail(p.id).then(setD).catch(() => setD(null)), [p.id]);
+  useEffect(() => { refresh(); }, [refresh, p]);
+  const run = (f: () => Promise<unknown>, msg: string) => act(f, msg).then(refresh);
+  const ask = (q: string) => prompt(`${q}\nMotif (facultatif) :`, '');
+  const suspended = !p.banned && (p.suspended_until ?? '') > new Date().toISOString();
+  const download = async () => {
+    const data = await api.exportReader(p.id);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    a.download = `donnees-${p.pseudo ?? p.id}.json`;
+    a.click();
+  };
+  return (
+    <div className="body">
+      {p.banned || suspended ? <p className="warn small">{p.banned ? 'Banni' : `Suspendu jusqu'au ${until(p.suspended_until!)}`}{p.ban_reason ? ` · motif : ${p.ban_reason}` : ''}</p> : null}
+      {d ? <p className="muted small">{d.days_30} jour{d.days_30 > 1 ? 's' : ''} d'ouverture sur 30 · {d.likes} like{d.likes > 1 ? 's' : ''} donnés · {d.reports_made} signalement{d.reports_made > 1 ? 's' : ''} faits · bloqué par {d.blocked_by} lecteur{d.blocked_by > 1 ? 's' : ''}</p> : <p className="muted small">Chargement…</p>}
+      {/* abonnement */}
+      <div className="btns">
+        {p.role === 'reader' && !p.banned ? <>
+          {suspended ? <button className="btn sm" onClick={() => run(() => api.suspend(p.id, 0), 'Suspension levée')}>Lever la suspension</button>
+            : [1, 7, 30].map((n) => <button key={n} className="btn sm" onClick={() => { const r = ask(`Suspendre ${p.pseudo ?? 'ce lecteur'} ${n} jour${n > 1 ? 's' : ''} ?`); if (r !== null) run(() => api.suspend(p.id, n, r), `Suspendu ${n} j`); }}>Suspendre {n} j</button>)}
+          <button className="btn sm" onClick={() => { const r = ask(`Bannir ${p.pseudo ?? 'ce lecteur'} ? Ses commentaires disparaissent.`); if (r !== null) run(() => api.setBanned(p.id, true, r), 'Lecteur banni'); }}>Bannir</button>
+        </> : null}
+        {p.banned ? <button className="btn sm" onClick={() => run(() => api.setBanned(p.id, false), 'Bannissement levé')}>Débannir</button> : null}
+        {p.pseudo ? <button className="btn ghost sm" onClick={() => confirm(`Remplacer le pseudo « ${p.pseudo} » par un pseudo neutre ?`) && run(() => api.resetPseudo(p.id), 'Pseudo réinitialisé')}>Réinitialiser le pseudo</button> : null}
+        <button className="btn ghost sm" onClick={() => run(download, 'Données exportées')}>Exporter ses données</button>
+        {p.role !== 'admin' ? <button className="btn ghost sm" onClick={() => confirm(`Supprimer définitivement le compte ${p.pseudo ?? p.email} et tout ce qu'il a écrit ?`) && act(() => api.deleteUser(p.id), 'Compte supprimé')}>Supprimer</button> : null}
+      </div>
+      {d?.history.length ? <><h4>Historique</h4>{d.history.map((h, i) => <p key={i} className="muted small">{until(h.at)} · {h.action}{h.detail ? ` (${h.detail})` : ''}</p>)}</> : null}
+      {d?.comments.length ? <><h4>Commentaires</h4>{d.comments.map((c) => (
+        <p key={c.id} className="small">
+          <span className={c.status === 'hidden' ? 'muted' : ''}>« {c.text} »</span>{' '}
+          <span className="muted">sur « {c.article} » · {ago(c.created_at)}{c.reports ? ` · ${c.reports} signalement${c.reports > 1 ? 's' : ''}` : ''}{c.status === 'hidden' ? ' · masqué' : ''}</span>{' '}
+          <button className="btn ghost sm" onClick={() => run(() => api.setComment(c.id, c.status === 'hidden' ? 'visible' : 'hidden'), c.status === 'hidden' ? 'Commentaire rétabli' : 'Commentaire masqué')}>{c.status === 'hidden' ? 'Rétablir' : 'Masquer'}</button>
+        </p>
+      ))}</> : null}
+    </div>
   );
 }
 

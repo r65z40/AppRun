@@ -26,7 +26,7 @@ export type Article = {
 export type Edition = { date: string; status: 'building' | 'ready' | 'published'; published_at: string | null; stats: Record<string, unknown> };
 export type Source = { id: string; name: string; url: string; rubric_hint: string | null; active: boolean; last_fetch_at: string | null; last_error: string | null };
 export type Role = 'reader' | 'moderator' | 'editor' | 'admin';
-export type Profile = { id: string; pseudo: string | null; role: Role; premium: boolean; banned?: boolean; created_at: string };
+export type Profile = { id: string; pseudo: string | null; role: Role; premium: boolean; banned?: boolean; suspended_until?: string | null; ban_reason?: string | null; created_at: string };
 export type Comment = { id: string; article_id: string; user_id: string; text: string; status: 'visible' | 'hidden'; created_at: string; article_title?: string; pseudo?: string | null };
 export type Report = { id: string; comment_id: string; reason: string | null; resolved: boolean; created_at: string; comment?: Comment };
 export type Flash = { id: string; status: 'published' | 'hidden'; rubric_id: string | null; importance: number; title: string; sentence: string; sources: { source: string; url: string }[]; manual: boolean; model: string | null; published_at: string; created_at: string };
@@ -49,7 +49,9 @@ export type EngineRun = {
 };
 export type Setting = { key: string; value: string; is_set: boolean; updated_at: string };
 export type Me = { id: string; email: string; role: Role };
-export type Reader = { id: string; pseudo: string | null; email: string; role: Role; premium: boolean; banned: boolean; created_at: string; last_seen: string | null; comments: number; hidden: number; reports: number };
+export type Reader = { id: string; pseudo: string | null; email: string; role: Role; premium: boolean; banned: boolean; suspended_until: string | null; ban_reason: string | null; created_at: string; last_seen: string | null; comments: number; hidden: number; reports: number; total: number };
+export type ReaderFilter = 'all' | 'reported' | 'suspended' | 'banned' | 'team' | 'premium';
+export type ReaderDetail = { likes: number; reports_made: number; blocked_by: number; days_30: number; comments: { id: string; text: string; status: Comment['status']; created_at: string; article: string; reports: number }[]; history: { at: string; action: string; detail: string | null }[] };
 export type AuditEntry = { at: string; who: string; action: string; target: string | null; detail: string | null };
 export type ModerationCost = { judged: number; input: number; output: number; cost: number };
 export type TopArticle = { title: string; rubric_id: string; likes: number; comments: number };
@@ -91,12 +93,18 @@ export interface Api {
   resolveReport(r: Report, hide: boolean): Promise<void>;
   comments(): Promise<Comment[]>;
   setComment(id: string, status: Comment['status']): Promise<void>;
-  setBanned(userId: string, ban: boolean): Promise<void>;
+  setBanned(userId: string, ban: boolean, reason?: string): Promise<void>;
+  /** days = 0 lève la suspension. */
+  suspend(userId: string, days: number, reason?: string): Promise<void>;
+  /** Bannis et suspendus. */
   banned(): Promise<Profile[]>;
   dashboard(): Promise<Dashboard>;
   topArticles(): Promise<TopArticle[]>;
   moderationCost(): Promise<ModerationCost>;
-  readers(search: string): Promise<Reader[]>;
+  readers(search: string, filter?: ReaderFilter, page?: number): Promise<Reader[]>;
+  readerDetail(id: string): Promise<ReaderDetail>;
+  exportReader(id: string): Promise<unknown>;
+  resetPseudo(id: string): Promise<string>;
   deleteUser(id: string): Promise<void>;
   audit(): Promise<AuditEntry[]>;
   /** Envoie une image et renvoie son adresse publique. */
@@ -196,14 +204,20 @@ function supabaseApi(sb: SupabaseClient): Api {
     async setComment(id, status) {
       ok(await sb.from('comments').update({ status }).eq('id', id));
     },
-    async setBanned(userId, ban) {
-      ok(await sb.rpc('set_banned', { uid: userId, ban }));
+    async setBanned(userId, ban, reason) {
+      ok(await sb.rpc('set_banned', { uid: userId, ban, reason: reason ?? null }));
     },
-    banned: async () => sb.from('profiles').select('*').eq('banned', true).order('created_at', { ascending: false }).then(ok<Profile[]>),
+    async suspend(userId, days, reason) {
+      ok(await sb.rpc('suspend_user', { uid: userId, days, reason: reason ?? null }));
+    },
+    banned: async () => sb.from('profiles').select('*').or(`banned.eq.true,suspended_until.gt.${new Date().toISOString()}`).order('created_at', { ascending: false }).then(ok<Profile[]>),
     dashboard: async () => ok(await sb.rpc('dashboard')) as Dashboard,
     topArticles: async () => ok(await sb.rpc('top_articles')) as TopArticle[],
     moderationCost: async () => ok(await sb.rpc('moderation_cost')) as ModerationCost,
-    readers: async (search) => ok(await sb.rpc('admin_users', { search })) as Reader[],
+    readers: async (search, filter = 'all', page = 0) => ok(await sb.rpc('admin_users', { search, filter, page })) as Reader[],
+    readerDetail: async (id) => ok(await sb.rpc('admin_user_detail', { uid: id })) as ReaderDetail,
+    exportReader: async (id) => ok(await sb.rpc('admin_user_export', { uid: id })),
+    resetPseudo: async (id) => ok(await sb.rpc('reset_pseudo', { uid: id })) as string,
     async deleteUser(id) {
       ok(await sb.rpc('delete_user', { uid: id }));
     },

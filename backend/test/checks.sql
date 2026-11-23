@@ -397,3 +397,70 @@ select :'ok'::boolean and not exists (select 1 from auth.users where id = '00000
 \else
 \echo ÉCHEC  page Lecteurs
 \endif
+
+-- Suspensions : 3 commentaires masqués en 30 jours = 7 jours sans commenter ; le suspendu ne se lève pas lui-même.
+reset role;
+set request.jwt.claim.sub = '';
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-000000000006', 'rec@exemple.fr');
+update profiles set pseudo = 'recidiviste' where id = '00000000-0000-0000-0000-000000000006';
+insert into comments (article_id, user_id, text) select :'aid', '00000000-0000-0000-0000-000000000006', t from unnest(array['un', 'deux', 'trois']) t;
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000005';
+update comments set status = 'hidden' where user_id = '00000000-0000-0000-0000-000000000006' and text in ('un', 'deux');
+select suspended_until is null as ok1 from profiles where id = '00000000-0000-0000-0000-000000000006' \gset
+update comments set status = 'hidden' where user_id = '00000000-0000-0000-0000-000000000006' and text = 'trois';
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000006';
+\set ON_ERROR_STOP off
+insert into comments (article_id, user_id, text) values (:'aid', '00000000-0000-0000-0000-000000000006', 'Me revoilà');
+update profiles set suspended_until = null where id = '00000000-0000-0000-0000-000000000006';
+\set ON_ERROR_STOP on
+reset role;
+select :'ok1'::boolean and suspended_until > now() + interval '6 days' and ban_reason like '3 commentaires%'
+   and not exists (select 1 from comments where text = 'Me revoilà')
+   and exists (select 1 from audit_log where action like 'Lecteur suspendu%' and detail like 'suspension automatique%') as ok
+  from profiles where id = '00000000-0000-0000-0000-000000000006' \gset
+\if :ok
+\echo OK  suspension automatique au 3e commentaire masqué, le suspendu ne commente plus et ne se lève pas
+\else
+\echo ÉCHEC  suspension automatique
+\endif
+
+-- Suspension manuelle et levée par la modération, refusée sur un membre de l'équipe.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000005';
+select public.suspend_user('00000000-0000-0000-0000-000000000006', 0);
+select public.suspend_user('00000000-0000-0000-0000-000000000003', 1, 'Hors sujet répété');
+\set ON_ERROR_STOP off
+select public.suspend_user('00000000-0000-0000-0000-000000000002', 7) as leak \gset
+\set ON_ERROR_STOP on
+reset role;
+select (select suspended_until is null from profiles where id = '00000000-0000-0000-0000-000000000006')
+   and (select suspended_until between now() + interval '23 hours' and now() + interval '25 hours' and ban_reason = 'Hors sujet répété' from profiles where id = '00000000-0000-0000-0000-000000000003')
+   and exists (select 1 from audit_log where action = 'Suspension levée') as ok \gset
+\if :ok
+\if :{?leak}
+\echo ÉCHEC  équipe suspendue
+\else
+\echo OK  suspension d’un jour avec motif, levée en un clic, équipe protégée
+\endif
+\else
+\echo ÉCHEC  suspension manuelle
+\endif
+
+-- Fiche lecteur, filtres de la liste, export RGPD et pseudo réinitialisé.
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000ad';
+select count(*) = 1 and bool_and(pseudo = 'marie.l') as ok1 from public.admin_users('', 'suspended') \gset
+select count(*) >= 1 and bool_and(role <> 'reader') as ok2 from public.admin_users('', 'team') \gset
+select (select jsonb_array_length(d->'comments') = 3 and jsonb_array_length(d->'history') >= 2 from public.admin_user_detail('00000000-0000-0000-0000-000000000006') d)
+   and (select e->'compte'->>'email' = 'rec@exemple.fr' and jsonb_array_length(e->'commentaires') = 3 from public.admin_user_export('00000000-0000-0000-0000-000000000006') e)
+   and public.reset_pseudo('00000000-0000-0000-0000-000000000006') like 'lecteur%' as ok3 \gset
+reset role;
+select :'ok1'::boolean and :'ok2'::boolean and :'ok3'::boolean
+   and exists (select 1 from audit_log where action = 'Données exportées (RGPD)')
+   and exists (select 1 from audit_log where action like 'Pseudo réinitialisé (ancien : recidiviste)') as ok \gset
+\if :ok
+\echo OK  lecteurs : filtres, fiche détaillée, export RGPD et pseudo réinitialisé tracés
+\else
+\echo ÉCHEC  fiche ou filtres des lecteurs
+\endif

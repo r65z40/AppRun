@@ -164,13 +164,18 @@ export function demoApi(): Api {
     async resolveReport(r, hide) { if (hide) comments = comments.map((c) => (c.id === r.comment_id ? { ...c, status: 'hidden' } : c)); reports = reports.map((x) => (x.comment_id === r.comment_id ? { ...x, resolved: true } : x)); },
     comments: () => wait(comments),
     async setComment(id, status) { comments = comments.map((c) => (c.id === id ? { ...c, status } : c)); },
-    async setBanned(id, ban) {
+    async setBanned(id, ban, reason) {
       const p = readers.find((x) => x.id === id) ?? { id, pseudo: comments.find((c) => c.user_id === id)?.pseudo ?? null, role: 'reader' as const, premium: false, created_at: iso(20) };
       if (!readers.includes(p)) readers.push(p);
-      p.banned = ban;
+      p.banned = ban; p.suspended_until = null; p.ban_reason = ban ? reason ?? null : null;
       if (ban) comments = comments.map((c) => (c.user_id === id ? { ...c, status: 'hidden' } : c));
     },
-    banned: () => wait(readers.filter((p) => p.banned)),
+    async suspend(id, days, reason) {
+      await this.setBanned(id, false);
+      const p = readers.find((x) => x.id === id)!;
+      p.suspended_until = days ? new Date(Date.now() + days * 864e5).toISOString() : null; p.ban_reason = days ? reason ?? null : null;
+    },
+    banned: () => wait(readers.filter((p) => p.banned || (p.suspended_until ?? '') > new Date().toISOString())),
     dashboard: () => wait<Dashboard>({
       active_today: 1284, active_7: 4610, active_30: 9873, accounts: 742, accounts_7: 96, premium: 0, comments_7: 318, likes_7: 2240,
       reports_open: reports.filter((r) => !r.resolved).length, banned: readers.filter((p) => p.banned).length, ai_today: 1.84, ai_7: 12.9, ai_30: 51.3,
@@ -179,9 +184,17 @@ export function demoApi(): Api {
     uploadPhoto: async (file) => URL.createObjectURL(file),
     moderationCost: () => wait({ judged: 64, input: 182_400, output: 21_300, cost: 1.16 }),
     topArticles: () => wait(articles.slice(0, 4).map((a, i) => ({ title: a.title, rubric_id: a.rubric_id, likes: 412 - i * 87, comments: 38 - i * 9 }))),
-    readers: (search) => wait([...team, ...readers, ...comments.map((c) => ({ id: c.user_id, pseudo: c.pseudo ?? null, role: 'reader' as const, premium: false, created_at: iso(40) } as Profile))]
+    readers: (search, filter = 'all') => wait([...team, ...readers, ...comments.map((c) => ({ id: c.user_id, pseudo: c.pseudo ?? null, role: 'reader' as const, premium: false, created_at: iso(40) } as Profile))]
       .filter((p, i, all) => all.findIndex((x) => x.id === p.id) === i && (!search || p.pseudo?.toLowerCase().includes(search.toLowerCase())))
-      .map((p) => ({ ...p, banned: !!p.banned, email: `${(p.pseudo ?? 'lecteur').toLowerCase()}@exemple.fr`, last_seen: today, comments: comments.filter((c) => c.user_id === p.id).length, hidden: comments.filter((c) => c.user_id === p.id && c.status === 'hidden').length, reports: reports.filter((r) => comments.find((c) => c.id === r.comment_id)?.user_id === p.id).length }))),
+      .filter((p) => filter === 'all' || filter === 'reported' || (filter === 'banned' ? p.banned : filter === 'suspended' ? (p.suspended_until ?? '') > new Date().toISOString() : filter === 'team' ? p.role !== 'reader' : p.premium))
+      .map((p, _, all) => ({ ...p, total: all.length, banned: !!p.banned, suspended_until: p.suspended_until ?? null, ban_reason: p.ban_reason ?? null, email: `${(p.pseudo ?? 'lecteur').toLowerCase()}@exemple.fr`, last_seen: today, comments: comments.filter((c) => c.user_id === p.id).length, hidden: comments.filter((c) => c.user_id === p.id && c.status === 'hidden').length, reports: reports.filter((r) => comments.find((c) => c.id === r.comment_id)?.user_id === p.id).length })).filter((p) => filter !== 'reported' || p.reports > 0)),
+    readerDetail: (id) => wait({
+      likes: 23, reports_made: 1, blocked_by: 0, days_30: 17,
+      comments: comments.filter((c) => c.user_id === id).map((c) => ({ id: c.id, text: c.text, status: c.status, created_at: c.created_at, article: c.article_title ?? '…', reports: reports.filter((r) => r.comment_id === c.id).length })),
+      history: audit.filter((e) => e.target === readers.find((p) => p.id === id)?.pseudo).map((e) => ({ at: e.at, action: e.action, detail: e.detail })),
+    }),
+    exportReader: (id) => wait({ exporte_le: new Date().toISOString(), compte: readers.find((p) => p.id === id) ?? { id }, commentaires: comments.filter((c) => c.user_id === id).map((c) => ({ texte: c.text, le: c.created_at })) }),
+    async resetPseudo(id) { const p = 'lecteur' + Math.random().toString(16).slice(2, 8); const r = readers.find((x) => x.id === id); if (r) r.pseudo = p; return p; },
     async deleteUser(id) { comments = comments.filter((c) => c.user_id !== id); readers.splice(0, readers.length, ...readers.filter((p) => p.id !== id)); audit.unshift({ at: new Date().toISOString(), who: 'fen', action: 'Compte supprimé', target: id, detail: null }); },
     audit: () => wait(audit),
     team: () => wait(team.filter((p) => p.role !== 'reader')),
