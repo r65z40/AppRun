@@ -1,8 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { AdsPage } from './Ads';
+import { AlgoPage } from './Algo';
 import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'dashboard' | 'readers' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'team' | 'settings';
+type Page = 'dashboard' | 'readers' | 'algo' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'team' | 'settings';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
 const PAGES: [Page, string, string][] = [
   ['dashboard', 'Tableau de bord', ''],
@@ -12,6 +13,7 @@ const PAGES: [Page, string, string][] = [
   ['readers', 'Lecteurs', 'Lecteurs'],
   ['moderation', 'Modération', 'Lecteurs'],
   ['messages', 'Messages', 'Lecteurs'],
+  ['algo', 'Algorithme', 'Lecteurs'],
   ['ads', 'Publicité', 'Revenus'],
   ['team', 'Équipe', 'Administration'],
   ['audit', 'Journal', 'Administration'],
@@ -30,7 +32,7 @@ const ago = (iso: string | null) => {
   return m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`;
 };
 // Modération : seulement les commentaires. Rédaction : tout sauf les lecteurs, la publicité, l'équipe, le journal et les réglages.
-const ADMIN_ONLY: Page[] = ['readers', 'ads', 'team', 'audit', 'settings'];
+const ADMIN_ONLY: Page[] = ['readers', 'algo', 'ads', 'team', 'audit', 'settings'];
 const allowed = (role: Role, p: Page) => role === 'admin' || (role === 'editor' ? !ADMIN_ONLY.includes(p) : p === 'moderation');
 const plain = (s: string) => s.replace(/<\/?b>/g, '');
 
@@ -87,6 +89,7 @@ export default function App() {
         {page === 'readers' && allowed(me.role, page) && <ReadersPage say={say} />}
         {page === 'audit' && allowed(me.role, page) && <AuditPage />}
         {page === 'ads' && allowed(me.role, page) && <AdsPage say={say} />}
+        {page === 'algo' && allowed(me.role, page) && <AlgoPage say={say} />}
         {page === 'team' && allowed(me.role, page) && <TeamPage say={say} me={me} />}
         {page === 'settings' && allowed(me.role, page) && <SettingsPage say={say} />}
       </main>

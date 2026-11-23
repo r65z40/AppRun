@@ -14,6 +14,10 @@ L'IA ne retient que les faits majeurs, nouveaux et annoncés par au moins deux m
 `FLASH_AUTO_PUBLISH=0` (variable GitHub) : les infos arrivent masquées et attendent la validation.
 Coût estimé : environ 1 € par jour.
 
+## Algorithme « Mon édition » (sans IA)
+
+Migration `0015_algorithme.sql`. L'app envoie ce que fait le lecteur (`track`), la base en tire ses goûts par rubrique et par mot-clé (`reader_taste`, points qui s'effacent de moitié en 21 jours) et compose son édition (`my_edition`) : sujets majeurs pour tous, infos selon ses goûts, une découverte. Les mots-clés viennent d'une liste (`algo_keywords`) cherchée dans le texte. Tout se règle dans le back office, Lecteurs > Algorithme. Tests : `test/algo.sql` (lancé par `test/run-local.sh`).
+
 ## À brancher (une fois)
 Le guide pas à pas est dans [`ESSAYER.md`](../ESSAYER.md). En résumé :
 1. **Supabase** : créez un projet (région Paris) et notez l'adresse *Session pooler* (`DATABASE_URL`), l'adresse du projet et la clé publique.

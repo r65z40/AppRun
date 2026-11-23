@@ -136,11 +136,14 @@ export type Prefs = {
   active: string[]; quota: number; sound: boolean; haptic: boolean; parallax: boolean; premium: boolean; time: string; adsPersonalized: boolean;
   /** Goût par rubrique, appris des likes et dislikes : ordonne « Mon édition » et la roue. */
   taste?: Record<string, number>;
+  /** Édition personnalisée par l'algorithme (oui par défaut) ; non = la même édition pour tous. */
+  perso?: boolean;
 };
-export function Settings({ W, prefs, onSave, onClose, account, onAccount }: {
+export function Settings({ W, prefs, onSave, onClose, account, onAccount, onResetTaste }: {
   W: number; prefs: Prefs; onSave: (p: Prefs) => void; onClose: () => void;
   /** Pseudo du lecteur connecté, '' sans pseudo, null s'il n'est pas connecté. */
   account: string | null; onAccount: () => void;
+  onResetTaste: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const [d, setD] = useState(prefs);
@@ -175,6 +178,17 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount }: {
         <View style={{ gap: 12 }}>
           <Text style={st.label}>Infos par jour</Text>
           <QuotaWheel value={d.quota} onChange={(q) => set('quota', q)} />
+        </View>
+        <View style={{ gap: 12 }}>
+          <Text style={st.label}>Mes goûts</Text>
+          <View style={styles.rows}>
+            <Row label="Édition selon mes goûts" hint="Sinon, la même édition pour tous, dans l'ordre de la rédaction">
+              <Toggle label="Édition selon mes goûts" on={d.perso !== false} onPress={() => set('perso', d.perso === false)} />
+            </Row>
+            <Pressable onPress={() => { feel('select'); onResetTaste(); }} accessibilityRole="button">
+              <Row label="Remettre mes goûts à zéro" hint="L'app oublie ce que vous avez lu et aimé" last><Text style={styles.v}>›</Text></Row>
+            </Pressable>
+          </View>
         </View>
         <View style={{ gap: 12 }}>
           <Text style={st.label}>Ressenti</Text>

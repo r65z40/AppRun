@@ -134,10 +134,19 @@ export async function restore() {
   ping();
 }
 
-/** Compte l'appareil comme lecteur actif du jour (identifiant tiré au hasard, rien de personnel). */
-async function ping() {
+/** Appel d'une fonction de la base (rpc), au nom du lecteur connecté s'il y en a un. */
+export const rpc = <T = unknown>(fn: string, body: unknown) => api<T>(`rpc/${fn}`, { method: 'POST', body });
+
+/** Identifiant de l'appareil, tiré au hasard une fois pour toutes (rien de personnel). */
+export async function deviceId() {
   let d = await store.get('titre.device');
   if (!d) { d = Math.random().toString(36).slice(2) + Date.now().toString(36); await store.set(d, 'titre.device'); }
+  return d;
+}
+
+/** Compte l'appareil comme lecteur actif du jour (identifiant tiré au hasard, rien de personnel). */
+async function ping() {
+  const d = await deviceId();
   api('rpc/ping', { method: 'POST', body: { d } }).catch(() => {});
 }
 

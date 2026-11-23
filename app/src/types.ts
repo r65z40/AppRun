@@ -44,6 +44,8 @@ export type Column = {
   name: string;
   cards: Card[];
   tags: Record<string, Tag>;
+  /** « Pourquoi cette info ? » : raison donnée par l'algorithme, par info. */
+  why?: Record<string, string>;
 };
 
 export type Comment = {

@@ -51,6 +51,8 @@ async function main() {
 async function edition() {
   log(`Édition du ${DATE} · modèle ${model()}${process.env.MOCK_AI === '1' ? ' (mode test, sans IA)' : ''}`);
   J.details.config = snapshot('edition');
+  // Journal de lecture de l'algorithme : rien n'est gardé au-delà de la durée de conservation (90 jours par défaut).
+  await q('select purge_reading_events()').catch(() => {});
   if (cfg.paused()) {
     log('Moteur en pause (Réglages) : aucun passage.');
     return J.finish('ok', 'Moteur en pause dans les réglages : rien fait.');
