@@ -1,7 +1,7 @@
 // Comptes lecteurs et communauté, branchés sur Supabase (Auth + API REST).
 // Sans base configurée, l'app reste en mode démo et ce module ne fait rien.
 import { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import type { Comment, ReaderCard } from './types';
 
@@ -137,6 +137,7 @@ export const reloadMe = () => loadMe();
 /** Au lancement : reprend la session enregistrée, ou celle du lien de confirmation reçu par e-mail. */
 export async function restore() {
   if (!accountsOn) return;
+  await catchReferral();
   if (Platform.OS === 'web' && typeof location !== 'undefined' && /error_description=|error_code=/.test(location.hash)) {
     // Lien d'e-mail périmé ou déjà utilisé.
     const h = new URLSearchParams(location.hash.slice(1));
@@ -159,6 +160,8 @@ export async function restore() {
   }
   if (!session || (await token())) await loadMe();
   ping();
+  // Déjà connecté quand on ouvre le lien d'un ami (compte tout neuf) : on le rattache tout de suite.
+  if (me && (await pendingReferral())) claimReferral((await pendingReferral())!).catch(() => {});
 }
 
 /** Appel d'une fonction de la base (rpc), au nom du lecteur connecté s'il y en a un. */
@@ -178,9 +181,13 @@ async function ping() {
 }
 
 /** Création de compte. Renvoie 'confirm' si Supabase demande de confirmer l'adresse par e-mail. */
-export async function signUp(email: string, password: string): Promise<'ok' | 'confirm'> {
+/** ref : code d'un ami tapé dans le formulaire (sinon celui du lien d'invitation). */
+export async function signUp(email: string, password: string, ref?: string): Promise<'ok' | 'confirm'> {
   if (password.length < 8) throw new UserError('Mot de passe trop court : 8 caractères au moins.');
-  const j = await auth(`signup${back()}`, { email: email.trim(), password });
+  ref = ref?.trim() ? cleanCode(ref) : (await pendingReferral()) ?? undefined;
+  const j = await auth(`signup${back()}`, { email: email.trim(), password, ...(ref ? { data: { ref } } : {}) });
+  // Le code part avec l'inscription : la base rattache le filleul à son parrain toute seule.
+  if (ref) await store.set(null, RKEY);
   // Adresse déjà inscrite : Supabase répond « vérifiez vos e-mails » sans rien envoyer. On le dit clairement.
   const ids = (j.user ?? j).identities;
   if (Array.isArray(ids) && ids.length === 0) throw new UserError('Un compte existe déjà avec cette adresse. Connectez-vous, ou touchez «\u00a0Mot de passe oublié\u00a0».');
@@ -369,4 +376,52 @@ export async function redeemCode(code: string): Promise<number> {
   if (r?.error) throw new UserError(r.error);
   await loadMe();
   return r.days ?? 0;
+}
+
+
+/* ---------- Parrainage ---------- */
+
+export type Referral = {
+  enabled: boolean; code?: string; link?: string; share_text?: string; confirmed?: number; pending?: number; days_earned?: number;
+  referrer_days?: number; referee_days?: number; confirm_reads?: number; referred_by?: string | null; can_claim?: boolean;
+  next_badge?: { label: string; icon: string; color: string; threshold: number } | null;
+};
+const RKEY = 'titre.ref';
+const cleanCode = (c: string) => c.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+
+/** Code d'un ami lu dans le lien d'invitation (…?parrain=CODE), gardé jusqu'à la création du compte. */
+async function catchReferral() {
+  try {
+    const url = Platform.OS === 'web' && typeof location !== 'undefined' ? location.href : await Linking.getInitialURL();
+    const m = url?.match(/[?&]parrain=([A-Za-z0-9]{4,12})/);
+    if (!m) return;
+    await store.set(cleanCode(m[1]), RKEY);
+    if (Platform.OS === 'web' && typeof location !== 'undefined') {
+      const u = new globalThis.URL(location.href);
+      u.searchParams.delete('parrain');
+      history.replaceState(null, '', u.toString());
+    }
+  } catch {}
+}
+export const pendingReferral = () => store.get(RKEY);
+
+/** Mon lien d'invitation et mes filleuls (le code est créé à la première ouverture). */
+export async function myReferral(): Promise<Referral | null> {
+  if (!session) return null;
+  return api<Referral>('rpc/my_referral', { method: 'POST', body: {} }).catch(() => null);
+}
+
+/** Lien à partager : adresse réglée dans le back office, sinon la version web de l'app. */
+export function referralLink(r: Referral) {
+  const base = (r.link || WEB || (Platform.OS === 'web' && typeof location !== 'undefined' ? location.origin + location.pathname : '')).replace(/\/?$/, '/');
+  return `${base}?parrain=${r.code}`;
+}
+
+/** Code tapé à la main (ou lien ouvert après l'inscription). Renvoie le pseudo du parrain. */
+export async function claimReferral(code: string): Promise<string> {
+  const r = await api<{ ok?: boolean; referrer?: string | null; error?: string }>('rpc/claim_referral', { method: 'POST', body: { c: cleanCode(code) } });
+  await store.set(null, RKEY);
+  if (r?.error) throw new UserError(r.error);
+  await loadMe();
+  return r?.referrer ?? 'votre ami';
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { api, sb, type Reader } from './data';
 
-export type Kind = 'premium' | 'reads' | 'manual' | 'team' | 'seniority' | 'early' | 'liked' | 'streak' | 'early_bird' | 'explorer' | 'sharer' | 'event';
+export type Kind = 'premium' | 'reads' | 'manual' | 'team' | 'seniority' | 'early' | 'liked' | 'streak' | 'early_bird' | 'explorer' | 'sharer' | 'event' | 'referral';
 export type Badge = { id: string; kind: Kind; label: string; description: string; icon: string; color: string; threshold: number; position: number; starts_at?: string | null; ends_at?: string | null; active: boolean };
 type Holder = { user_id: string; pseudo: string | null; email: string | null; granted_at: string };
 type Conf = { minutes_per_article: number; max_icons: number; color_pseudo: boolean };
@@ -23,9 +23,10 @@ export const KINDS: Record<Kind, [string, string | null]> = {
   explorer: ['Explorateur', 'rubriques lues au moins'],
   sharer: ['Partageur', 'infos partagées au moins'],
   event: ['Événement (venu pendant une période)', null],
+  referral: ['Parrainage (ex. Ambassadeur)', 'amis parrainés validés au moins'],
 };
 /** Types à paliers : seul le plus haut atteint s'affiche. */
-const TIERS: Kind[] = ['reads', 'seniority', 'liked', 'early', 'streak', 'early_bird', 'explorer', 'sharer'];
+const TIERS: Kind[] = ['reads', 'seniority', 'liked', 'early', 'streak', 'early_bird', 'explorer', 'sharer', 'referral'];
 const CONF: Conf = { minutes_per_article: 3, max_icons: 3, color_pseudo: true };
 const isHex = (v: string) => /^#[0-9a-f]{6}$/i.test(v);
 
@@ -47,6 +48,8 @@ let demo: Badge[] = [
   ['early_bird', 'Lève-tôt', 'A lu son édition avant 8 h, 20 matins.', '☀️', '#FFD166', 20, 33],
   ['explorer', 'Explorateur', 'A lu des infos dans les 10 rubriques.', '🧭', '#5AD1B5', 10, 34],
   ['sharer', 'Partageur', 'A partagé 10 infos.', '📣', '#4FB0FF', 10, 35],
+  ['referral', 'Ambassadeur', 'A fait découvrir l’app à 3 amis.', '🤝', '#3DDC97', 3, 36],
+  ['referral', 'Grand ambassadeur', 'A fait découvrir l’app à 10 amis.', '🌟', '#FFB547', 10, 37],
   ['event', 'Présent au lancement', 'Était là pendant les deux premiers mois.', '🎉', '#C86BFA', 0, 40],
 ].map(([kind, label, description, icon, color, threshold, position], i) => ({ id: `b${i}`, kind, label, description, icon, color, threshold, position, active: true, ...(kind === 'event' ? { starts_at: '2026-11-23', ends_at: '2027-01-22' } : {}) } as Badge));
 let demoHolders: Record<string, Holder[]> = { b1: [{ user_id: 'u0', pseudo: 'Camille_R', email: 'camille@exemple.fr', granted_at: new Date().toISOString() }] };
