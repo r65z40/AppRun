@@ -1,7 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { PremiumPage, ReaderSubscription } from './Premium';
+import { premiumApi, type PremiumStats } from './premium-data';
 import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'dashboard' | 'readers' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'team' | 'settings';
+type Page = 'premium' | 'dashboard' | 'readers' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'team' | 'settings';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
 const PAGES: [Page, string, string][] = [
   ['dashboard', 'Tableau de bord', ''],
@@ -11,6 +13,7 @@ const PAGES: [Page, string, string][] = [
   ['readers', 'Lecteurs', 'Lecteurs'],
   ['moderation', 'Modération', 'Lecteurs'],
   ['messages', 'Messages', 'Lecteurs'],
+  ['premium', 'Abonnements', 'Revenus'],
   ['team', 'Équipe', 'Administration'],
   ['audit', 'Journal', 'Administration'],
   ['settings', 'Réglages', 'Administration'],
@@ -28,7 +31,7 @@ const ago = (iso: string | null) => {
   return m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`;
 };
 // Modération : seulement les commentaires. Rédaction : tout sauf les lecteurs, l'équipe, le journal et les réglages.
-const ADMIN_ONLY: Page[] = ['readers', 'team', 'audit', 'settings'];
+const ADMIN_ONLY: Page[] = ['readers', 'premium', 'team', 'audit', 'settings'];
 const allowed = (role: Role, p: Page) => role === 'admin' || (role === 'editor' ? !ADMIN_ONLY.includes(p) : p === 'moderation');
 const plain = (s: string) => s.replace(/<\/?b>/g, '');
 
@@ -83,6 +86,7 @@ export default function App() {
         {page === 'ai' && allowed(me.role, page) && <AIPage say={say} admin={me.role === 'admin'} />}
         {page === 'moderation' && <ModerationPage say={say} />}
         {page === 'readers' && allowed(me.role, page) && <ReadersPage say={say} />}
+        {page === 'premium' && allowed(me.role, page) && <PremiumPage say={say} />}
         {page === 'audit' && allowed(me.role, page) && <AuditPage />}
         {page === 'team' && allowed(me.role, page) && <TeamPage say={say} me={me} />}
         {page === 'settings' && allowed(me.role, page) && <SettingsPage say={say} />}
@@ -147,6 +151,7 @@ type Filter = 'all' | 'review' | 'draft' | 'published' | 'rejected';
 /* ---------------- Tableau de bord ---------------- */
 const usd = (n: number) => `${n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
 const int = (n: number) => n.toLocaleString('fr-FR');
+const eur = (c: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(c / 100);
 // Un passage en panne, bloqué, ou trop ancien (édition : 1 par jour ; Dernière minute : toutes les 10 min de 6 h à 23 h).
 function engineAlert(r: Dashboard['last_runs'][number] | undefined, kind: 'edition' | 'flash'): string | null {
   if (!r) return 'Aucun passage enregistré pour l’instant.';
@@ -162,9 +167,10 @@ function DashboardPage({ go }: { go: (p: Page) => void }) {
   const [d, setD] = useState<Dashboard | null>(null);
   const [top, setTop] = useState<TopArticle[]>([]);
   const [mod, setMod] = useState<ModerationCost | null>(null);
+  const [prem, setPrem] = useState<PremiumStats | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    const load = () => Promise.all([api.dashboard().then(setD), api.topArticles().then(setTop), api.moderationCost().then(setMod)]).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    const load = () => Promise.all([api.dashboard().then(setD), api.topArticles().then(setTop), api.moderationCost().then(setMod), premiumApi.stats().then(setPrem).catch(() => null)]).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
     load();
     const t = setInterval(load, 60000);
     return () => clearInterval(t);
@@ -209,7 +215,7 @@ function DashboardPage({ go }: { go: (p: Page) => void }) {
         <Tile label="Coût de l'IA, 7 jours" value={usd(d.ai_7)} />
         <Tile label="Coût de l'IA, 30 jours" value={usd(d.ai_30)} sub="Estimé d'après les jetons consommés et le tarif du modèle" />
         <Tile label="Modération par l'IA, 30 jours" value={usd(mod?.cost ?? 0)} sub={`${int(mod?.judged ?? 0)} commentaire${(mod?.judged ?? 0) > 1 ? 's' : ''} tranché${(mod?.judged ?? 0) > 1 ? 's' : ''} · ${fmtTok((mod?.input ?? 0) + (mod?.output ?? 0))} jetons (déjà compris dans le coût de l'IA)`} />
-        <Tile label="Revenus Premium" value="—" sub={`${int(d.premium)} abonné${d.premium > 1 ? 's' : ''} · s'affichera quand Premium sera branché`} />
+        <Tile label="Revenus Premium, 30 jours" value={eur(prem?.revenue_30_cents ?? 0)} sub={`${int(prem?.premium ?? d.premium)} abonné${(prem?.premium ?? d.premium) > 1 ? 's' : ''} · revenu mensuel récurrent ${eur(prem?.mrr_cents ?? 0)}`} />
         <Tile label="Revenus publicité" value="—" sub="S'affichera quand la publicité sera branchée" />
       </div>
     </>
@@ -1083,7 +1089,7 @@ function ReaderSheet({ p, act }: { p: Reader; act: (f: () => Promise<unknown>, m
     <div className="body">
       {p.banned || suspended ? <p className="warn small">{p.banned ? 'Banni' : `Suspendu jusqu'au ${until(p.suspended_until!)}`}{p.ban_reason ? ` · motif : ${p.ban_reason}` : ''}</p> : null}
       {d ? <p className="muted small">{d.days_30} jour{d.days_30 > 1 ? 's' : ''} d'ouverture sur 30 · {d.likes} like{d.likes > 1 ? 's' : ''} donnés · {d.reports_made} signalement{d.reports_made > 1 ? 's' : ''} faits · bloqué par {d.blocked_by} lecteur{d.blocked_by > 1 ? 's' : ''}</p> : <p className="muted small">Chargement…</p>}
-      {/* abonnement */}
+      <ReaderSubscription id={p.id} />
       <div className="btns">
         {p.role === 'reader' && !p.banned ? <>
           {suspended ? <button className="btn sm" onClick={() => run(() => api.suspend(p.id, 0), 'Suspension levée')}>Lever la suspension</button>

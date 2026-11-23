@@ -365,7 +365,7 @@ revoke all on function public.admin_revoke_premium(uuid, text) from public, anon
 grant execute on function public.admin_revoke_premium(uuid, text) to authenticated;
 
 -- Abonnés : l'abonnement le plus récent de chaque lecteur. filter : live, trial, paying, gift, cancelled, ended, all.
-create or replace function public.admin_subscribers(search text default '', filter text default 'live')
+create or replace function public.admin_subscribers(search text default '', filter text default 'live', uid uuid default null)
 returns table (user_id uuid, pseudo text, email text, sub_id uuid, status text, source text, plan text, started_at timestamptz,
                expires_at timestamptz, auto_renew boolean, price_cents int, currency text, sandbox boolean, note text, live boolean)
 language plpgsql stable security definer set search_path = public as $$
@@ -380,7 +380,8 @@ begin
       join public.profiles p on p.id = s.user_id
       left join auth.users u on u.id = s.user_id
       left join public.plans pl on pl.id = s.plan_id
-     where (coalesce(search, '') = '' or p.pseudo ilike '%' || search || '%' or u.email ilike '%' || search || '%')
+     where (uid is null or s.user_id = uid)
+       and (coalesce(search, '') = '' or p.pseudo ilike '%' || search || '%' or u.email ilike '%' || search || '%')
        and case coalesce(filter, 'live')
              when 'live' then public.sub_live(s.status, s.expires_at)
              when 'trial' then s.status = 'trial' and public.sub_live(s.status, s.expires_at)
@@ -392,8 +393,8 @@ begin
      order by s.updated_at desc
      limit 300;
 end $$;
-revoke all on function public.admin_subscribers(text, text) from public, anon;
-grant execute on function public.admin_subscribers(text, text) to authenticated;
+revoke all on function public.admin_subscribers(text, text, uuid) from public, anon;
+grant execute on function public.admin_subscribers(text, text, uuid) to authenticated;
 
 create or replace function public.admin_sub_events(uid uuid default null, lim int default 200)
 returns table (at timestamptz, pseudo text, kind text, source text, amount_cents int, currency text, sandbox boolean, detail text)

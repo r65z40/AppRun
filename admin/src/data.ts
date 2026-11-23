@@ -260,4 +260,6 @@ function supabaseApi(sb: SupabaseClient): Api {
   };
 }
 
-export const api: Api = URL && KEY ? supabaseApi(createClient(URL, KEY)) : demoApi();
+/** Client Supabase partagé (null en mode démo), aussi utilisé par premium-data.ts. */
+export const sb: SupabaseClient | null = URL && KEY ? createClient(URL, KEY) : null;
+export const api: Api = sb ? supabaseApi(sb) : demoApi();
