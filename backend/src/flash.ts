@@ -14,6 +14,7 @@ import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 import { moderate } from './moderate.js';
 import { sendTopicAlerts } from './alerts.js';
+import { pauseMessage } from './pause.js';
 
 const args = process.argv.slice(2);
 const fx = args.indexOf('--fixtures');
@@ -46,7 +47,7 @@ async function flash() {
   // Abonnements Premium arrivés à échéance (même moteur en pause : c'est de l'argent, pas du contenu).
   const ended = await q<{ n: number }>('select public.expire_premium() as n').catch(() => [{ n: 0 }]);
   if (ended[0]?.n) log(`Premium : ${ended[0].n} abonnement(s) arrivé(s) à échéance`);
-  if (cfg.paused()) return J.finish('ok', 'Moteur en pause dans les réglages : rien fait.');
+  if (cfg.paused()) { const msg = await pauseMessage(); log(msg); return J.finish('ok', msg, { paused: true }); }
   await budget.check(); // IA coupée ou budget atteint : arrêt propre (voir main), ni modération ni Dernière minute
   const mod = await moderate(log).catch((e) => { log(`Modération impossible : ${e instanceof Error ? e.message : e}`); return null; });
   if (mod?.ai) { J.details.moderation = mod.done; J.details.moderation_ai = mod.ai; }
@@ -68,12 +69,27 @@ async function flash() {
   const items: Item[] = raws.map((r, k) => ({ n: k + 1, source: r.source, title: r.title, description: r.description, publishedAt: r.published_at?.toISOString() ?? null, hint: r.hint }));
   const today = (await q<{ title: string }>("select title from flashes where published_at > now() - interval '18 hours' order by published_at")).map((r) => r.title);
 
-  const found = await selectFlashes(items, today);
-  log(`L'IA propose ${found.length} info(s) majeure(s).`);
+  // Minimum par jour : sur 6 h-23 h, combien d'infos la journée devrait-elle déjà compter ? En retard = seuil abaissé.
+  const parts = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(new Date());
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? 0) + Number(parts.find((p) => p.type === 'minute')?.value ?? 0) / 60;
+  const minDay = Math.min(cfg.flashMinPerDay(), cfg.flashMaxPerDay());
+  const due = minDay ? Math.min(minDay, Math.ceil(minDay * Math.min(1, Math.max(0, (hour - 6) / 17)))) : 0;
+  const behind = Math.max(0, due - todayCount);
+  const normal = cfg.flashMinImportance();
+  const relaxed = Math.min(normal, cfg.flashRelaxImportance());
+  const catchUp = behind > 0 && relaxed < normal;
+  if (catchUp) log(`Rythme : ${todayCount} info(s) aujourd'hui pour ${due} attendue(s) à cette heure (minimum ${minDay} par jour) : importance ${relaxed} acceptée pour ${behind} info(s).`);
+  J.details.rythme = { aujourdhui: todayCount, attendues: due, minimum: minDay, seuil: catchUp ? relaxed : normal };
+
+  const found = (await selectFlashes(items, today, catchUp ? relaxed : normal, catchUp)).sort((a, b) => b.importance - a.importance);
+  log(`L'IA propose ${found.length} info(s)${catchUp ? '' : ' majeure(s)'}.`);
+  let extra = 0; // infos publiées grâce au seuil abaissé
   const kept: { title: string; sources: string[]; rejected?: string }[] = (J.details.flashes = []) as never;
   let n = 0;
   for (const f of found) {
-    const issues = checkFlash(f, items);
+    const issues = checkFlash(f, items, catchUp ? relaxed : normal);
+    const isExtra = f.importance < normal;
+    if (isExtra && extra >= behind) issues.push('minimum du jour déjà rattrapé');
     if (todayCount + n >= cfg.flashMaxPerDay()) issues.push(`plafond de ${cfg.flashMaxPerDay()} infos par jour atteint`);
     if (issues.length) {
       log(`  écartée : ${f.title} (${issues.join(', ')})`);
@@ -90,7 +106,8 @@ async function flash() {
        !!f.sensitive || /\bmorts?\b|attentat|tué|décès/i.test(f.title + ' ' + f.sentence)],
     );
     n++;
-    log(`  ⚡ ${f.title}`);
+    if (isExtra) extra++;
+    log(`  ⚡ ${f.title}${isExtra ? ` (importance ${f.importance}, pour tenir le minimum du jour)` : ''}`);
     kept.push({ title: f.title, sources: sources.map((x) => x.source) });
   }
   const summary = `${fetched} titres lus, ${items.length} dépêches récentes, ${n} info(s) publiée(s).`;

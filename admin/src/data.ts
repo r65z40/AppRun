@@ -66,6 +66,11 @@ export type ReaderDetail = { likes: number; reports_made: number; blocked_by: nu
 export type AuditEntry = { at: string; who: string; action: string; target: string | null; detail: string | null };
 export type ModerationCost = { judged: number; input: number; output: number; cost: number };
 export type TopArticle = { title: string; rubric_id: string; likes: number; comments: number };
+export type EngineStatus = {
+  paused: boolean; paused_until: string | null; paused_at: string | null; paused_by: string | null; ai_off: boolean;
+  articles_today: number; flashes_today: number; last_published: string | null;
+  failing_sources: { name: string; error: string | null; fails: number }[];
+};
 export type Dashboard = {
   active_today: number; active_7: number; active_30: number; accounts: number; accounts_7: number; premium: number;
   comments_7: number; likes_7: number; reports_open: number; banned: number; ai_today: number; ai_7: number; ai_30: number;
@@ -124,6 +129,7 @@ export interface Api {
   /** Bannis et suspendus. */
   banned(): Promise<Profile[]>;
   dashboard(): Promise<Dashboard>;
+  engineStatus(): Promise<EngineStatus>;
   topArticles(): Promise<TopArticle[]>;
   moderationCost(): Promise<ModerationCost>;
   readers(search: string, filter?: ReaderFilter, page?: number): Promise<Reader[]>;
@@ -288,6 +294,7 @@ function supabaseApi(sb: SupabaseClient): Api {
     },
     banned: async () => sb.from('profiles').select('*').or(`banned.eq.true,suspended_until.gt.${new Date().toISOString()}`).order('created_at', { ascending: false }).then(ok<Profile[]>),
     dashboard: async () => ok(await sb.rpc('dashboard')) as Dashboard,
+    engineStatus: async () => ok(await sb.rpc('engine_status')) as EngineStatus,
     topArticles: async () => ok(await sb.rpc('top_articles')) as TopArticle[],
     moderationCost: async () => ok(await sb.rpc('moderation_cost')) as ModerationCost,
     readers: async (search, filter = 'all', page = 0) => ok(await sb.rpc('admin_users', { search, filter, page })) as Reader[],

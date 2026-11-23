@@ -62,6 +62,14 @@ psql "$VIDE" -tAc "select case when details->'config'->>'consignes' = 'Ton sobre
 psql "$VIDE" -qc "insert into app_settings (key, value) values ('ENGINE_PAUSED', '1')"
 DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/flash.ts --fixtures test/feeds >/dev/null
 psql "$VIDE" -tAc "select case when summary like '%pause%' then 'OK  pause générale respectée par la Dernière minute' else 'ÉCHEC  pause ignorée' end from engine_runs where kind = 'flash' order by started_at desc limit 1"
+psql "$VIDE" -tAc "select case when summary like 'Moteur en pause depuis %, sans reprise automatique : rien publié. Pour relancer : IA > Pilotage.' then 'OK  pause expliquée : depuis quand et comment relancer' else 'ÉCHEC  message de pause : ' || coalesce(summary, '?') end from engine_runs where kind = 'flash' order by started_at desc limit 1"
+psql "$VIDE" -qc "update app_settings set value = to_char(now() at time zone 'UTC' - interval '1 minute', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') where key = 'ENGINE_PAUSED'"
+DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/flash.ts --fixtures test/feeds >/dev/null
+psql "$VIDE" -tAc "select case when summary not like '%pause%' then 'OK  pause d''une durée choisie : le moteur reprend tout seul' else 'ÉCHEC  pause expirée ignorée' end from engine_runs where kind = 'flash' order by started_at desc limit 1"
+psql "$VIDE" -qc "update app_settings set value = to_char(now() at time zone 'UTC' + interval '2 hours', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') where key = 'ENGINE_PAUSED'"
+DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/flash.ts --fixtures test/feeds >/dev/null
+psql "$VIDE" -tAc "select case when summary like 'Moteur en pause depuis %, reprise automatique %' then 'OK  pause de 2 h respectée, reprise annoncée' else 'ÉCHEC  pause datée : ' || coalesce(summary, '?') end from engine_runs where kind = 'flash' order by started_at desc limit 1"
+psql "$VIDE" -tA -c "insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000ad', 'chef@exemple.fr') on conflict do nothing" -c "update profiles set role = 'admin' where id = '00000000-0000-0000-0000-0000000000ad'" -c "select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000ad', false)" -c "select case when (engine_status() ->> 'paused')::boolean and engine_status() ? 'failing_sources' then 'OK  bandeau du back office : pause visible par l''équipe' else 'ÉCHEC  engine_status' end" | grep -E '^(OK|ÉCHEC)'
 
 echo "--- Budget de l'IA"
 psql "$VIDE" -qc "delete from app_settings where key = 'ENGINE_PAUSED'" -c "insert into app_settings (key, value) values ('AI_OFF', '1')"
@@ -88,9 +96,12 @@ DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --update
 psql "$VIDE" -tAc "select case when (select summary from engine_runs where kind = 'edition' order by started_at desc limit 1) like 'Mise à jour : %' and count(*) = 4
   and not exists (select r from articles, unnest(raw_item_ids) r group by r having count(*) > 1)
   then 'OK  mise à jour : une carte importante ajoutée, aucun sujet repris' else 'ÉCHEC  mise à jour (' || count(*) || ' cartes)' end from articles"
-psql "$VIDE" -qc "insert into app_settings (key, value) values ('LIVE_MIN_IMPORTANCE', '10')"
+psql "$VIDE" -qc "insert into app_settings (key, value) values ('LIVE_MIN_IMPORTANCE', '10'), ('LIVE_MIN_CARDS', '0')"
 DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --update >/dev/null
 psql "$VIDE" -tAc "select case when count(*) = 4 then 'OK  seuil d''importance des mises à jour respecté' else 'ÉCHEC  seuil ignoré (' || count(*) || ' cartes)' end from articles"
+psql "$VIDE" -qc "delete from app_settings where key = 'LIVE_MIN_CARDS'"
+DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --update >/dev/null
+psql "$VIDE" -tAc "select case when count(*) = 5 and (select log::text from engine_runs where kind = 'edition' order by started_at desc limit 1) like '%pour garantir 1 carte(s) par mise à jour%' then 'OK  au moins une carte par mise à jour, même sous le seuil' else 'ÉCHEC  minimum de cartes par mise à jour (' || count(*) || ' cartes)' end from articles"
 psql "$VIDE" -qc "insert into app_settings (key, value) values ('LIVE_UPDATES', '0')"
 DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --update >/dev/null
 psql "$VIDE" -tAc "select case when summary like '%coupées%' then 'OK  mises à jour coupées dans les réglages' else 'ÉCHEC  réglage LIVE_UPDATES ignoré' end from engine_runs where kind = 'edition' order by started_at desc limit 1"

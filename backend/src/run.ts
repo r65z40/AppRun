@@ -21,6 +21,7 @@ import { AiStopped, budget, model, checkCard, selectStories, setRubricHints, wri
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 import { sendTopicAlerts } from './alerts.js';
+import { pauseMessage } from './pause.js';
 
 const args = process.argv.slice(2);
 const arg = (k: string) => {
@@ -60,8 +61,9 @@ async function edition() {
   await q('select purge_raw_items($1)', [cfg.rawRetentionDays()]).catch(() => {});
   setRubricHints(await q<{ id: string; name: string; ai_hint: string | null }>('select id, name, ai_hint from rubrics').catch(() => []));
   if (cfg.paused()) {
-    log('Moteur en pause (Réglages) : aucun passage.');
-    return J.finish('ok', 'Moteur en pause dans les réglages : rien fait.');
+    const msg = await pauseMessage();
+    log(msg);
+    return J.finish('ok', msg, { paused: true });
   }
 
   const ed = await q<{ status: string }>('select status from editions where date = $1', [DATE]);
@@ -140,6 +142,22 @@ async function edition() {
     .sort((a, b) => Number(b.essential) - Number(a.essential) || b.importance - a.importance)
     .map((s) => (s.essential && ++ess > cfg.maxEssential() ? { ...s, essential: false } : s))
     .filter((s, k) => (k < cap ? true : (dropped.push({ label: s.label, why: `plafond de ${cap} cartes` }), false)));
+  // Mise à jour de la journée : au moins LIVE_MIN_CARDS cartes s'il y a du neuf, même sous le seuil d'importance
+  // des mises à jour (les plus importantes d'abord, toujours au-dessus des minimums de l'édition).
+  const minCards = UPDATE ? Math.min(cfg.liveMinCards(), cap) : 0;
+  if (stories.length < minCards) {
+    const kept = new Set(stories.map((s) => s.label));
+    const extra = proposed
+      .filter((s) => !kept.has(s.label) && s.importance >= cfg.minImportance() && mediaCount(s) >= cfg.minSources())
+      .sort((a, b) => b.importance - a.importance)
+      .slice(0, minCards - stories.length);
+    for (const s of extra) {
+      stories.push({ ...s, essential: false });
+      const k = dropped.findIndex((d) => d.label === s.label);
+      if (k >= 0) dropped.splice(k, 1);
+    }
+    if (extra.length) log(`   ${extra.length} sujet(s) ajouté(s) sous le seuil pour garantir ${minCards} carte(s) par mise à jour`);
+  }
   J.details.dropped = dropped;
   log(`   ${proposed.length} sujets proposés par l'IA, ${stories.length} gardés selon les réglages, sur ${items.length} titres`);
   J.details.stories = stories.map((s) => ({
