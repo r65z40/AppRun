@@ -1,7 +1,7 @@
 import { FLASHES, RUBRICS } from './content';
+import { pickAds } from './ads';
 import type { Article, Column, Comment, Tag } from './types';
 
-export const AD = { ad: true as const, id: 'ad' as const };
 export const MEDIA = "D'après L'Écho national, Agence Presse Europe, Radio Horizon";
 
 export const rubricOf = (a: Article) => RUBRICS.find((r) => r.items.includes(a))!;
@@ -26,7 +26,7 @@ export const TAGS: Record<Tag, { label: string; why: (a: Article) => string }> =
  * taste : goût du lecteur par rubrique (likes moins dislikes). Les rubriques qu'il aime le plus passent en premier
  * dans « Mon édition » et dans la roue des rubriques.
  */
-export function buildColumns(active: string[], quota: number, premium: boolean, taste: Record<string, number> = {}): Column[] {
+export function buildColumns(active: string[], quota: number, premium: boolean, taste: Record<string, number> = {}, adsPersonalized = false): Column[] {
   // « Mon édition » : uniquement les rubriques choisies, sujets majeurs en tête, puis chaque rubrique à tour de rôle.
   const score = (id: string) => taste[id] ?? 0;
   const act = RUBRICS.filter((r) => active.includes(r.id) && r.items.length > 0).sort((a, b) => score(b.id) - score(a.id));
@@ -47,7 +47,11 @@ export function buildColumns(active: string[], quota: number, premium: boolean, 
 
   const edCards: Column['cards'] = picked.map((p) => p.a);
   // Version gratuite : une pub après la 3e info, puis une toutes les six (§4.6). Premium les retire.
-  if (!premium) for (let i = 3, n = 0; i < edCards.length; i += 7, n++) edCards.splice(i, 0, { ...AD, id: `ad-${n}` });
+  // Les pubs viennent des campagnes en cours ; sans campagne, aucune carte sponsorisée.
+  if (!premium) {
+    const ads = pickAds(Math.max(0, Math.ceil((edCards.length - 3) / 6)), active, adsPersonalized);
+    ads.forEach((c, n) => edCards.splice(3 + n * 7, 0, { ad: true, id: `ad-${n}-${c.id}`, c }));
+  }
   const tags: Record<string, Tag> = {};
 
   return [

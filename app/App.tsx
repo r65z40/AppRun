@@ -9,6 +9,7 @@ import { useFonts, Archivo_400Regular, Archivo_600SemiBold, Archivo_900Black } f
 import { C } from './src/theme';
 import { RUBRICS } from './src/content';
 import { buildColumns, rubricOf, seedComments } from './src/edition';
+import { adHit, loadAds } from './src/ads';
 import { Feed } from './src/Feed';
 import { SummarySheet, CommentsSheet } from './src/Sheets';
 import { Bravo, End, Onboarding, Settings, Splash, Toast, Welcome, type OnbResult, type Prefs } from './src/Screens';
@@ -16,7 +17,7 @@ import { initFeel, feel, prefs as feelPrefs } from './src/feel';
 import { loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, type AppMessage } from './src/remote';
 import { Account } from './src/Account';
 import * as acc from './src/account';
-import { isArticle, type Article, type Card, type Comment } from './src/types';
+import { isAd, isArticle, type Article, type Card, type Comment } from './src/types';
 
 type Phase = 'splash' | 'onb' | 'feed';
 type Overlay = null | 'bravo' | 'end' | 'settings';
@@ -88,10 +89,10 @@ function Main() {
   const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 8, sound: true, haptic: true, parallax: true, premium: false, time: '7 h 30', adsPersonalized: false });
 
   // Fil
-  // Dernière minute : rechargée toutes les 3 minutes et au retour dans l'app.
+  // Dernière minute et campagnes de pub : rechargées toutes les 3 minutes et au retour dans l'app.
   const [flashVer, setFlashVer] = useState(0);
   useEffect(() => {
-    const refresh = () => loadFlashes().then((changed) => changed && setFlashVer((v) => v + 1));
+    const refresh = () => Promise.all([loadFlashes(), loadAds()]).then(([f, a]) => (f || a) && setFlashVer((v) => v + 1));
     refresh();
     const t = setInterval(refresh, 180000);
     const sub = AppState.addEventListener('change', (s) => s === 'active' && refresh());
@@ -100,7 +101,7 @@ function Main() {
   // Compte lecteur
   const me = acc.useMe();
   const premium = p.premium || !!me?.premium;
-  const cols = useMemo(() => buildColumns(p.active, p.quota, premium, p.taste), [p.active, p.quota, premium, p.taste, flashVer, edVer]);
+  const cols = useMemo(() => buildColumns(p.active, p.quota, premium, p.taste, p.adsPersonalized), [p.active, p.quota, premium, p.taste, p.adsPersonalized, flashVer, edVer]);
   const [ri, setRi] = useState(0);
   const [idx, setIdx] = useState<Record<string, number>>({});
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
@@ -243,6 +244,14 @@ function Main() {
       readMs.current += Math.min(60000, Date.now() - shownAt.current);
       clearTimeout(t);
     };
+  }, [current, phase, overlay]);
+
+  // Pub restée une seconde à l'écran : un affichage compté pour la campagne.
+  useEffect(() => {
+    if (phase !== 'feed' || overlay || !current || !isAd(current)) return;
+    const ad = current;
+    const t = setTimeout(() => adHit(ad.id, ad.c), 1000);
+    return () => clearTimeout(t);
   }, [current, phase, overlay]);
 
   const markSeen = (id: string) =>
@@ -400,7 +409,7 @@ function Main() {
   const onSave = (np: Prefs) => {
     // On revient sur la même carte si elle existe encore dans le nouveau fil.
     const prev = current;
-    const next = buildColumns(np.active, np.quota, np.premium || !!me?.premium, np.taste);
+    const next = buildColumns(np.active, np.quota, np.premium || !!me?.premium, np.taste, np.adsPersonalized);
     let nri = Math.min(ri, next.length - 1);
     const nidx: Record<string, number> = {};
     if (prev) {
