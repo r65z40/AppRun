@@ -4,7 +4,7 @@ import { premiumApi, type PremiumStats } from './premium-data';
 import { AdsPage } from './Ads';
 import { AlgoPage, ReaderTaste } from './Algo';
 import { BrandPage } from './Brand';
-import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
 type Page = 'dashboard' | 'readers' | 'algo' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings' | 'brand';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
@@ -40,6 +40,8 @@ const ago = (iso: string | null) => {
 const ADMIN_ONLY: Page[] = ['readers', 'algo', 'ads', 'premium', 'team', 'audit', 'settings', 'brand'];
 const allowed = (role: Role, p: Page) => role === 'admin' || (role === 'editor' ? !ADMIN_ONLY.includes(p) : p === 'moderation');
 const plain = (s: string) => s.replace(/<\/?b>/g, '');
+/** Recherche sans accents ni majuscules. */
+const norm = (s: string) => plain(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
@@ -243,6 +245,10 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
   const [filter, setFilter] = useState<Filter>('all');
   const [edit, setEdit] = useState<Article | null>(null);
   const [auto, setAuto] = useState<boolean | null>(null);
+  const [search, setSearch] = useState('');
+  const [rub, setRub] = useState('');
+  const [sort, setSort] = useState<'rank' | 'importance' | 'recent'>('rank');
+  const [sel, setSel] = useState<Set<string>>(new Set());
   const today = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date());
   const blank = (): Article => ({
     id: '', edition_date: date ?? today, rubric_id: 'france', status: 'draft', rank: 0, importance: 5, essential: false, sensitive: false, title: '', key_sentence: '',
@@ -254,6 +260,7 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
     const dd = d ?? e[0]?.date ?? null;
     setDate(dd);
     setList(dd ? await api.articles(dd) : []);
+    setSel(new Set());
   }, [date]);
   useEffect(() => {
     reload();
@@ -264,8 +271,21 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
   const ed = eds.find((e) => e.date === date);
   const count = (f: (a: Article) => boolean) => list.filter(f).length;
   const isReview = (a: Article) => a.status === 'draft' && a.review_notes.length > 0;
-  const shown = list.filter((a) => filter === 'all' || (filter === 'review' ? isReview(a) : a.status === filter));
-  const byRub = Object.keys(RUBRICS).map((r) => [r, shown.filter((a) => a.rubric_id === r).sort((x, y) => x.rank - y.rank)] as const).filter(([, l]) => l.length);
+  const needle = norm(search.trim());
+  const shown = list.filter((a) => (filter === 'all' || (filter === 'review' ? isReview(a) : a.status === filter)) && (!rub || a.rubric_id === rub)
+    && (!needle || norm(`${a.title} ${a.key_sentence} ${a.facts.map((f) => `${f.text} ${f.source}`).join(' ')}`).includes(needle)));
+  const order = (x: Article, y: Article) => sort === 'importance' ? y.importance - x.importance || x.rank - y.rank : sort === 'recent' ? y.created_at.localeCompare(x.created_at) : x.rank - y.rank;
+  const byRub = Object.keys(RUBRICS).map((r) => [r, shown.filter((a) => a.rubric_id === r).sort(order)] as const).filter(([, l]) => l.length);
+  const picked = list.filter((a) => sel.has(a.id));
+  const toggle = (id: string) => setSel((s) => { const n = new Set(s); if (!n.delete(id)) n.add(id); return n; });
+  const bulk = async (patch: Partial<Article>, msg: string, only: (a: Article) => boolean = () => true) => {
+    const l = picked.filter(only);
+    if (!l.length) return say('Rien à changer dans la sélection');
+    await api.saveArticles(l.map((a) => ({ id: a.id, patch })));
+    setList((all) => all.map((x) => (l.some((o) => o.id === x.id) ? { ...x, ...patch } : x)));
+    setSel(new Set());
+    say(`${l.length} ${msg}`);
+  };
 
   const save = async (a: Article, patch: Partial<Article>, msg?: string) => {
     await api.saveArticle(a.id, patch);
@@ -325,37 +345,65 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
       </header>
 
 
+      <div className="toolbar">
+        <input type="search" placeholder="Rechercher un titre, un fait, un média…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Rechercher" />
+        <select value={rub} onChange={(e) => setRub(e.target.value)} aria-label="Rubrique">
+          <option value="">Toutes les rubriques</option>
+          {Object.entries(RUBRICS).map(([k, v]) => <option key={k} value={k}>{v} ({count((a) => a.rubric_id === k)})</option>)}
+        </select>
+        <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Trier">
+          <option value="rank">Ordre de l'app</option><option value="importance">Les plus importantes</option><option value="recent">Les plus récentes</option>
+        </select>
+      </div>
+
       <div className="tabs">
         {([['all', 'Toutes', list.length], ['review', 'À relire', count(isReview)], ['draft', 'Brouillons', count((a) => a.status === 'draft')], ['published', 'Publiées', count((a) => a.status === 'published')], ['rejected', 'Rejetées', count((a) => a.status === 'rejected')]] as [Filter, string, number][]).filter(([f, , n]) => f === 'all' || n || filter === f).map(([f, l, n]) => (
           <button key={f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>{l} <b>{n}</b></button>
         ))}
       </div>
 
-      {!byRub.length ? <p className="muted empty">Rien ici pour l'instant.</p> : null}
+      {sel.size ? (
+        <div className="bulk">
+          <b>{sel.size} sélectionnée{sel.size > 1 ? 's' : ''}</b>
+          <button className="btn primary sm" onClick={() => bulk({ status: 'published', published_at: new Date().toISOString() }, 'cartes publiées', (a) => a.status !== 'published')}>Publier</button>
+          <button className="btn sm" onClick={() => bulk({ status: 'draft', published_at: null }, 'cartes remises en brouillon', (a) => a.status !== 'draft')}>Brouillon</button>
+          <button className="btn sm" onClick={() => bulk({ essential: true }, 'cartes marquées essentielles', (a) => !a.essential)}>Essentiel</button>
+          <button className="btn ghost sm" onClick={() => bulk({ status: 'rejected' }, 'cartes rejetées', (a) => a.status !== 'rejected')}>Rejeter</button>
+          <button className="btn ghost sm" onClick={() => setSel(new Set())}>Annuler</button>
+        </div>
+      ) : shown.length ? (
+        <button className="link small selall" onClick={() => setSel(new Set(shown.map((a) => a.id)))}>Tout sélectionner ({shown.length})</button>
+      ) : null}
+      {!byRub.length ? <p className="muted empty">{search || rub ? 'Aucune carte ne correspond.' : "Rien ici pour l'instant."}</p> : null}
       {byRub.map(([r, l]) => (
         <section key={r} className="rub">
           <h2>{RUBRICS[r]} <span className="muted">{l.length}</span></h2>
           {l.map((a, k) => (
-            <article key={a.id} className={`card ${a.status}`}>
-              <div className="order">
-                <button className="ic" onClick={() => move(a, -1)} disabled={k === 0} aria-label="Monter">↑</button>
-                <button className="ic" onClick={() => move(a, 1)} disabled={k === l.length - 1} aria-label="Descendre">↓</button>
-              </div>
+            <article key={a.id} className={`card ${a.status} ${sel.has(a.id) ? 'picked' : ''}`}>
+              <input type="checkbox" className="pick" checked={sel.has(a.id)} onChange={() => toggle(a.id)} aria-label="Sélectionner" />
+              {sort === 'rank' ? (
+                <div className="order">
+                  <button className="ic" onClick={() => move(a, -1)} disabled={k === 0} aria-label="Monter">↑</button>
+                  <button className="ic" onClick={() => move(a, 1)} disabled={k === l.length - 1} aria-label="Descendre">↓</button>
+                </div>
+              ) : null}
+              <div className="thumb" style={{ backgroundImage: a.photo_url ? `url(${a.photo_url})` : a.photo_tag ? `url(photos/${a.photo_tag}.jpg)` : undefined }} />
               <div className="body" onClick={() => setEdit(a)}>
                 <div className="line">
                   <span className={`pill ${a.status}`}>{STATUS_LABEL[a.status]}</span>
                   {a.essential ? <span className="pill ess">Essentiel</span> : null}
                   {a.sensitive ? <span className="pill">Sensible</span> : null}
-                  <span className="muted small">importance {a.importance}/10</span>
+                  <span className="muted small">importance {a.importance}/10 · {a.published_at ? `publiée ${ago(a.published_at)}` : `écrite ${ago(a.created_at)}`}</span>
                 </div>
                 <h3>{a.title}</h3>
                 <p className="muted">{a.key_sentence}</p>
+                <p className="muted small srcs">{[...new Set(a.facts.map((f) => f.source).filter(Boolean))].join(' · ') || 'Aucune source'}</p>
                 {a.review_notes.length ? <p className="warn">⚠ {a.review_notes.join(' · ')}</p> : null}
               </div>
               <div className="btns">
                 {a.status !== 'published' ? <button className="btn primary sm" onClick={() => publish(a)}>Publier</button> : <button className="btn sm" onClick={() => save(a, { status: 'draft', published_at: null }, 'Carte dépubliée')}>Dépublier</button>}
                 <button className="btn sm" onClick={() => setEdit(a)}>Modifier</button>
-                {a.status !== 'rejected' ? <button className="btn ghost sm" onClick={() => save(a, { status: 'rejected' }, 'Carte rejetée')}>Rejeter</button> : null}
+                {a.status !== 'rejected' ? <button className="btn ghost sm" onClick={() => save(a, { status: 'rejected' }, 'Carte rejetée')}>Rejeter</button> : <button className="btn ghost sm" onClick={() => save(a, { status: 'draft' }, 'Carte remise en brouillon')}>Restaurer</button>}
               </div>
             </article>
           ))}
@@ -628,6 +676,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
             {st.Pick({ k: 'MAX_ESSENTIAL', label: 'Sujets « essentiels »', help: 'Les sujets que tout le monde voit en tête de « Mon édition », quelles que soient ses rubriques.', def: '4', options: st.nums(range(0, 10)) })}
             {st.Pick({ k: 'MIN_IMPORTANCE', label: 'Importance minimum', help: "L'IA note chaque sujet de 1 (anecdotique) à 10 (majeur). En dessous de ce seuil, le sujet est écarté.", def: '1', options: [['1', '1 (tout garder)'], ...st.nums(range(2, 8)).map(([v, l]) => [v, `${l} sur 10`] as [string, string])] })}
             {st.Pick({ k: 'MIN_SOURCES', label: 'Médias minimum par sujet', help: 'Nombre de médias différents qui doivent parler du sujet pour qu’il soit retenu. 2 ou plus = moins de sujets, mais tous recoupés.', def: '1', options: st.nums([1, 2, 3, 4]) })}
+            {st.Pick({ k: 'MAX_ITEMS', label: 'Dépêches lues par l’IA, au plus', help: "Les plus récentes d'abord, doublons retirés. Moins = plus rapide et moins cher, au risque de rater un sujet.", def: '400', options: st.nums([100, 200, 300, 400, 600, 800]) })}
             {st.Pick({ k: 'WINDOW_HOURS', label: 'Période couverte', help: "Les dépêches publiées dans les dernières heures avant l'édition.", def: '30', options: st.nums([12, 18, 24, 30, 36, 48], ' h') })}
           </section>
           <section className="panel settings">
@@ -637,8 +686,18 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
             {st.Pick({ k: 'PUBLISH_MIN_IMPORTANCE', label: 'Publication automatique à partir de', help: 'Avec le pilote automatique, seules les cartes au moins aussi importantes sont publiées ; les autres attendent en brouillon.', def: '1', options: [['1', 'Toutes les cartes'], ...st.nums(range(3, 9)).map(([v, l]) => [v, `Importance ${l} et plus`] as [string, string])] })}
           </section>
           <section className="panel settings">
+            <h2>Moteur : rapidité et ménage</h2>
+            {st.Pick({ k: 'AI_CONCURRENCY', label: 'Cartes écrites en même temps', help: "Plus = édition prête plus vite. Baissez si Claude répond « trop de requêtes ».", def: '4', options: st.nums([1, 2, 3, 4, 6, 8]) })}
+            {st.Pick({ k: 'FETCH_TIMEOUT', label: 'Attente maximum par source', help: 'Un média qui ne répond pas dans ce délai est passé, sans bloquer les autres.', def: '15', options: st.nums([5, 10, 15, 20, 30, 60], ' s') })}
+            {st.Pick({ k: 'SOURCE_MAX_FAILS', label: 'Mettre une source à l’écart après', help: "Échecs d'affilée avant qu'une source morte soit désactivée toute seule (visible dans Sources, réactivable d'un clic).", def: '10', options: [['0', 'Jamais'], ...st.nums([3, 5, 10, 20, 50], ' échecs')] })}
+            {st.Pick({ k: 'RAW_RETENTION_DAYS', label: 'Garder les dépêches lues', help: 'Au-delà, elles sont effacées de la base (les cartes gardent leurs sources et leurs liens).', def: '14', options: st.nums([3, 7, 14, 30, 60, 90], ' jours') })}
+          </section>
+          <RubricHintsPanel say={say} />
+          <section className="panel settings">
             <h2>Édition : mises à jour de la journée</h2>
             {st.Toggle({ k: 'LIVE_UPDATES', label: 'Compléter l’édition au fil de la journée', help: "Toutes les heures de 9 h à 22 h, l'IA lit les dépêches des 4 dernières heures et ajoute les sujets nouveaux et importants, sans reprendre ceux déjà publiés. Dans l'app, les infos les plus importantes passent toujours en tête. Coût : un choix de sujets par heure, plus une carte par sujet ajouté.", def: true })}
+            {st.Pick({ k: 'UPDATE_WINDOW_HOURS', label: 'Période lue à chaque mise à jour', help: 'Les dépêches des dernières heures, déjà traitées exclues.', def: '4', options: st.nums([1, 2, 3, 4, 6, 8, 12], ' h') })}
+            {st.Pick({ k: 'LIVE_MAX_CARDS', label: 'Cartes ajoutées par mise à jour, au plus', help: 'Automatique = un quart du plafond de cartes de l’édition.', def: '0', options: [['0', 'Automatique'], ...st.nums([1, 2, 3, 5, 8, 10, 15, 20])] })}
             {st.Pick({ k: 'LIVE_MIN_IMPORTANCE', label: 'Importance minimum pour une mise à jour', help: "Plus haut = moins d'ajouts, seulement les sujets qui comptent vraiment (et moins de coût). Au plus un quart du plafond de cartes par passage.", def: '6', options: st.nums(range(3, 10), ' sur 10') })}
           </section>
         </>
@@ -651,6 +710,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
             {st.Toggle({ k: 'FLASH_AUTO_PUBLISH', label: 'Publier sans relecture', help: 'Sinon, les infos arrivent masquées et vous les mettez en ligne depuis la page Dernière minute.', def: true })}
             {st.Pick({ k: 'FLASH_MIN_IMPORTANCE', label: 'Importance minimum', help: 'Seuil pour publier une info en Dernière minute (sur 10).', def: '8', options: st.nums(range(6, 10), ' sur 10') })}
             {st.Pick({ k: 'FLASH_MIN_SOURCES', label: 'Médias minimum', help: 'Nombre de médias différents qui doivent annoncer le fait.', def: '2', options: st.nums([1, 2, 3, 4]) })}
+            {st.Pick({ k: 'FLASH_WINDOW_HOURS', label: 'Période lue', help: 'Les dépêches des dernières heures que l’IA examine à chaque passage.', def: '2', options: st.nums([1, 2, 3, 4, 6], ' h') })}
             {st.Pick({ k: 'FLASH_MAX_PER_DAY', label: 'Infos par jour, au plus', help: 'Au-delà, le moteur arrête de publier jusqu’au lendemain.', def: '12', options: st.nums([3, 5, 8, 12, 20, 30, 50]) })}
           </section>
         </>
@@ -759,7 +819,8 @@ const CONFIG_LABEL: Record<string, string> = {
   modele: 'Modèle', effort: 'Réflexion', consignes: 'Consignes', a_eviter: 'Sujets à écarter', fenetre_h: 'Période (h)', par_rubrique: 'Sujets par rubrique',
   cartes_max: 'Cartes au total', essentiels_max: 'Essentiels', importance_min: 'Importance minimum', medias_min: 'Médias minimum', pilote_auto: 'Pilote automatique',
   autocorrection: 'Autocorrection', publier_alertes: 'Publier avec alerte', importance_min_publication: 'Publication à partir de', active: 'Activée',
-  publication_auto: 'Publication sans relecture', max_par_jour: 'Infos par jour',
+  publication_auto: 'Publication sans relecture', max_par_jour: 'Infos par jour', mises_a_jour: 'Mises à jour', importance_min_mise_a_jour: 'Importance min. mise à jour',
+  fenetre_mise_a_jour_h: 'Période mise à jour (h)', cartes_max_mise_a_jour: 'Cartes par mise à jour', depeches_max: 'Dépêches lues', ia_en_parallele: 'Cartes en parallèle',
 };
 function RunDetails({ r }: { r: EngineRun }) {
   const d = r.details ?? {};
@@ -901,32 +962,68 @@ function FlashPage({ say }: { say: (m: string) => void }) {
 function SourcesPage({ say }: { say: (m: string) => void }) {
   const [list, setList] = useState<Source[]>([]);
   const [form, setForm] = useState({ name: '', url: '', rubric_hint: '' });
+  const [edit, setEdit] = useState<Source | null>(null);
+  const [only, setOnly] = useState<'all' | 'error' | 'off'>('all');
   const load = () => api.sources().then(setList);
   useEffect(() => { load(); }, []);
+  const bad = (s: Source) => !!s.last_error;
+  const shown = list.filter((s) => only === 'all' || (only === 'error' ? bad(s) : !s.active));
+  const act = async (f: () => Promise<unknown>, msg: string) => {
+    try { await f(); await load(); say(msg); } catch (e) { say(e instanceof Error ? e.message : 'Impossible'); }
+  };
+  const urlOk = (u: string) => /^https?:\/\/\S+$/.test(u.trim());
   return (
     <>
-      <p className="muted">Le moteur lit le titre et le chapô de ces flux RSS, jamais l'article complet. Vérifiez que chaque média autorise cet usage.</p>
+      <p className="muted">Le moteur lit le titre et le chapô de ces flux RSS, jamais l'article complet, plusieurs à la fois et seulement s'ils ont changé. Une source en échec trop de fois d'affilée est mise à l'écart toute seule. Vérifiez que chaque média autorise cet usage.</p>
+      <div className="toolbar">
+        <div className="tabs" style={{ margin: 0, border: 0 }}>
+          {([['all', 'Toutes', list.length], ['error', 'En erreur', list.filter(bad).length], ['off', 'Désactivées', list.filter((s) => !s.active).length]] as const).map(([k, l, n]) => (
+            <button key={k} className={only === k ? 'on' : ''} onClick={() => setOnly(k)}>{l} <b>{n}</b></button>
+          ))}
+        </div>
+        <a className="btn" href={SOURCES_URL} target="_blank" rel="noreferrer" title="Ouvre GitHub : bouton « Run workflow ». Lit tous les flux, même désactivés, et note leur état ici. Se fait aussi chaque nuit.">Vérifier toutes les sources ↗</a>
+      </div>
       <table className="table">
-        <thead><tr><th>Média</th><th>Rubrique</th><th>Dernière lecture</th><th>État</th><th /></tr></thead>
+        <thead><tr><th>Média</th><th>Rubrique</th><th>Activité</th><th>État</th><th /></tr></thead>
         <tbody>
-          {list.map((s) => (
+          {shown.map((s) => edit?.id === s.id ? (
+            <tr key={s.id} className="edit-row">
+              <td><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} aria-label="Nom" /><input value={edit.url} onChange={(e) => setEdit({ ...edit, url: e.target.value })} aria-label="Adresse du flux" /></td>
+              <td><select value={edit.rubric_hint ?? ''} onChange={(e) => setEdit({ ...edit, rubric_hint: e.target.value || null })}><option value="">Toutes</option>{Object.entries(RUBRICS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></td>
+              <td colSpan={2} className="muted small">Une nouvelle adresse est relue au prochain passage.</td>
+              <td className="btns">
+                <button className="btn primary sm" disabled={!edit.name.trim() || !urlOk(edit.url)} onClick={() => act(() => api.saveSource({ id: s.id, name: edit.name.trim(), url: edit.url.trim(), rubric_hint: edit.rubric_hint, ...(edit.url !== s.url ? { last_error: null, fail_count: 0, etag: null, last_modified: null } : {}) }).then(() => setEdit(null)), 'Source modifiée')}>Enregistrer</button>
+                <button className="btn ghost sm" onClick={() => setEdit(null)}>Annuler</button>
+              </td>
+            </tr>
+          ) : (
             <tr key={s.id} className={s.active ? '' : 'off'}>
               <td><b>{s.name}</b><div className="muted small url">{s.url}</div></td>
               <td>{s.rubric_hint ? RUBRICS[s.rubric_hint] : <span className="muted">Toutes</span>}</td>
-              <td className="muted">{ago(s.last_fetch_at)}</td>
-              <td>{s.last_error ? <span className="pill rejected" title={s.last_error}>Erreur : {s.last_error}</span> : s.last_fetch_at ? <span className="pill published">OK</span> : <span className="pill">Pas encore lue</span>}</td>
-              <td><button className="btn sm" onClick={async () => { await api.saveSource({ id: s.id, active: !s.active }); load(); say(s.active ? 'Source désactivée' : 'Source activée'); }}>{s.active ? 'Désactiver' : 'Activer'}</button></td>
+              <td className="small">
+                {s.items_24h != null ? <div><b>{s.items_24h}</b> titres en 24 h · <b>{s.cards_7d ?? 0}</b> cartes en 7 j</div> : null}
+                <div className="muted">Lue {ago(s.last_fetch_at)}{s.last_item_at ? ` · dernière dépêche ${ago(s.last_item_at)}` : ''}</div>
+              </td>
+              <td>
+                {s.last_error ? <span className="pill rejected" title={s.last_error}>Erreur{s.fail_count && s.fail_count > 1 ? ` ×${s.fail_count}` : ''} : {s.last_error}</span>
+                  : s.last_fetch_at ? <span className="pill published">OK{s.last_count != null ? ` · ${s.last_count} titres` : ''}</span> : <span className="pill">Pas encore lue</span>}
+                {s.disabled_reason && !s.active ? <div className="muted small">{s.disabled_reason}</div> : null}
+              </td>
+              <td className="btns">
+                <button className="btn sm" onClick={() => act(() => api.saveSource({ id: s.id, active: !s.active, ...(!s.active ? { fail_count: 0, disabled_reason: null } : {}) }), s.active ? 'Source désactivée' : 'Source activée')}>{s.active ? 'Désactiver' : 'Activer'}</button>
+                <button className="btn sm" onClick={() => setEdit({ ...s })}>Modifier</button>
+                <button className="btn ghost sm" onClick={() => confirm(`Supprimer ${s.name} et ses dépêches récentes ? Les cartes déjà écrites restent.`) && act(() => api.deleteSource(s.id), 'Source supprimée')}>Supprimer</button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
       <form className="panel addform" onSubmit={async (e) => {
         e.preventDefault();
-        if (!/^https?:\/\//.test(form.url)) return say('L’adresse doit commencer par https://');
-        await api.saveSource({ name: form.name, url: form.url, rubric_hint: form.rubric_hint || null });
+        if (!urlOk(form.url)) return say('L’adresse doit commencer par https://');
+        if (list.some((s) => s.url.trim() === form.url.trim())) return say('Cette adresse est déjà dans la liste');
+        await act(() => api.saveSource({ name: form.name.trim(), url: form.url.trim(), rubric_hint: form.rubric_hint || null }), 'Source ajoutée, lue au prochain passage');
         setForm({ name: '', url: '', rubric_hint: '' });
-        load();
-        say('Source ajoutée, lue dès demain matin');
       }}>
         <h2>Ajouter une source</h2>
         <div className="row3">
@@ -934,9 +1031,38 @@ function SourcesPage({ say }: { say: (m: string) => void }) {
           <label>Adresse du flux RSS<input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://…/rss.xml" required /></label>
           <label>Rubrique<select value={form.rubric_hint} onChange={(e) => setForm({ ...form, rubric_hint: e.target.value })}><option value="">Toutes</option>{Object.entries(RUBRICS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
         </div>
+        <p className="muted small">Même nom pour plusieurs flux d'un média (Une, Sciences…) : l'IA le compte comme un seul média, et un article présent dans deux flux n'est lu qu'une fois.</p>
         <button className="btn primary">Ajouter</button>
       </form>
     </>
+  );
+}
+
+/* ---------------- Rubriques : ce que l'IA range dans chacune ---------------- */
+function RubricHintsPanel({ say }: { say: (m: string) => void }) {
+  const [list, setList] = useState<RubricHint[] | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const load = () => api.rubrics().then(setList).catch(() => setList([]));
+  useEffect(() => { load(); }, []);
+  if (!list) return <p className="muted">Chargement…</p>;
+  return (
+    <section className="panel settings">
+      <h2>Rubriques : ce que l'IA y range</h2>
+      <p className="muted small">L'IA lit ces définitions pour classer chaque sujet. Précisez-les si un type d'info tombe souvent dans la mauvaise rubrique (par exemple « l'immobilier va en Économie »). Vide = définition d'origine.</p>
+      {list.map((r) => {
+        const val = draft[r.id] ?? r.ai_hint ?? '';
+        return (
+          <div key={r.id} className="rubric-hint">
+            <b>{r.name}</b>
+            <input value={val} maxLength={300} placeholder="Définition d'origine" onChange={(e) => setDraft({ ...draft, [r.id]: e.target.value })} aria-label={`Définition de ${r.name}`} />
+            <button className="btn sm" disabled={val === (r.ai_hint ?? '')} onClick={async () => {
+              try { await api.saveRubricHint(r.id, val); setDraft((d) => { const n = { ...d }; delete n[r.id]; return n; }); await load(); say('Rubrique enregistrée'); }
+              catch (e) { say(e instanceof Error ? e.message : 'Enregistrement impossible'); }
+            }}>Enregistrer</button>
+          </div>
+        );
+      })}
+    </section>
   );
 }
 

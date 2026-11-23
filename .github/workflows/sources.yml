@@ -1,0 +1,31 @@
+name: Vérifier les sources
+
+on:
+  schedule:
+    - cron: '43 3 * * *' # chaque nuit vers 4 h 45 à Paris, avant l'édition
+  workflow_dispatch:
+
+concurrency: sources
+
+permissions:
+  contents: read
+
+jobs:
+  sources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Lire tous les flux et noter leur état
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run sources

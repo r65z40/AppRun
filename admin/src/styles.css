@@ -64,6 +64,18 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--violet); ou
 .card .line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .card .btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .order { display: grid; gap: 4px; }
+.card.picked { border-color: var(--violet); background: rgba(123,92,255,0.1); }
+.card .pick { width: 18px; height: 18px; flex: none; accent-color: var(--violet); }
+.card .thumb { width: 56px; height: 72px; flex: none; border-radius: 10px; background: var(--grad) center / cover; }
+.card .srcs { margin: 4px 0 0; }
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.toolbar input { flex: 1 1 260px; } .toolbar select { width: auto; }
+.bulk { position: sticky; top: 8px; z-index: 5; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: var(--night2); border: 1px solid var(--violet); border-radius: 14px; padding: 10px 14px; margin-bottom: 16px; }
+.bulk b { margin-right: 6px; }
+.selall { margin: -10px 0 14px; }
+.src-stats { display: flex; gap: 10px; flex-wrap: wrap; }
+.table .edit-row input, .table .edit-row select { width: 100%; }
+.rubric-hint { display: grid; grid-template-columns: 140px 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .ic { width: 28px; height: 26px; border-radius: 8px; border: 1px solid var(--line); background: none; cursor: pointer; color: var(--text2); }
 .ic:disabled { opacity: .3; cursor: default; }
 .empty { padding: 30px 0; }
@@ -105,7 +117,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--violet); ou
   .side nav { display: flex; overflow-x: auto; width: 100%; min-width: 0; order: 3; } .side nav button { white-space: nowrap; flex: none; } .who { margin: 0 0 0 auto; }
   .modal { grid-template-columns: 1fr; overflow: auto; } .form, .preview { max-height: none; overflow: visible; } .preview { border-left: 0; border-top: 1px solid var(--line); }
   .phone { max-width: 260px; }
-  .card { flex-wrap: wrap; align-items: flex-start; } .card .body { flex: 1 1 calc(100% - 50px); } .card .btns { width: 100%; justify-content: flex-start; padding-left: 42px; }
+  .card { flex-wrap: wrap; align-items: flex-start; } .card .body { flex: 1 1 calc(100% - 140px); } .card .thumb { width: 44px; height: 56px; } .rubric-hint { grid-template-columns: 1fr; } .card .btns { width: 100%; justify-content: flex-start; padding-left: 42px; }
   .row2, .row3 { grid-template-columns: 1fr; }
   .table thead { display: none; } .table td { display: block; border: 0; padding: 4px 0; } .table tr { display: block; border-bottom: 1px solid var(--line); padding: 10px 0; }
 }
