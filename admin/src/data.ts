@@ -38,7 +38,9 @@ export type Role = 'reader' | 'moderator' | 'editor' | 'admin';
 export type Profile = { id: string; pseudo: string | null; role: Role; premium: boolean; banned?: boolean; suspended_until?: string | null; ban_reason?: string | null; created_at: string };
 export type Comment = { id: string; article_id: string; user_id: string; text: string; status: 'visible' | 'hidden'; created_at: string; article_title?: string; pseudo?: string | null };
 export type Report = { id: string; comment_id: string; reason: string | null; resolved: boolean; created_at: string; comment?: Comment };
-export type Flash = { id: string; status: 'published' | 'hidden'; rubric_id: string | null; importance: number; title: string; sentence: string; sources: { source: string; url: string }[]; manual: boolean; model: string | null; published_at: string; created_at: string };
+export type Flash = { id: string; status: 'published' | 'hidden'; rubric_id: string | null; importance: number; title: string; sentence: string; sources: { source: string; url: string }[]; manual: boolean; model: string | null; published_at: string; created_at: string;
+  /** Sujet triste ou choquant : aucune alerte « sujet suivi ». */
+  sensitive?: boolean };
 export type EngineRun = {
   id: string; kind: 'edition' | 'flash'; status: 'running' | 'ok' | 'error'; started_at: string; finished_at: string | null;
   summary: string | null; stats: Record<string, unknown>; log: string[];

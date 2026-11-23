@@ -23,6 +23,8 @@ import { storeLogin } from './src/purchases';
 import * as acc from './src/account';
 import { loadMyEdition, resetTaste, signal, type Pick, type Signal } from './src/algo';
 import { isAd, isArticle, type Article, type Card, type Comment } from './src/types';
+import { FollowRow, TopicsScreen } from './src/Topics';
+import { enablePush, loadTopics, onAlertTap, prefetchTopicsOf } from './src/topics';
 
 type Phase = 'splash' | 'onb' | 'feed';
 type Overlay = null | 'bravo' | 'end' | 'settings';
@@ -155,6 +157,23 @@ function Main() {
   const [toast, setToast] = useState<string | null>(null);
   const [loadingCmts, setLoadingCmts] = useState(false);
   const [account, setAccount] = useState<AccountAsk | null>(null);
+  // Sujets suivis : undefined = fermé, null = « Mes sujets », un nom = la frise de ce sujet.
+  const [topicView, setTopicView] = useState<string | null | undefined>(undefined);
+  useEffect(() => { prefetchTopicsOf([...ALL_IDS]); }, [ALL_IDS]);
+  useEffect(() => {
+    if (phase !== 'feed') return;
+    loadTopics();
+    enablePush(false); // adresse de notification à jour (compte, nouveau téléphone), sans redemander l'autorisation
+  }, [phase, me?.uid]);
+  // Appui sur une alerte « sujet suivi » : la frise du sujet s'ouvre.
+  useEffect(() => (phase === 'feed' ? onAlertTap((t) => { setSummary(null); setTopicView(t); }) : undefined), [phase]);
+  const openFromTimeline = (id: string) => {
+    const a = RUBRICS.flatMap((r) => r.items).find((x) => x.id === id);
+    if (!a) return false;
+    setTopicView(undefined);
+    setTimeout(() => openRead(a), 300);
+    return true;
+  };
   // De temps en temps, pendant la lecture : proposer un compte (sans compte) ou Premium (compte gratuit).
   // Au plus une fois par ouverture, après quelques infos lues, et pas plus d'une fois tous les N jours (réglable).
   const nudged = useRef(false);
@@ -587,6 +606,7 @@ function Main() {
         commentCount={summary ? commentCount(summary) : 0}
         emojiMode={commentsMode === 'emoji'}
         onSignal={(k) => summary && signal(summary.id, k)}
+        extra={summary ? <FollowRow a={summary} onToast={showToast} onOpen={(t) => { setSummary(null); setTopicView(t); }} /> : null}
       />
       <CommentsSheet
         a={cmts}
@@ -612,9 +632,13 @@ function Main() {
           account={me ? me.pseudo ?? '' : null}
           onAccount={() => (acc.accountsOn ? setAccount({ reason: null }) : showToast('Les comptes arrivent avec la vraie base (mode démo).'))}
           onResetTaste={onResetTaste}
+          onTopics={() => setTopicView(null)}
           premium={premium}
           onPremium={() => setShowPremium(true)}
         />
+      ) : null}
+      {topicView !== undefined ? (
+        <TopicsScreen W={W} start={topicView} onClose={() => setTopicView(undefined)} onToast={showToast} onOpenArticle={openFromTimeline} />
       ) : null}
       {overlay === 'bravo' ? (
         <Bravo

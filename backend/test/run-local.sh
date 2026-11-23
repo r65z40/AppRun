@@ -33,7 +33,8 @@ VIDE=${DB/titre_test/titre_vide}
 psql "$VIDE" -v ON_ERROR_STOP=1 -q -f test/supabase-stub.sql
 DATABASE_URL="$VIDE" npx tsx src/install.ts
 DATABASE_URL="$VIDE" npx tsx src/install.ts
-psql "$VIDE" -tAc "select case when count(*) = 22 then 'OK  base vide installée toute seule (21 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
+N=$(ls supabase/migrations/*.sql | wc -l)
+psql "$VIDE" -tAc "select case when count(*) = $N + 1 then 'OK  base vide installée toute seule ($N migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
 psql "$VIDE" -tAc "select case when count(*) >= 10 then 'OK  sources de départ présentes' else 'ÉCHEC  sources absentes' end from sources"
 
 echo "--- Pilote automatique (réglage par défaut) : l'édition se publie seule"
@@ -115,6 +116,7 @@ psql "$VIDE" -qc "update ad_campaigns set max_views = 1 where name = 'Sponsor'"
 psql "$VIDE" -tAc "select case when (select views || '/' || clicks from ad_stats) = '1/1' and (select count(*) from public.live_ads()) = 2 then 'OK  affichages et clics comptés, plafond atteint : les autres campagnes reprennent' else 'ÉCHEC  comptage ou plafond' end"
 
 psql "$VIDE" -v ON_ERROR_STOP=1 -qtA -f test/algo.sql | grep -v '^$'
+psql "$VIDE" -v ON_ERROR_STOP=1 -qtA -f test/follow.sql | grep -v '^$'
 
 echo "--- Personnalisation : identité, textes, notification transmis à l'app"
 psql "$VIDE" -tAc "select case when public.app_config() ? 'brand' and public.app_config()->'brand' = 'null'::jsonb then 'OK  sans réglage, l''app garde son identité d''origine' else 'ÉCHEC  identité par défaut' end"

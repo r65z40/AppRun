@@ -13,6 +13,7 @@ import { AiStopped, budget, model, checkFlash, selectFlashes, setRubricHints, us
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 import { moderate } from './moderate.js';
+import { sendTopicAlerts } from './alerts.js';
 
 const args = process.argv.slice(2);
 const fx = args.indexOf('--fixtures');
@@ -26,12 +27,18 @@ async function main() {
   J = await startJournal('flash');
   try {
     await flash();
+    await alerts();
   } catch (e) {
-    if (e instanceof AiStopped) { log(e.message); return J.finish('ok', e.message, { model: model(), ai: { ...usage } }); }
+    if (e instanceof AiStopped) { log(e.message); await alerts(); return J.finish('ok', e.message, { model: model(), ai: { ...usage } }); }
     log(`Erreur : ${e instanceof Error ? e.message : e}`);
     await J.finish('error', `Échec : ${e instanceof Error ? e.message : e}`);
     throw e;
   }
+}
+
+// Alertes des sujets suivis (infos de la journée et Dernière minute). Une panne ici n'arrête rien.
+async function alerts() {
+  await sendTopicAlerts().catch((e) => console.error(`Alertes sujets impossibles : ${e instanceof Error ? e.message : e}`));
 }
 
 async function flash() {
@@ -76,9 +83,11 @@ async function flash() {
     const its = f.item_numbers.map((k) => raws[k - 1]).filter(Boolean);
     const sources = [...new Map(its.map((r) => [r.source, { source: r.source, url: r.link }])).values()];
     await q(
-      `insert into flashes (status, rubric_id, importance, title, sentence, sources, raw_item_ids, model)
-       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [AUTO ? 'published' : 'hidden', f.rubric, Math.min(10, Math.max(1, f.importance)), f.title.slice(0, 90), f.sentence.slice(0, 220), JSON.stringify(sources), its.flatMap((r) => [r.id, ...(r.dups ?? [])]), model()],
+      `insert into flashes (status, rubric_id, importance, title, sentence, sources, raw_item_ids, model, sensitive)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [AUTO ? 'published' : 'hidden', f.rubric, Math.min(10, Math.max(1, f.importance)), f.title.slice(0, 90), f.sentence.slice(0, 220), JSON.stringify(sources), its.flatMap((r) => [r.id, ...(r.dups ?? [])]), model(),
+       // Sujet sensible : jamais d'alerte aux lecteurs qui suivent ce sujet (IA, et mots qui ne trompent pas en filet).
+       !!f.sensitive || /\bmorts?\b|attentat|tué|décès/i.test(f.title + ' ' + f.sentence)],
     );
     n++;
     log(`  ⚡ ${f.title}`);

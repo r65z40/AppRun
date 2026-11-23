@@ -3,10 +3,11 @@ import { PremiumPage, ReaderSubscription } from './Premium';
 import { premiumApi, type PremiumStats } from './premium-data';
 import { AdsPage } from './Ads';
 import { AlgoPage, ReaderTaste } from './Algo';
+import { FollowPage } from './Follow';
 import { BrandPage } from './Brand';
 import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'dashboard' | 'readers' | 'algo' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings' | 'brand';
+type Page = 'dashboard' | 'readers' | 'algo' | 'follow' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings' | 'brand';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
 const PAGES: [Page, string, string][] = [
   ['dashboard', 'Tableau de bord', ''],
@@ -17,6 +18,7 @@ const PAGES: [Page, string, string][] = [
   ['moderation', 'Modération', 'Lecteurs'],
   ['messages', 'Messages', 'Lecteurs'],
   ['algo', 'Algorithme', 'Lecteurs'],
+  ['follow', 'Sujets suivis', 'Lecteurs'],
   ['ads', 'Publicité', 'Revenus'],
   ['premium', 'Abonnements', 'Revenus'],
   ['brand', 'Personnalisation', 'Administration'],
@@ -37,7 +39,7 @@ const ago = (iso: string | null) => {
   return m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`;
 };
 // Modération : seulement les commentaires. Rédaction : tout sauf les lecteurs, l'algorithme, la publicité, les abonnements, l'équipe, le journal et les réglages.
-const ADMIN_ONLY: Page[] = ['readers', 'algo', 'ads', 'premium', 'team', 'audit', 'settings', 'brand'];
+const ADMIN_ONLY: Page[] = ['readers', 'algo', 'follow', 'ads', 'premium', 'team', 'audit', 'settings', 'brand'];
 const allowed = (role: Role, p: Page) => role === 'admin' || (role === 'editor' ? !ADMIN_ONLY.includes(p) : p === 'moderation');
 const plain = (s: string) => s.replace(/<\/?b>/g, '');
 /** Recherche sans accents ni majuscules. */
@@ -106,6 +108,7 @@ export default function App() {
         {page === 'audit' && allowed(me.role, page) && <AuditPage />}
         {page === 'ads' && allowed(me.role, page) && <AdsPage say={say} />}
         {page === 'algo' && allowed(me.role, page) && <AlgoPage say={say} />}
+        {page === 'follow' && allowed(me.role, page) && <FollowPage say={say} />}
         {page === 'team' && allowed(me.role, page) && <TeamPage say={say} me={me} />}
         {page === 'settings' && allowed(me.role, page) && <SettingsPage say={say} />}
         {page === 'brand' && allowed(me.role, page) && <BrandPage say={say} />}
@@ -1000,6 +1003,7 @@ function FlashPage({ say }: { say: (m: string) => void }) {
               <div className="muted small">
                 {f.rubric_id ? RUBRICS[f.rubric_id] : 'Sans rubrique'} · {f.manual ? 'ajoutée à la main' : 'moteur'}
                 {f.status === 'hidden' && <span className="pill rejected" style={{ marginLeft: 8 }}>Masquée</span>}
+                {f.sensitive && <span className="pill" style={{ marginLeft: 8 }} title="Aucune alerte « sujet suivi » pour cette info">Sensible</span>}
               </div>
               <b>{f.title}</b>
               <p>{f.sentence}</p>
@@ -1007,6 +1011,7 @@ function FlashPage({ say }: { say: (m: string) => void }) {
             </div>
             <div className="flash-actions">
               <button className="btn sm" onClick={() => edit(f)}>Modifier</button>
+              <button className="btn sm ghost" title="Sujet triste ou choquant : aucune alerte n'est envoyée aux lecteurs qui suivent ce sujet." onClick={async () => { await api.saveFlash({ id: f.id, sensitive: !f.sensitive }); load(); say(f.sensitive ? 'Info non sensible : alertes possibles' : 'Sujet sensible : aucune alerte pour cette info'); }}>{f.sensitive ? 'Pas sensible' : 'Sensible'}</button>
               <button className="btn sm" onClick={async () => { await api.saveFlash({ id: f.id, status: f.status === 'hidden' ? 'published' : 'hidden' }); load(); say(f.status === 'hidden' ? 'Info remise en ligne' : 'Info masquée dans l’app'); }}>{f.status === 'hidden' ? 'Remettre' : 'Masquer'}</button>
             </div>
           </div>

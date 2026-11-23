@@ -143,13 +143,15 @@ export type Prefs = {
   /** Notification du matin demandée sur cet appareil. */
   notif?: boolean;
 };
-export function Settings({ W, prefs, onSave, onClose, account, onAccount, premium, onPremium, onResetTaste }: {
+export function Settings({ W, prefs, onSave, onClose, account, onAccount, premium, onPremium, onResetTaste, onTopics }: {
   W: number; prefs: Prefs; onSave: (p: Prefs) => void; onClose: () => void;
   /** Premium en cours (abonnement, code, cadeau, ou démo) ; onPremium ouvre le volet Premium. */
   premium: boolean; onPremium: () => void;
   /** Pseudo du lecteur connecté, '' sans pseudo, null s'il n'est pas connecté. */
   account: string | null; onAccount: () => void;
   onResetTaste: () => void;
+  /** Ouvre « Mes sujets » (sujets suivis). */
+  onTopics?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const [d, setD] = useState(prefs);
@@ -191,6 +193,11 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
             <Row label="Édition selon mes goûts" hint="Sinon, la même édition pour tous, dans l'ordre de la rédaction">
               <Toggle label="Édition selon mes goûts" on={d.perso !== false} onPress={() => set('perso', d.perso === false)} />
             </Row>
+            {onTopics ? (
+              <Pressable onPress={() => { feel('select'); onTopics(); }} accessibilityRole="button">
+                <Row label="Sujets suivis" hint="Une alerte quand ils bougent, et leur histoire"><Text style={styles.v}>›</Text></Row>
+              </Pressable>
+            ) : null}
             <Pressable onPress={() => { feel('select'); onResetTaste(); }} accessibilityRole="button">
               <Row label="Remettre mes goûts à zéro" hint="L'app oublie ce que vous avez lu et aimé" last><Text style={styles.v}>›</Text></Row>
             </Pressable>
