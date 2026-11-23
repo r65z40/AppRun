@@ -20,6 +20,7 @@ import { findPhoto, pexelsOn } from './pexels.js';
 import { AiStopped, budget, model, checkCard, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
+import { sendTopicAlerts } from './alerts.js';
 
 const args = process.argv.slice(2);
 const arg = (k: string) => {
@@ -40,6 +41,8 @@ async function main() {
   J = await startJournal('edition');
   try {
     await edition();
+    // Alertes des sujets suivis (les infos publiées la nuit n'en déclenchent pas : voir le back office).
+    await sendTopicAlerts().catch((e) => console.error(`Alertes sujets impossibles : ${e instanceof Error ? e.message : e}`));
   } catch (e) {
     // IA coupée ou budget atteint pendant le choix des sujets : arrêt voulu, pas une panne.
     if (e instanceof AiStopped) { log(e.message); return J.finish('ok', e.message, { model: model(), ai: { ...usage } }); }

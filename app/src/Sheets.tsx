@@ -72,12 +72,14 @@ export function Sheet({ open, onClose, H, children, bg, header, full }: {
   );
 }
 
-export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComments, commentCount, emojiMode, onSignal }: {
+export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComments, commentCount, emojiMode, onSignal, extra }: {
   a: Article | null; open: boolean; onClose: () => void; H: number; reaction: number; onReact: (v: 1 | -1) => void; onComments: () => void; commentCount: number;
   /** Commentaires remplacés par les emoji : pas de bouton commentaires. */
   emojiMode?: boolean;
   /** Résumé lu jusqu'en bas, lien vers l'article complet : pour l'algorithme « Mon édition ». */
   onSignal: (k: 'summary_end' | 'click') => void;
+  /** Sous les sources : « Suivre ce sujet ». */
+  extra?: React.ReactNode;
 }) {
   const insets = useSafeAreaInsets();
   const heads = ['Contexte', 'Ce qui change', 'Et après'];
@@ -149,6 +151,7 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
               ))}
               {a.credit ? <Text style={[styles.srcLink, { color: C.text3, fontSize: 12, marginTop: 8 }]}>Photo : {a.credit}</Text> : null}
             </View>
+            {extra}
             </View>
           </Animated.ScrollView>
           <View style={[styles.foot, { paddingBottom: Math.max(18, insets.bottom + 6) }]}>

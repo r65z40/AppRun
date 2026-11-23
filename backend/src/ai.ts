@@ -291,6 +291,7 @@ const Flashes = z.object({
       importance: z.number().int().describe('1 (mineur) à 10 (événement majeur)'),
       title: z.string().describe('Titre factuel, 60 caractères maximum'),
       sentence: z.string().describe('Le fait en une phrase : quoi, qui, où, 160 caractères maximum'),
+      sensitive: z.boolean().describe('Sujet triste ou choquant : mort, attentat, accident grave, violence, drame humain'),
     }),
   ),
 });
@@ -305,6 +306,7 @@ Règles :
 - Rien qui soit déjà dans les infos publiées aujourd'hui, sauf un développement nouveau et majeur (bilan qui change fortement, décision finale…).
 - Pas d'analyse, pas d'opinion, pas de direct sans fait nouveau, pas de faits divers locaux.
 - Écris avec tes propres mots, ton neutre, phrases courtes. Ne recopie jamais une phrase d'un média.
+- « sensitive » : vrai pour un sujet triste ou choquant (mort, attentat, accident grave, violence, drame humain, maladie grave). Il ne change rien à la publication : il évite seulement d'envoyer une alerte aux lecteurs qui suivent ce sujet.
 - Si rien ne mérite la dernière minute, renvoie une liste vide. C'est le cas le plus fréquent.`;
 
 export async function selectFlashes(items: Item[], published: string[]): Promise<FlashOut[]> {
@@ -349,7 +351,7 @@ function mockFlashes(items: Item[], published: string[]): FlashOut[] {
     const wa = new Set(norm(a.title).split(' ').filter((x) => x.length > 4));
     const common = norm(b.title).split(' ').filter((x) => wa.has(x));
     if (common.length && !published.some((t) => norm(t).includes(common[0])) && !out.some((o) => o.item_numbers.includes(a.n))) {
-      out.push({ item_numbers: [a.n, b.n], rubric: guessRubric(a.title), importance: 9, title: `Flash : ${common[0]}`, sentence: `Deux médias confirment (mode test) : ${common.join(', ')}.` });
+      out.push({ item_numbers: [a.n, b.n], rubric: guessRubric(a.title), importance: 9, title: `Flash : ${common[0]}`, sentence: `Deux médias confirment (mode test) : ${common.join(', ')}.`, sensitive: /\bmorts?\b|attentat|tué|décès|accident/i.test(a.title + ' ' + b.title) });
     }
   }
   return out.slice(0, 2);

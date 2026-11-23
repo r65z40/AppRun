@@ -18,6 +18,10 @@ Coût estimé : environ 1 € par jour.
 
 Migration `0015_algorithme.sql`. L'app envoie ce que fait le lecteur (`track`), la base en tire ses goûts par rubrique et par mot-clé (`reader_taste`, points qui s'effacent de moitié en 21 jours) et compose son édition (`my_edition`) : sujets majeurs pour tous, infos selon ses goûts, une découverte. Les mots-clés viennent d'une liste (`algo_keywords`) cherchée dans le texte. Tout se règle dans le back office, Lecteurs > Algorithme. Tests : `test/algo.sql` (lancé par `test/run-local.sh`).
 
+## Sujets suivis
+
+Migration `0024_sujets_suivis.sql`. Le lecteur suit un sujet (un mot-clé de l'algorithme : « Ukraine », « Budget »…) depuis un article ou ses réglages, et voit sa frise (`topic_timeline`). Après chaque passage du moteur (mises à jour de la journée et Dernière minute), `src/alerts.ts` envoie les alertes choisies par `take_topic_alerts()` par le service de notifications d'Expo (gratuit, sans clé). Jamais d'alerte pour un sujet sensible, ni la nuit. Réglages : back office, Lecteurs > Sujets suivis. Les alertes demandent l'app installée (build EAS : l'identifiant de projet Expo est ajouté par `eas init`). Tests : `test/follow.sql`.
+
 ## À brancher (une fois)
 Le guide pas à pas est dans [`ESSAYER.md`](../ESSAYER.md). En résumé :
 1. **Supabase** : créez un projet (région Paris) et notez l'adresse *Session pooler* (`DATABASE_URL`), l'adresse du projet et la clé publique.
