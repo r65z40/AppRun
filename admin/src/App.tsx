@@ -4,7 +4,7 @@ import { premiumApi, type PremiumStats } from './premium-data';
 import { AdsPage } from './Ads';
 import { AlgoPage, ReaderTaste } from './Algo';
 import { BrandPage } from './Brand';
-import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
 type Page = 'dashboard' | 'readers' | 'algo' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings' | 'brand';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
@@ -26,7 +26,7 @@ const PAGES: [Page, string, string][] = [
 ];
 const GROUPS = ['', 'Contenu', 'Lecteurs', 'Revenus', 'Administration'];
 // Anciennes adresses (#engine, #sources) : tout est maintenant dans la page IA.
-const toPage = (h: string): Page => (h === 'engine' || h === 'sources' ? 'ai' : (h as Page)) || 'dashboard';
+const toPage = (h: string): Page => (h.includes('=') ? 'dashboard' : h === 'engine' || h === 'sources' ? 'ai' : (h as Page)) || 'dashboard';
 const LIMITS = { title: 60, key: 140, fact: 90, summary: 280 };
 const SUMMARY_HEADS = ['Contexte', 'Ce qui change', 'Et après'];
 
@@ -51,11 +51,15 @@ export default function App() {
   useEffect(() => { api.me().then(setMe); }, []);
   // Nom réglé dans Personnalisation > Identité.
   useEffect(() => { if (me) api.settings().then((l) => { try { const n = JSON.parse(l.find((x) => x.key === 'BRAND')?.value ?? '{}').name; if (n) { setAppName(n); document.title = `${n} · back office`; } } catch {} }).catch(() => {}); }, [me?.id, page]);
-  useEffect(() => { location.hash = page; }, [page]);
+  // Pas d'écriture tant que l'adresse porte encore un lien d'e-mail (Supabase le lit puis l'efface).
+  useEffect(() => { if (!location.hash.includes('=')) location.hash = page; }, [page]);
+  // Arrivée par le lien « mot de passe oublié », ou « Changer mon mot de passe » dans le menu.
+  const [newPass, setNewPass] = useState(LINK.recovery);
   const say = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(null), 2400); }, []);
 
   if (me === undefined) return <div className="center muted">Chargement…</div>;
   if (!me) return <Login onIn={() => api.me().then(setMe)} />;
+  if (newPass) return <NewPassword first={LINK.recovery} onDone={(m) => { setNewPass(false); if (m) say(m); }} />;
   if (me.role === 'reader')
     return (
       <div className="center">
@@ -85,6 +89,7 @@ export default function App() {
         <div className="who">
           {api.demo ? <div className="demo">Mode démo : données fictives</div> : null}
           <div className="muted small">{me.email}</div>
+          <button className="link" onClick={() => setNewPass(true)}>Changer mon mot de passe</button>
           <button className="link" onClick={() => api.signOut().then(() => setMe(null))}>Se déconnecter</button>
         </div>
       </aside>
@@ -121,40 +126,95 @@ function Glyph() {
 }
 
 /* ---------------- Connexion ---------------- */
+type LoginMode = 'in' | 'up' | 'forgot' | 'sent' | 'confirm';
 function Login({ onIn }: { onIn: () => void }) {
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(LINK.error);
+  const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [first, setFirst] = useState(false); // installation : aucun administrateur encore
-  const [sent, setSent] = useState(false);
-  useEffect(() => { api.needsAdmin().then(setFirst).catch(() => {}); }, []);
+  const [mode, setMode] = useState<LoginMode>('in');
+  useEffect(() => { api.needsAdmin().then((f) => { setFirst(f); if (f) setMode('up'); }).catch(() => {}); }, []);
+  const go = (m: LoginMode) => { setErr(null); setInfo(null); setMode(m); };
   const submit = async () => {
-    setBusy(true);
-    const m = first ? await api.signUp(email, pw) : await api.signIn(email, pw);
+    setBusy(true); setErr(null); setInfo(null);
+    if (mode === 'forgot') {
+      const m = await api.resetPassword(email);
+      setBusy(false);
+      return m ? setErr(m) : setMode('sent');
+    }
+    const m = mode === 'up' ? await api.signUp(email, pw) : await api.signIn(email, pw);
     setBusy(false);
-    if (m === 'confirm') return setSent(true);
+    if (m === 'confirm') return setMode('confirm');
     m ? setErr(m) : onIn();
   };
-  if (sent) return (
+  const resend = async () => { const m = await api.resendConfirm(email); m ? setErr(m) : setInfo('E-mail de confirmation renvoyé.'); };
+  if (mode === 'sent' || mode === 'confirm') return (
     <div className="center"><div className="panel narrow">
       <div className="logo big"><Glyph /> TITRE</div>
       <h1>Vérifiez votre boîte mail</h1>
-      <p className="muted">Supabase vous a envoyé un lien de confirmation à {email}. Cliquez dessus, puis revenez ici pour vous connecter.</p>
-      <button className="btn primary" onClick={() => { setSent(false); setFirst(false); }}>J'ai confirmé, me connecter</button>
+      <p className="muted">{mode === 'sent'
+        ? `Si un compte existe avec ${email}, un lien vient d’y être envoyé. Ouvrez-le : il vous ramène ici pour choisir un nouveau mot de passe.`
+        : `Un lien de confirmation a été envoyé à ${email}. Cliquez dessus, puis revenez ici pour vous connecter.`} Pensez aux indésirables.</p>
+      {err ? <p className="error">{err}</p> : null}
+      {info ? <p className="muted small">{info}</p> : null}
+      <button className="btn primary" onClick={() => { setFirst(false); go('in'); }}>{mode === 'sent' ? 'Retour à la connexion' : 'J’ai confirmé, me connecter'}</button>
+      <button className="link" onClick={mode === 'sent' ? () => submit() : resend}>{mode === 'sent' ? 'Renvoyer le lien' : 'Rien reçu ? Renvoyer l’e-mail'}</button>
     </div></div>
   );
+  const title = first ? 'Bienvenue' : mode === 'forgot' ? 'Mot de passe oublié' : mode === 'up' ? 'Créer un compte' : 'Back office';
   return (
     <div className="center">
       <form className="panel narrow" onSubmit={async (e) => { e.preventDefault(); await submit(); }}>
         <div className="logo big"><Glyph /> TITRE</div>
-        <h1>{first ? 'Bienvenue' : 'Back office'}</h1>
+        <h1>{title}</h1>
         {first ? <p className="muted">La base est installée. Créez le compte administrateur : c'est le premier compte, il aura tous les droits.</p> : null}
+        {mode === 'forgot' ? <p className="muted">Saisissez votre adresse : vous recevrez un lien pour choisir un nouveau mot de passe.</p> : null}
+        {mode === 'up' && !first ? <p className="muted">Après la création, un administrateur vous donne l’accès depuis la page Équipe (avec votre adresse e-mail).</p> : null}
         {api.demo ? <p className="demo">Mode démo : aucune base n'est branchée. Cliquez sur « Se connecter » pour essayer avec des données fictives.</p> : null}
         <label>Adresse e-mail<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required={!api.demo} autoComplete="username" /></label>
-        <label>Mot de passe<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} required={!api.demo} autoComplete="current-password" /></label>
+        {mode !== 'forgot' ? <label>Mot de passe{mode === 'up' ? ' (8 caractères au moins)' : ''}<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} required={!api.demo} minLength={mode === 'up' ? 8 : undefined} autoComplete={mode === 'up' ? 'new-password' : 'current-password'} /></label> : null}
         {err ? <p className="error">{err}</p> : null}
-        <button className="btn primary" disabled={busy}>{busy ? 'Un instant…' : first ? 'Créer le compte administrateur' : 'Se connecter'}</button>
+        {info ? <p className="muted small">{info}</p> : null}
+        {err?.startsWith('Adresse pas encore confirmée') ? <button type="button" className="link" onClick={resend}>Renvoyer l’e-mail de confirmation</button> : null}
+        <button className="btn primary" disabled={busy}>{busy ? 'Un instant…' : mode === 'forgot' ? 'Envoyer le lien' : mode === 'up' ? (first ? 'Créer le compte administrateur' : 'Créer mon compte') : 'Se connecter'}</button>
+        {!first ? (
+          <div className="login-links">
+            {mode === 'in' ? <button type="button" className="link" onClick={() => go('forgot')}>Mot de passe oublié ?</button> : <button type="button" className="link" onClick={() => go('in')}>Retour à la connexion</button>}
+            {mode === 'in' ? <button type="button" className="link" onClick={() => go('up')}>Créer un compte</button> : null}
+          </div>
+        ) : null}
+      </form>
+    </div>
+  );
+}
+
+/** Nouveau mot de passe : après le lien « mot de passe oublié » (first) ou depuis le menu. */
+function NewPassword({ first, onDone }: { first: boolean; onDone: (msg: string | null) => void }) {
+  const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="center">
+      <form className="panel narrow" onSubmit={async (e) => {
+        e.preventDefault();
+        if (pw !== pw2) return setErr('Les deux mots de passe ne sont pas identiques.');
+        setBusy(true);
+        const m = await api.updatePassword(pw);
+        setBusy(false);
+        if (m) return setErr(m);
+        if (first) history.replaceState(null, '', location.pathname + '#dashboard');
+        onDone('Mot de passe changé');
+      }}>
+        <div className="logo big"><Glyph /> TITRE</div>
+        <h1>Nouveau mot de passe</h1>
+        <label>Nouveau mot de passe (8 caractères au moins)<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} required minLength={8} autoComplete="new-password" /></label>
+        <label>Le même, une seconde fois<input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required minLength={8} autoComplete="new-password" /></label>
+        {err ? <p className="error">{err}</p> : null}
+        <button className="btn primary" disabled={busy}>{busy ? 'Un instant…' : 'Enregistrer'}</button>
+        {first ? null : <button type="button" className="link" onClick={() => onDone(null)}>Annuler</button>}
       </form>
     </div>
   );
@@ -1315,7 +1375,7 @@ function TeamPage({ say, me }: { say: (m: string) => void; me: Me }) {
       <form className="panel addform" onSubmit={async (e) => {
         e.preventDefault();
         const p = await api.findProfile(pseudo.trim());
-        if (!p) return say('Aucun compte avec ce pseudo. La personne doit d’abord créer un compte dans l’app.');
+        if (!p) return say('Aucun compte trouvé. La personne crée d’abord son compte (dans l’app, ou « Créer un compte » sur la page de connexion du back office).');
         await api.setRole(p.id, role);
         setPseudo('');
         load();
@@ -1323,7 +1383,7 @@ function TeamPage({ say, me }: { say: (m: string) => void; me: Me }) {
       }}>
         <h2>Ajouter à l'équipe</h2>
         <div className="row3">
-          <label>Pseudo du compte TITRE<input value={pseudo} onChange={(e) => setPseudo(e.target.value)} required /></label>
+          <label>Pseudo ou adresse e-mail du compte<input value={pseudo} onChange={(e) => setPseudo(e.target.value)} required /></label>
           <label>Rôle<select value={role} onChange={(e) => setRole(e.target.value as Role)}>{(['moderator', 'editor', 'admin'] as Role[]).map((r) => <option key={r} value={r}>{ROLE[r]}</option>)}</select></label>
         </div>
         <button className="btn primary">Ajouter</button>

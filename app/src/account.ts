@@ -8,6 +8,17 @@ import type { Comment } from './types';
 const URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 export const accountsOn = !!(URL && KEY);
+/** Adresse de la version web (GitHub Pages) : les liens des e-mails y mènent quand on les ouvre depuis le téléphone. */
+const WEB = process.env.EXPO_PUBLIC_WEB_URL;
+const back = () => {
+  const to = Platform.OS === 'web' && typeof location !== 'undefined' ? location.origin + location.pathname : WEB;
+  return to ? `?redirect_to=${encodeURIComponent(to)}` : '';
+};
+
+/** Ce que le lien d'un e-mail vient de faire (lu au lancement) : choisir un nouveau mot de passe, compte activé, ou lien périmé. */
+export type LinkEvent = 'recovery' | 'confirmed' | { error: string } | null;
+let linkEvent: LinkEvent = null;
+export const takeLinkEvent = () => { const e = linkEvent; linkEvent = null; return e; };
 
 type Session = { access: string; refresh: string; exp: number; uid: string; email: string };
 export type Me = { uid: string; email: string; pseudo: string | null; premium: boolean; premiumUntil: string | null; prefs: Record<string, unknown> };
@@ -53,7 +64,10 @@ function french(raw: string): string {
   const m = raw.toLowerCase();
   if (m.includes('invalid login')) return 'Adresse ou mot de passe incorrect.';
   if (m.includes('already registered') || m.includes('already been registered')) return 'Un compte existe déjà avec cette adresse. Connectez-vous.';
-  if (m.includes('not confirmed')) return 'Confirmez d’abord votre adresse avec le lien reçu par e-mail.';
+  if (m.includes('not confirmed')) return 'Confirmez d’abord votre adresse avec le lien reçu par e-mail (pensez aux indésirables).';
+  if (m.includes('same') && m.includes('password')) return 'Choisissez un mot de passe différent de l’ancien.';
+  if (m.includes('expired') || m.includes('otp') || m.includes('invalid') && m.includes('link')) return 'Ce lien a expiré ou a déjà servi. Demandez-en un nouveau.';
+  if (m.includes('for security purposes')) return 'Patientez une minute avant de redemander un e-mail.';
   if (m.includes('password') && (m.includes('least') || m.includes('short') || m.includes('weak'))) return 'Mot de passe trop court : 8 caractères au moins.';
   if (m.includes('email') && (m.includes('invalid') || m.includes('valid'))) return 'Cette adresse e-mail ne semble pas valide.';
   if (m.includes('rate limit') || m.includes('too many')) return 'Trop d’essais. Réessayez dans quelques minutes.';
@@ -123,8 +137,16 @@ export const reloadMe = () => loadMe();
 /** Au lancement : reprend la session enregistrée, ou celle du lien de confirmation reçu par e-mail. */
 export async function restore() {
   if (!accountsOn) return;
-  if (Platform.OS === 'web' && typeof location !== 'undefined' && location.hash.includes('access_token=')) {
+  if (Platform.OS === 'web' && typeof location !== 'undefined' && /error_description=|error_code=/.test(location.hash)) {
+    // Lien d'e-mail périmé ou déjà utilisé.
     const h = new URLSearchParams(location.hash.slice(1));
+    linkEvent = { error: french(h.get('error_description') ?? h.get('error_code') ?? 'Lien invalide') };
+    history.replaceState(null, '', location.pathname + location.search);
+    const raw = await store.get();
+    if (raw) try { session = JSON.parse(raw); } catch { session = null; }
+  } else if (Platform.OS === 'web' && typeof location !== 'undefined' && location.hash.includes('access_token=')) {
+    const h = new URLSearchParams(location.hash.slice(1));
+    linkEvent = h.get('type') === 'recovery' ? 'recovery' : 'confirmed';
     const access = h.get('access_token')!;
     try {
       const u = await fetch(`${URL}/auth/v1/user`, { headers: { apikey: KEY!, Authorization: `Bearer ${access}` } }).then((r) => r.json());
@@ -158,8 +180,10 @@ async function ping() {
 /** Création de compte. Renvoie 'confirm' si Supabase demande de confirmer l'adresse par e-mail. */
 export async function signUp(email: string, password: string): Promise<'ok' | 'confirm'> {
   if (password.length < 8) throw new UserError('Mot de passe trop court : 8 caractères au moins.');
-  const back = Platform.OS === 'web' && typeof location !== 'undefined' ? `?redirect_to=${encodeURIComponent(location.origin + location.pathname)}` : '';
-  const j = await auth(`signup${back}`, { email: email.trim(), password });
+  const j = await auth(`signup${back()}`, { email: email.trim(), password });
+  // Adresse déjà inscrite : Supabase répond « vérifiez vos e-mails » sans rien envoyer. On le dit clairement.
+  const ids = (j.user ?? j).identities;
+  if (Array.isArray(ids) && ids.length === 0) throw new UserError('Un compte existe déjà avec cette adresse. Connectez-vous, ou touchez «\u00a0Mot de passe oublié\u00a0».');
   if (!j.access_token) return 'confirm';
   take(j);
   await loadMe();
@@ -181,8 +205,23 @@ export async function signOut() {
 }
 
 export async function resetPassword(email: string) {
-  const back = Platform.OS === 'web' && typeof location !== 'undefined' ? `?redirect_to=${encodeURIComponent(location.origin + location.pathname)}` : '';
-  await auth(`recover${back}`, { email: email.trim() });
+  if (!/^\S+@\S+\.\S+$/.test(email.trim())) throw new UserError('Cette adresse e-mail ne semble pas valide.');
+  await auth(`recover${back()}`, { email: email.trim() });
+}
+
+/** Renvoie l'e-mail de confirmation d'inscription. */
+export async function resendConfirm(email: string) {
+  await auth(`resend${back()}`, { type: 'signup', email: email.trim() });
+}
+
+/** Nouveau mot de passe (après le lien « mot de passe oublié », ou depuis Mon compte). */
+export async function updatePassword(password: string) {
+  if (password.length < 8) throw new UserError('Mot de passe trop court : 8 caractères au moins.');
+  const t = await token();
+  if (!t) throw new UserError('Le lien a expiré. Redemandez « Mot de passe oublié ».');
+  const r = await fetch(`${URL}/auth/v1/user`, { method: 'PUT', headers: { apikey: KEY!, Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new UserError(french(j.msg || j.error_description || j.message || `HTTP ${r.status}`));
 }
 
 export async function setPseudo(p: string) {

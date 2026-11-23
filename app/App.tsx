@@ -26,7 +26,7 @@ import { isAd, isArticle, type Article, type Card, type Comment } from './src/ty
 
 type Phase = 'splash' | 'onb' | 'feed';
 type Overlay = null | 'bravo' | 'end' | 'settings';
-type AccountAsk = { reason: string | null; then?: () => void };
+type AccountAsk = { reason: string | null; then?: () => void; start?: 'newpass' | 'in' };
 /** Empreinte de l'édition chargée : change quand des infos arrivent ou que l'ordre bouge. */
 const editionSig = () => RUBRICS.map((r) => r.items.map((a) => a.id).join(',')).join('|');
 
@@ -171,7 +171,16 @@ function Main() {
       if (kind === 'account') setAccount({ reason: NUDGES.account.text }); else setShowPremium(true);
     });
   }, [seen.size, phase, overlay, summary, cmts, account, showPremium, me?.uid, premium]);
-  useEffect(() => { acc.restore(); }, []);
+  // Lien reçu par e-mail (version web) : nouveau mot de passe, compte activé ou lien périmé, traité après l'écran de lancement.
+  const [linkEv, setLinkEv] = useState<acc.LinkEvent>(null);
+  useEffect(() => { acc.restore().then(() => setLinkEv(acc.takeLinkEvent())); }, []);
+  useEffect(() => {
+    if (!linkEv || phase === 'splash') return;
+    if (linkEv === 'recovery') setAccount({ reason: null, start: 'newpass' });
+    else if (linkEv === 'confirmed') showToast('Adresse confirmée : votre compte est actif.');
+    else setAccount({ reason: linkEv.error, start: 'in' });
+    setLinkEv(null);
+  }, [linkEv, phase]);
   /** Lance l'action si le lecteur est connecté (avec un pseudo si besoin), sinon ouvre « Mon compte » puis la lance. */
   const withAccount = (reason: string, then: () => void, needPseudo = false) => {
     const m = acc.currentMe();
@@ -631,18 +640,20 @@ function Main() {
           onNeedAccount={(then) => setAccount({ reason: 'Premium est lié à votre compte : vous le retrouvez sur tous vos appareils.', then })}
         />
       ) : null}
+
+      {welcome && phase === 'feed' && !overlay ? <Welcome title={welcome.title} body={welcome.body} onClose={closeWelcome} /> : null}
+      {phase === 'onb' ? <Onboarding W={W} onDone={onOnb} /> : null}
+      {/* Au-dessus de la présentation : un lien « mot de passe oublié » peut arriver sur un téléphone neuf. */}
       {account ? (
         <Account
           W={W}
           reason={account.reason}
+          start={account.start}
           onToast={showToast}
           onClose={() => setAccount(null)}
           onReady={account.then ? () => { const f = account.then!; setAccount(null); f(); } : undefined}
         />
       ) : null}
-
-      {welcome && phase === 'feed' && !overlay ? <Welcome title={welcome.title} body={welcome.body} onClose={closeWelcome} /> : null}
-      {phase === 'onb' ? <Onboarding W={W} onDone={onOnb} /> : null}
       {phase === 'splash' ? <Splash onDone={() => setSplashDone(true)} /> : null}
 
       <Toast msg={toast} top={insets.top + 96} />

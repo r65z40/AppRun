@@ -43,6 +43,8 @@ jobs:
           EXPO_BASE_URL: /${{ github.event.repository.name }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          # Les liens des e-mails (confirmation, mot de passe oublié) ouverts depuis le téléphone arrivent ici.
+          EXPO_PUBLIC_WEB_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
       - name: Back office
         working-directory: admin

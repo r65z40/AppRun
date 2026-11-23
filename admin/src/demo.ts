@@ -118,6 +118,9 @@ export function demoApi(): Api {
     async signIn() { signed = true; return null; },
     async needsAdmin() { return false; },
     async signUp() { signed = true; return null; },
+    async resetPassword() { return null; },
+    async resendConfirm() { return null; },
+    async updatePassword() { return null; },
     settings: () => wait(settings),
     async setSetting(key, value) {
       settings = settings.filter((s) => s.key !== key);

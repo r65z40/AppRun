@@ -251,7 +251,7 @@ function Mail({ get, save }: { get: (k: string) => string; save: Save }) {
   );
   const tpl = (s: 'CONFIRM' | 'RESET', title: string) => (
     <div className="setting column">
-      <div><b>{title}</b><p className="muted small">{'{lien}'} devient un bouton, {'{nom}'} le nom de l’app, {'{email}'} l’adresse du lecteur. Texte simple : une ligne vide sépare les paragraphes. Vide = modèle actuel de Supabase (en anglais).</p></div>
+      <div><b>{title}</b><p className="muted small">{'{lien}'} devient un bouton, {'{nom}'} le nom de l’app, {'{email}'} l’adresse du lecteur. Texte simple : une ligne vide sépare les paragraphes. Vide = modèle en français par défaut (affiché en gris).</p></div>
       <input maxLength={200} placeholder={MAIL_DEF[`MAIL_${s}_SUBJECT`]} value={d[`MAIL_${s}_SUBJECT`] ?? ''} onChange={(e) => setD({ ...d, [`MAIL_${s}_SUBJECT`]: e.target.value })} aria-label={`${title} : objet`} />
       <textarea rows={7} maxLength={10000} placeholder={MAIL_DEF[`MAIL_${s}_BODY`]} value={d[`MAIL_${s}_BODY`] ?? ''} onChange={(e) => setD({ ...d, [`MAIL_${s}_BODY`]: e.target.value })} aria-label={`${title} : texte`} />
       {!d[`MAIL_${s}_BODY`] ? <div><button className="btn ghost sm" onClick={() => setD({ ...d, [`MAIL_${s}_SUBJECT`]: MAIL_DEF[`MAIL_${s}_SUBJECT`], [`MAIL_${s}_BODY`]: MAIL_DEF[`MAIL_${s}_BODY`] })}>Partir du modèle en français</button></div> : null}
@@ -260,7 +260,7 @@ function Mail({ get, save }: { get: (k: string) => string; save: Save }) {
   return (
     <>
       <div className={`status-bar ${sync.ok === false ? 'off' : ''}`}>
-        <b>{sync.ok ? 'Appliqués dans Supabase' : sync.ok === false ? 'Pas encore appliqués' : 'E-mails d’origine de Supabase'}</b>
+        <b>{sync.ok ? 'Appliqués dans Supabase' : sync.ok === false ? 'Pas encore appliqués' : 'Modèles en français par défaut'}</b>
         <span className="muted small">{sync.ok ? `Le ${new Date(sync.at!).toLocaleString('fr-FR')}${sync.smtp ? ', avec votre expéditeur' : ''}. Une modification part dans les 20 minutes.` : sync.error ?? 'Vos réglages partent dans Supabase dans les 20 minutes après l’enregistrement (avec la Dernière minute).'}</span>
       </div>
       <section className="panel settings">

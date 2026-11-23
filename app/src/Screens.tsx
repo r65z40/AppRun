@@ -8,7 +8,6 @@ import { BRAND, NOTIF, RULES, TEXTS } from './brand';
 import { setNotif } from './notify';
 import { RUBRIC_LIST } from './content';
 import { accountsOn } from './account';
-import { CREDITS } from './edition';
 import { AppIcon, Chip, GradButton, SoftButton, Toggle, st } from './ui';
 import { feel } from './feel';
 import { todayLabel, tomorrowLabel } from './dates';
@@ -239,10 +238,6 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
             </View>
             <SoftButton label={premium ? 'Gérer' : 'Découvrir'} onPress={() => { feel('light'); onPremium(); }} style={{ height: 38, borderRadius: 12 }} />
           </LinearGradient>
-        </View>
-        <View style={{ gap: 8 }}>
-          <Text style={st.label}>Crédits photos</Text>
-          <Text style={{ color: C.text3, fontFamily: F.regular, fontSize: 12, lineHeight: 19 }}>{CREDITS}</Text>
         </View>
       </ScrollView>
       <View style={{ paddingHorizontal: 26, paddingTop: 10, paddingBottom: Math.max(20, insets.bottom + 8) }}>

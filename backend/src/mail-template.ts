@@ -20,3 +20,19 @@ export function toTemplate(body: string, button: string, b = brand()): string {
   return `<div style="font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1530;max-width:520px">${paras.join('')}</div>`;
 }
 
+
+/** Modèles en français utilisés tant que rien n'est réglé dans le back office (mêmes textes que MAIL_DEF dans admin/src/Brand.tsx). */
+export const MAIL_DEFAULTS = {
+  MAIL_CONFIRM_SUBJECT: 'Bienvenue sur {nom} : activez votre compte',
+  MAIL_CONFIRM_BODY: 'Bonjour,\n\nMerci de rejoindre {nom}. Touchez le bouton ci-dessous pour activer votre compte.\n\n{lien}\n\nSi vous n’êtes pas à l’origine de cette inscription, ignorez ce message.',
+  MAIL_RESET_SUBJECT: '{nom} : choisir un nouveau mot de passe',
+  MAIL_RESET_BODY: 'Bonjour,\n\nVous avez demandé à changer votre mot de passe {nom}. Touchez le bouton ci-dessous pour en choisir un nouveau.\n\n{lien}\n\nSi vous n’avez rien demandé, ignorez ce message : votre mot de passe reste le même.',
+};
+
+/** Adresses où les liens des e-mails ont le droit de ramener : l'app web et le back office (GitHub Pages). */
+export function linkUrls(pages: string): string[] {
+  if (!/^https:\/\//.test(pages)) return [];
+  const base = pages.endsWith('/') ? pages : pages + '/';
+  return [base, `${base}**`, `${base}admin/`, `${base}admin/**`];
+}
+

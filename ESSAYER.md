@@ -107,3 +107,8 @@ Installez **Expo Go** sur l'iPhone et scannez le QR code affiché.
 
 Back office › Administration › **Personnalisation**. L'app applique les réglages à sa prochaine ouverture.
 Pour les e-mails (expéditeur et modèles), il faut le secret GitHub `SUPABASE_ACCESS_TOKEN` (le même que pour Premium, voir PREMIUM.md) : les réglages partent dans Supabase dans les 20 minutes.
+
+## Comptes : inscription, confirmation, mot de passe oublié
+
+Rien à régler à la main : toutes les 20 minutes, le moteur règle Supabase pour que les liens des e-mails ramènent vers l'app web et le back office (GitHub Pages), et pour que les e-mails soient en français (secret `SUPABASE_ACCESS_TOKEN` nécessaire).
+Sans service d'envoi à vous, Supabase limite les e-mails à quelques-uns par heure, ce qui suffit pour essayer mais pas pour le public. Pour aller plus loin, branchez Brevo ou Resend dans Back office › Personnalisation › E-mails.
