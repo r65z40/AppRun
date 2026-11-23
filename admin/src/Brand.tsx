@@ -33,10 +33,19 @@ const MAIL_DEF = {
 };
 const TIMES = Array.from({ length: 13 }, (_, i) => { const m = 360 + i * 30; return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; });
 
-type Brand = { name: string; logo: string; font: string; colors: Record<string, string> };
+type Brand = { name: string; logo: string; font: string; colors: Record<string, string>; share?: Share };
+// Carte de partage : mêmes valeurs par défaut que SHARE dans app/src/brand.ts.
+const SHARE_DEF = { enabled: true, format: 'story' as 'story' | 'portrait' | 'square', photo: true, facts: 2, tagline: '', link: '' };
+const TAGLINE_DEF = 'Toute l’actu qui compte, 80 % plus vite.';
+type Share = typeof SHARE_DEF;
+const FORMATS: [Share['format'], string, string, number][] = [
+  ['story', 'Story (9:16)', 'Stories Instagram, statut WhatsApp, TikTok', 640],
+  ['portrait', 'Portrait (4:5)', 'Publication dans le fil Instagram ou Facebook', 450],
+  ['square', 'Carré', 'Messages, X, LinkedIn (sans les faits)', 360],
+];
 type Notif = typeof NOTIF_DEF;
-type Tab = 'identity' | 'texts' | 'rules' | 'nudges' | 'notif' | 'mail';
-const TABS: [Tab, string][] = [['identity', 'Identité'], ['texts', 'Textes de l’app'], ['rules', 'Règles de l’app'], ['nudges', 'Compte et Premium'], ['notif', 'Notification'], ['mail', 'E-mails']];
+type Tab = 'identity' | 'share' | 'texts' | 'rules' | 'nudges' | 'notif' | 'mail';
+const TABS: [Tab, string][] = [['identity', 'Identité'], ['share', 'Carte de partage'], ['texts', 'Textes de l’app'], ['rules', 'Règles de l’app'], ['nudges', 'Compte et Premium'], ['notif', 'Notification'], ['mail', 'E-mails']];
 const isHex = (v: string) => /^#[0-9a-f]{6}$/i.test(v);
 const parse = <T,>(v: string, d: T): T => { try { return v ? { ...d, ...JSON.parse(v) } : d; } catch { return d; } };
 
@@ -61,6 +70,7 @@ export function BrandPage({ say }: { say: (m: string) => void }) {
       </header>
       <div className="tabs">{TABS.map(([t, l]) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{l}</button>)}</div>
       {tab === 'identity' ? <Identity key={get('BRAND')} raw={get('BRAND')} texts={parse(get('APP_TEXTS'), {} as Record<string, string>)} save={save} say={say} /> : null}
+      {tab === 'share' ? <ShareTab key={get('BRAND')} raw={get('BRAND')} save={save} /> : null}
       {tab === 'texts' ? <Texts key={get('APP_TEXTS')} raw={get('APP_TEXTS')} save={save} /> : null}
       {tab === 'notif' ? <NotifTab key={get('NOTIFICATIONS')} raw={get('NOTIFICATIONS')} brand={parse(get('BRAND'), { name: 'TITRE' } as Brand).name || 'TITRE'} save={save} /> : null}
       {tab === 'mail' ? <Mail get={get} save={save} /> : null}
@@ -80,7 +90,7 @@ function Identity({ raw, texts, save, say }: { raw: string; texts: Record<string
   const col = (k: string) => (isHex(b.colors[k] ?? '') ? b.colors[k] : COLORS.find((c) => c[0] === k)![2]);
   const bad = Object.values(b.colors).some((v) => v && !isHex(v)) || (!!b.logo && !/^https:\/\//.test(b.logo));
   const changed = JSON.stringify(b) !== JSON.stringify(init);
-  const clean = (): Brand => ({ name: b.name.trim(), logo: b.logo.trim(), font: b.font, colors: Object.fromEntries(Object.entries(b.colors).filter(([, v]) => isHex(v))) });
+  const clean = (): Brand => ({ name: b.name.trim(), logo: b.logo.trim(), font: b.font, colors: Object.fromEntries(Object.entries(b.colors).filter(([, v]) => isHex(v))), ...(b.share ? { share: b.share } : {}) });
   return (
     <div className="brand-grid">
       <div>
@@ -155,6 +165,100 @@ function Preview({ name, logo, font, c, title, text }: { name: string; logo: str
         <span className="mini-btn" style={{ background: `linear-gradient(90deg, ${c('violet')}, ${c('blue')})` }}>Commencer</span>
         <span className="mini-flash" style={{ background: c('coral') }}>Dernière minute</span>
       </div>
+    </div>
+  );
+}
+
+/* ---------- Carte de partage ---------- */
+// Rangée dans BRAND (clé « share ») : l'app la lit avec l'identité, sans migration. Couleurs, logo, nom et police
+// viennent de l'onglet Identité.
+const SAMPLE = {
+  rub: 'FRANCE', title: 'Grève SNCF : un train sur deux lundi', key: 'Les syndicats maintiennent le préavis après l’échec des discussions de vendredi.',
+  facts: [['Un TGV sur deux et une partie des TER supprimés lundi.', 'Le Monde'], ['Nouvelle réunion prévue mardi au ministère.', 'Franceinfo'], ['Les billets sont échangeables sans frais.', 'SNCF']],
+};
+
+function ShareTab({ raw, save }: { raw: string; save: Save }) {
+  const brand: Brand = parse(raw, { name: '', logo: '', font: 'archivo', colors: {} });
+  const init: Share = { ...SHARE_DEF, ...(brand.share ?? {}) };
+  const [x, setX] = useState<Share>(init);
+  const changed = JSON.stringify(x) !== JSON.stringify(init);
+  const bad = !!x.link && !/^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(x.link.trim());
+  const store = (v: Share | null) => {
+    const next: Brand = { ...brand };
+    if (v) next.share = { ...v, tagline: v.tagline.trim(), link: v.link.trim() }; else delete next.share;
+    const empty = !next.name && !next.logo && next.font === 'archivo' && !Object.keys(next.colors ?? {}).length && !next.share;
+    return save('BRAND', empty ? '' : JSON.stringify(next), v ? undefined : 'Carte de partage d’origine rétablie');
+  };
+  const c = (k: string) => (isHex(brand.colors?.[k] ?? '') ? brand.colors[k] : COLORS.find((z) => z[0] === k)![2]);
+  return (
+    <div className="brand-grid">
+      <section className="panel settings">
+        <h2>Carte de partage</h2>
+        <p className="muted small">Quand un lecteur touche « Partager » sur une info, l’app crée une image aux couleurs de l’app (logo, nom, police : onglet Identité) et ouvre le menu de partage du téléphone : Instagram, WhatsApp, Messages… Sur ordinateur, l’image est téléchargée.</p>
+        <label className="setting toggle">
+          <div><b>Partager en image</b><p className="muted small">Coupé : le bouton envoie seulement le titre, la phrase clé et le lien, en texte.</p></div>
+          <input type="checkbox" checked={x.enabled} onChange={(e) => setX({ ...x, enabled: e.target.checked })} />
+        </label>
+        <div className="setting">
+          <div><b>Format</b><p className="muted small">{FORMATS.find((f) => f[0] === x.format)![2]}.</p></div>
+          <select value={x.format} onChange={(e) => setX({ ...x, format: e.target.value as Share['format'] })} aria-label="Format">
+            {FORMATS.map(([v, l]) => <option key={v} value={v}>{l}{v === 'story' ? ' (par défaut)' : ''}</option>)}
+          </select>
+        </div>
+        <label className="setting toggle">
+          <div><b>Photo de l’info en fond</b><p className="muted small">Coupé : le dégradé de l’app à la place.</p></div>
+          <input type="checkbox" checked={x.photo} onChange={(e) => setX({ ...x, photo: e.target.checked })} />
+        </label>
+        <div className="setting">
+          <div><b>Faits repris sous le titre</b><p className="muted small">Le format carré n’en montre aucun, faute de place.</p></div>
+          <select value={x.facts} onChange={(e) => setX({ ...x, facts: Number(e.target.value) })} aria-label="Faits">
+            {[0, 1, 2, 3].map((n) => <option key={n} value={n}>{n === 0 ? 'Aucun' : n}{n === 2 ? ' (par défaut)' : ''}</option>)}
+          </select>
+        </div>
+        <div className="setting column">
+          <div><b>Phrase en bas de la carte</b><p className="muted small">{'{nom}'} = nom de l’app. Vide = phrase d’origine (en gris).</p></div>
+          <input maxLength={90} placeholder={TAGLINE_DEF} value={x.tagline} onChange={(e) => setX({ ...x, tagline: e.target.value })} aria-label="Phrase en bas de la carte" />
+        </div>
+        <div className="setting column">
+          <div><b>Adresse affichée</b><p className="muted small">Votre site ou la page de téléchargement, par exemple titre.app. Vide = l’adresse du site de l’app.</p></div>
+          <input maxLength={120} placeholder="titre.app" value={x.link} className={bad ? 'invalid' : ''} onChange={(e) => setX({ ...x, link: e.target.value })} aria-label="Adresse affichée" />
+        </div>
+        <div className="setting-actions">
+          <button className="btn ghost" disabled={!brand.share} onClick={() => store(null)}>Revenir aux réglages d’origine</button>
+          <button className="btn primary" disabled={!changed || bad} onClick={() => store(x)}>{bad ? 'Adresse incorrecte' : 'Enregistrer'}</button>
+        </div>
+      </section>
+      <SharePreview x={x} name={brand.name.trim() || 'TITRE'} logo={brand.logo} font={FONT_CSS[brand.font] ?? 'Archivo'} c={c} />
+    </div>
+  );
+}
+
+function SharePreview({ x, name, logo, font, c }: { x: Share; name: string; logo: string; font: string; c: (k: string) => string }) {
+  const h = FORMATS.find((f) => f[0] === x.format)![3];
+  const k = 220 / 360; // la carte fait 360 points de large dans l'app
+  const facts = x.format === 'square' ? [] : SAMPLE.facts.slice(0, x.facts);
+  const link = (x.link.trim() || 'titre.app').replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+  const tag = (x.tagline.trim() || TAGLINE_DEF).replaceAll('{nom}', name);
+  const night = c('night');
+  const ts = (x.format === 'square' ? 26 : x.format === 'story' ? 34 : 29) * k;
+  return (
+    <div className="brand-prev">
+      {font !== 'Archivo' ? <link rel="stylesheet" href={`https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@400;600;800&display=swap`} /> : null}
+      <div className="muted small">Aperçu{x.enabled ? '' : ' (coupé : partage en texte)'}</div>
+      <div className="share-prev" style={{ height: h * k, fontFamily: `'${font}', Archivo, sans-serif`, backgroundColor: night, opacity: x.enabled ? 1 : 0.4,
+        backgroundImage: `linear-gradient(180deg, ${night}b3, ${night}0d 22%, ${night}8c 45%, ${night}f0 70%, ${night}), ${x.photo ? 'linear-gradient(rgba(40,24,110,0.38), rgba(40,24,110,0.38)), url(photos/train.jpg)' : `linear-gradient(135deg, ${c('pink')}8c, ${c('violet')}8c, ${c('blue')}8c)`}` }}>
+        <div className="share-head">
+          {logo ? <img src={logo} alt="" /> : <span className="mini-icon sm" style={{ background: `linear-gradient(135deg, ${c('pink')}, ${c('violet')}, ${c('blue')})` }} />}
+          <b>{name}</b><span>{SAMPLE.rub}</span>
+        </div>
+        <div style={{ flex: 1 }} />
+        <b className="share-title" style={{ fontSize: ts }}>{SAMPLE.title.toUpperCase()}</b>
+        <span className="share-key">{SAMPLE.key}</span>
+        {facts.length ? <div className="share-facts">{facts.map(([t, s]) => <div key={t}>{t}<small>{s}</small></div>)}</div> : null}
+        <span className="share-bar" style={{ background: `linear-gradient(90deg, ${c('pink')}, ${c('violet')}, ${c('blue')})` }} />
+        <div className="share-foot"><span>{tag}</span><b>{link}</b></div>
+      </div>
+      <p className="muted small">Image envoyée en 1080 px de large. La photo et le texte sont ceux de l’info partagée.</p>
     </div>
   );
 }

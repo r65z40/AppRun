@@ -30,6 +30,7 @@ import { RULES } from './brand';
 import { Icon, Press, Rich } from './ui';
 import { feel } from './feel';
 import { adHit } from './ads';
+import { shareArticle } from './ShareCard';
 import type { Signal } from './algo';
 
 const EXT = 140; // les photos débordent sur les côtés pour se fondre entre rubriques
@@ -399,13 +400,22 @@ function CardContent({ card, k, W, H, tag, why, api, bottom, tiltX, tiltY }: {
               <Text style={styles.icTxt}>{api.commentCount(a)}</Text>
             </Press>
           )}
-          <Press onPress={() => { api.onSignal(a, 'share'); api.onToast("Lien de l'info copié"); feel('light'); }} style={styles.ic} accessibilityLabel="Partager">
+          <Press onPress={() => { feel('light'); onShare(a, api); }} style={styles.ic} accessibilityLabel="Partager en image">
             <Icon name="share" size={20} />
           </Press>
         </View>
       </Animated.View>
     </View>
   );
+}
+
+/** Partage : carte image (ShareCard.tsx), sinon texte ; le signal ne part que si l'info a vraiment été envoyée. */
+async function onShare(a: Article, api: FeedApi) {
+  const r = await shareArticle(a);
+  if (r === 'cancel') return;
+  api.onSignal(a, 'share');
+  if (r === 'download') api.onToast('Image téléchargée : prête à publier');
+  else if (r === 'copied') api.onToast("Titre et lien de l'info copiés");
 }
 
 /**

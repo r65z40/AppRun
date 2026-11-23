@@ -31,6 +31,7 @@
     "plugins": [
       "expo-audio",
       "expo-font",
+      "expo-sharing",
       [
         "expo-notifications",
         {
