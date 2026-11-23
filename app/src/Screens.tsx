@@ -4,10 +4,11 @@ import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, wi
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, GRAD, GRAD3, DRAWER_MS, alpha } from './theme';
-import { BRAND, NOTIF, RULES, TEXTS } from './brand';
+import { BRAND, NOTIF, RECOG, RULES, TEXTS } from './brand';
 import { setNotif } from './notify';
 import { RUBRIC_LIST } from './content';
 import { accountsOn } from './account';
+import { SavedTime } from './Badges';
 import { AppIcon, Chip, GradButton, SoftButton, Toggle, st } from './ui';
 import { feel } from './feel';
 import { todayLabel, tomorrowLabel } from './dates';
@@ -186,6 +187,8 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
         <View style={{ gap: 12 }}>
           <Text style={st.label}>Infos par jour</Text>
           <QuotaWheel value={d.quota} onChange={(q) => set('quota', q)} />
+          {/* Temps gagné chaque jour avec ce nombre d'infos (minutes par info : back office > Reconnaissance). */}
+          <SavedTime reads={d.quota} minutes={d.quota * RECOG.minutes_per_article} />
         </View>
         <View style={{ gap: 12 }}>
           <Text style={st.label}>Mes goûts</Text>
