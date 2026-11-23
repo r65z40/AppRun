@@ -33,12 +33,24 @@ VIDE=${DB/titre_test/titre_vide}
 psql "$VIDE" -v ON_ERROR_STOP=1 -q -f test/supabase-stub.sql
 DATABASE_URL="$VIDE" npx tsx src/install.ts
 DATABASE_URL="$VIDE" npx tsx src/install.ts
-psql "$VIDE" -tAc "select case when count(*) = 17 then 'OK  base vide installée toute seule (16 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
+psql "$VIDE" -tAc "select case when count(*) = 18 then 'OK  base vide installée toute seule (17 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
 psql "$VIDE" -tAc "select case when count(*) >= 10 then 'OK  sources de départ présentes' else 'ÉCHEC  sources absentes' end from sources"
 
 echo "--- Pilote automatique (réglage par défaut) : l'édition se publie seule"
 DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds >/dev/null
 psql "$VIDE" -tAc "select case when (select status from editions limit 1) = 'published' and count(*) filter (where status = 'published') > 0 then 'OK  édition et cartes publiées sans intervention (' || count(*) filter (where status = 'published') || ' cartes)' else 'ÉCHEC  publication autonome' end from articles"
+
+echo "--- Cœur des infos : doublons, sources, ménage"
+psql "$VIDE" -tAc "select case when exists (select 1 from articles a where (select count(distinct r.source_id) from raw_items r where r.id = any (a.raw_item_ids)) > 1
+  and (select count(distinct r.link) from raw_items r where r.id = any (a.raw_item_ids)) = 1) then 'OK  même article dans plusieurs flux d''un média : une seule dépêche pour l''IA, doublons rangés avec elle' else 'ÉCHEC  doublons' end"
+psql "$VIDE" -tAc "select case when count(*) filter (where last_count > 0) >= 4 and count(*) filter (where fail_count = 0) = count(*) then 'OK  sources : titres lus et état notés' else 'ÉCHEC  suivi des sources' end from sources where last_fetch_at is not null"
+psql "$VIDE" -qc "update sources set active = false" \
+  -c "insert into sources (name, url) values ('Morte', 'http://127.0.0.1:9/rss')"
+for i in 1 2; do DATABASE_URL="$VIDE" SOURCE_MAX_FAILS=2 npx tsx -e "import('./src/collect.ts').then((m) => m.collect(undefined, () => {})).then(() => process.exit(0))"; done
+psql "$VIDE" -tAc "select case when not active and fail_count = 2 and disabled_reason like 'Mise à l''écart automatique%' then 'OK  source morte mise à l''écart après 2 échecs d''affilée' else 'ÉCHEC  mise à l''écart : ' || active || ' ' || fail_count end from sources where name = 'Morte'"
+psql "$VIDE" -qc "delete from sources where name = 'Morte'" -c "update sources set active = true"
+psql "$VIDE" -qc "insert into raw_items (source_id, guid, title, link, fetched_at) select id, 'vieux', 'Vieux', 'https://x.test/v', now() - interval '40 days' from sources limit 1"
+psql "$VIDE" -tAc "select case when public.purge_raw_items(14) = 1 and (select count(*) from public.source_stats()) = 0 then 'OK  ménage des vieilles dépêches ; statistiques des sources réservées à l''équipe' else 'ÉCHEC  ménage ou statistiques' end"
 
 echo "--- Réglages de la rédaction appliqués par le moteur"
 psql "$VIDE" -qc "insert into app_settings (key, value) values ('MAX_CARDS', '3'), ('AUTO_PUBLISH', '0'), ('AI_GUIDELINES', 'Ton sobre')" 

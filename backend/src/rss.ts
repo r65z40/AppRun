@@ -12,7 +12,7 @@ const text = (v: unknown): string => {
   return '';
 };
 const clean = (s: string) =>
-  s.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+  s.replace(/<[^>]+>/g, ' ').replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16))).replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
 const arr = <T>(v: T | T[] | undefined): T[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
 
@@ -55,11 +55,18 @@ function toDate(s: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-export async function fetchFeed(url: string, timeoutMs = 15000): Promise<FeedItem[]> {
-  const res = await fetch(url, {
-    headers: { 'user-agent': 'TITRE-bot/0.1 (agrégateur de titres)', accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+export type Fetched = { items: FeedItem[] | null; etag: string | null; lastModified: string | null };
+
+/** items = null : le flux n'a pas changé depuis le dernier passage (réponse 304, rien à relire). */
+export async function fetchFeed(url: string, timeoutMs = 15000, since: { etag?: string | null; lastModified?: string | null } = {}): Promise<Fetched> {
+  const headers: Record<string, string> = { 'user-agent': 'TITRE-bot/0.2 (agrégateur de titres)', accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' };
+  if (since.etag) headers['if-none-match'] = since.etag;
+  if (since.lastModified) headers['if-modified-since'] = since.lastModified;
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  if (res.status === 304) return { items: null, etag: since.etag ?? null, lastModified: since.lastModified ?? null };
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return parseFeed(await res.text());
+  const body = await res.text();
+  const items = parseFeed(body);
+  if (!items.length && /<html/i.test(body.slice(0, 500))) throw new Error("page web au lieu d'un flux RSS (adresse à corriger)");
+  return { items, etag: res.headers.get('etag'), lastModified: res.headers.get('last-modified') };
 }

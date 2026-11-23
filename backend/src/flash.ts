@@ -9,7 +9,8 @@ import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
-import { model, checkFlash, selectFlashes, usage, type Item } from './ai.js';
+import { model, checkFlash, selectFlashes, setRubricHints, usage, type Item } from './ai.js';
+import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 import { moderate } from './moderate.js';
 
@@ -20,7 +21,6 @@ const AUTO = cfg.flashAutoPublish();
 let J: Journal;
 const log = (...a: unknown[]) => J.log(...a);
 
-type Raw = { id: string; title: string; description: string; link: string; published_at: Date | null; source: string };
 
 async function main() {
   J = await startJournal('flash');
@@ -46,15 +46,17 @@ async function flash() {
   if (todayCount >= cfg.flashMaxPerDay()) return J.finish('ok', `Plafond atteint : ${todayCount} infos aujourd'hui (réglage : ${cfg.flashMaxPerDay()}).`);
   const fetched = await collect(FIXTURES, log);
   const used = new Set((await q<{ id: string }>("select unnest(raw_item_ids)::text as id from flashes where created_at > now() - interval '24 hours'")).map((r) => r.id));
-  const raws = (await q<Raw>(
-    `select r.id, r.title, r.description, r.link, r.published_at, s.name as source
+  const H = cfg.flashWindowHours();
+  const raws = dedupe((await q<Raw>(
+    `select r.id, r.title, r.description, r.link, r.published_at, s.name as source, s.rubric_hint as hint
        from raw_items r join sources s on s.id = r.source_id
-      where coalesce(r.published_at, r.fetched_at) > now() - interval '2 hours' ${FIXTURES ? "or true" : ''}
-      order by coalesce(r.published_at, r.fetched_at) desc limit 250`,
-  )).filter((r) => !used.has(r.id));
-  log(`${fetched} titres lus, ${raws.length} dépêches des 2 dernières heures pas encore utilisées.`);
-  if (raws.length < 2) return J.finish('ok', `${fetched} titres lus, rien de neuf depuis 2 heures.`, { fetched, items: raws.length, published: 0 });
-  const items: Item[] = raws.map((r, k) => ({ n: k + 1, source: r.source, title: r.title, description: r.description, publishedAt: r.published_at?.toISOString() ?? null }));
+      where coalesce(r.published_at, r.fetched_at) > now() - make_interval(hours => $1) ${FIXTURES ? "or true" : ''}
+      order by coalesce(r.published_at, r.fetched_at) desc limit 400`, [H],
+  )).filter((r) => !used.has(r.id))).slice(0, 250);
+  log(`${fetched} titres lus, ${raws.length} dépêches des ${H} dernières heures pas encore utilisées.`);
+  if (raws.length < 2) return J.finish('ok', `${fetched} titres lus, rien de neuf depuis ${H} h.`, { fetched, items: raws.length, published: 0 });
+  setRubricHints(await q<{ id: string; name: string; ai_hint: string | null }>('select id, name, ai_hint from rubrics').catch(() => []));
+  const items: Item[] = raws.map((r, k) => ({ n: k + 1, source: r.source, title: r.title, description: r.description, publishedAt: r.published_at?.toISOString() ?? null, hint: r.hint }));
   const today = (await q<{ title: string }>("select title from flashes where published_at > now() - interval '18 hours' order by published_at")).map((r) => r.title);
 
   const found = await selectFlashes(items, today);
@@ -74,7 +76,7 @@ async function flash() {
     await q(
       `insert into flashes (status, rubric_id, importance, title, sentence, sources, raw_item_ids, model)
        values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [AUTO ? 'published' : 'hidden', f.rubric, Math.min(10, Math.max(1, f.importance)), f.title.slice(0, 90), f.sentence.slice(0, 220), JSON.stringify(sources), its.map((r) => r.id), model()],
+      [AUTO ? 'published' : 'hidden', f.rubric, Math.min(10, Math.max(1, f.importance)), f.title.slice(0, 90), f.sentence.slice(0, 220), JSON.stringify(sources), its.flatMap((r) => [r.id, ...(r.dups ?? [])]), model()],
     );
     n++;
     log(`  ⚡ ${f.title}`);

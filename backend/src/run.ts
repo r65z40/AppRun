@@ -17,7 +17,8 @@ import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
 import { findPhoto, pexelsOn } from './pexels.js';
-import { model, checkCard, selectStories, writeCard, usage, type Item, type Story } from './ai.js';
+import { model, checkCard, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
+import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 
 const args = process.argv.slice(2);
@@ -30,12 +31,10 @@ const FIXTURES = arg('fixtures');
 const PER_RUBRIC = arg('per-rubric') ? Number(arg('per-rubric')) : cfg.perRubric();
 const AUTO_PUBLISH = cfg.autoPublish();
 const WINDOW_H = cfg.windowHours();
-const CONCURRENCY = Number(process.env.CONCURRENCY ?? 4);
 
 let J: Journal;
 const log = (...a: unknown[]) => J.log(...a);
 
-type Raw = { id: string; title: string; description: string; link: string; published_at: Date | null; source: string };
 
 async function main() {
   J = await startJournal('edition');
@@ -53,6 +52,8 @@ async function edition() {
   J.details.config = snapshot('edition');
   // Journal de lecture de l'algorithme : rien n'est gardé au-delà de la durée de conservation (90 jours par défaut).
   await q('select purge_reading_events()').catch(() => {});
+  await q('select purge_raw_items($1)', [cfg.rawRetentionDays()]).catch(() => {});
+  setRubricHints(await q<{ id: string; name: string; ai_hint: string | null }>('select id, name, ai_hint from rubrics').catch(() => []));
   if (cfg.paused()) {
     log('Moteur en pause (Réglages) : aucun passage.');
     return J.finish('ok', 'Moteur en pause dans les réglages : rien fait.');
@@ -83,18 +84,21 @@ async function edition() {
   // Fenêtre : les WINDOW_H dernières heures, jusqu'à maintenant (ou jusqu'au lendemain 6 h pour une date passée).
   const until = new Date(new Date(`${DATE}T06:00:00+01:00`).getTime() + 86400e3);
   const end = until > new Date() ? new Date() : until;
-  const hours = UPDATE ? 4 : WINDOW_H;
+  const hours = UPDATE ? cfg.updateWindowHours() : WINDOW_H;
   const raws = await q<Raw>(
-    `select r.id, r.title, r.description, r.link, r.published_at, s.name as source
+    `select r.id, r.title, r.description, r.link, r.published_at, s.name as source, s.rubric_hint as hint
        from raw_items r join sources s on s.id = r.source_id
       where coalesce(r.published_at, r.fetched_at) between $1 and $2
-      order by coalesce(r.published_at, r.fetched_at) desc limit 400`,
+      order by coalesce(r.published_at, r.fetched_at) desc limit ${cfg.maxItems() * 2}`,
     [FIXTURES ? new Date(0) : new Date(end.getTime() - hours * 3600e3), FIXTURES ? new Date('2100-01-01') : end], // flux d'exemple : dates figées
   );
   // Ne pas réécrire un sujet déjà traité dans cette édition.
   const done = new Set((await q<{ id: string }>('select unnest(raw_item_ids)::text as id from articles where edition_date = $1 and status <> $2', [DATE, 'rejected'])).map((r) => r.id));
-  const fresh = raws.filter((r) => !done.has(r.id));
-  log(`   ${fetched} titres lus, ${raws.length} publiés dans les ${hours} dernières heures, dont ${fresh.length} pas encore traités`);
+  // Même article dans deux flux d'un média (Une + rubrique) ou repris mot pour mot : une seule dépêche pour l'IA.
+  const pending = raws.filter((r) => !done.has(r.id));
+  const fresh = dedupe(pending).slice(0, cfg.maxItems());
+  const dups = pending.length - fresh.length;
+  log(`   ${fetched} titres lus, ${raws.length} publiés dans les ${hours} dernières heures, dont ${fresh.length} pas encore traités${dups > 0 ? ` (${dups} doublons ou au-delà de ${cfg.maxItems()} écartés)` : ''}`);
   if (!fresh.length) return J.finish('ok', `${fetched} titres lus, rien de nouveau à traiter.`, { fetched, window: raws.length, items: 0 });
 
   const items: Item[] = fresh.map((r, k) => ({
@@ -103,6 +107,7 @@ async function edition() {
     title: r.title,
     description: r.description,
     publishedAt: r.published_at ? r.published_at.toISOString() : null,
+    hint: r.hint,
   }));
 
   log('2/4 Choix des sujets');
@@ -110,7 +115,7 @@ async function edition() {
   const proposed = await selectStories(items, PER_RUBRIC, already.map((a) => a.title));
   // Mise à jour : plus exigeante (importance minimale), et pas plus d'un quart du plafond de cartes par passage.
   const minImp = UPDATE ? Math.max(cfg.minImportance(), cfg.liveMinImportance()) : cfg.minImportance();
-  const cap = UPDATE ? Math.max(1, Math.ceil(cfg.maxCards() / 4)) : cfg.maxCards();
+  const cap = UPDATE ? cfg.liveMaxCards() || Math.max(1, Math.ceil(cfg.maxCards() / 4)) : cfg.maxCards();
   // Réglages de la rédaction : importance et nombre de médias minimum, essentiels et total plafonnés.
   const mediaCount = (s: Story) => new Set(s.item_numbers.map((n) => items[n - 1]?.source).filter(Boolean)).size;
   const dropped: { label: string; why: string }[] = [];
@@ -167,7 +172,7 @@ async function edition() {
           DATE, s.rubric, publish ? 'published' : 'draft', (ranks[s.rubric] = (ranks[s.rubric] ?? 0) + 1) - 1,
           s.importance, s.essential, card.title.slice(0, 90), card.key_sentence, JSON.stringify(facts),
           JSON.stringify([card.summary.context, card.summary.change, card.summary.next]), card.photo_tag,
-          its.map((i) => fresh[i.n - 1].id), issues, model(), publish ? new Date() : null, photo?.url ?? null, photo?.credit ?? null,
+          its.flatMap((i) => [fresh[i.n - 1].id, ...(fresh[i.n - 1].dups ?? [])]), issues, model(), publish ? new Date() : null, photo?.url ?? null, photo?.credit ?? null,
           !!s.sensitive,
         ],
       );
@@ -183,7 +188,7 @@ async function edition() {
   };
   // Quelques cartes en parallèle, pas plus.
   const queue = [...sorted];
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+  await Promise.all(Array.from({ length: Math.min(cfg.aiConcurrency(), queue.length) }, async () => {
     while (queue.length) await work(queue.shift()!);
   }));
 
