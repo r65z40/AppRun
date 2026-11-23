@@ -6,9 +6,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, DRAWER_MS } from './theme';
 import { GradButton, Toggle, st } from './ui';
 import { BadgeList, SavedTime } from './Badges';
+import { Invite } from './Invite';
 import type { ReaderCard } from './types';
 import { feel } from './feel';
-import { blockedCount, readerCard, setShowBadges, resendConfirm, resetPassword, setPseudo, signIn, signOut, signUp, unblockAll, updatePassword, useMe, UserError } from './account';
+import { blockedCount, pendingReferral, readerCard, setShowBadges, resendConfirm, resetPassword, setPseudo, signIn, signOut, signUp, unblockAll, updatePassword, useMe, UserError } from './account';
 
 const DRAWER = Easing.bezier(0.32, 0.72, 0, 1);
 type Mode = 'in' | 'up' | 'confirm' | 'pseudo' | 'me' | 'newpass' | 'sent';
@@ -25,6 +26,8 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [pseudo, setPs] = useState('');
+  const [ref, setRef] = useState('');
+  useEffect(() => { pendingReferral().then((c) => c && setRef(c)); }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(0);
@@ -54,7 +57,7 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
   };
   const submit = () => {
     if (mode === 'in') run(() => signIn(email, pw));
-    else if (mode === 'up') run(async () => { if ((await signUp(email, pw)) === 'confirm') setMode('confirm'); });
+    else if (mode === 'up') run(async () => { if ((await signUp(email, pw, ref)) === 'confirm') setMode('confirm'); });
     else if (mode === 'pseudo') run(() => setPseudo(pseudo));
     else if (mode === 'newpass') run(async () => {
       await updatePassword(pw);
@@ -89,6 +92,7 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
                 : 'Content de vous revoir.'}</Text>}
               <Field label="Adresse e-mail" value={email} onChange={setEmail} type="email" />
               <Field label={mode === 'up' ? 'Mot de passe (8 caractères au moins)' : 'Mot de passe'} value={pw} onChange={setPw} type="password" onSubmit={submit} />
+              {mode === 'up' && ref ? <Field label="Code d’un ami (facultatif)" value={ref} onChange={(v) => setRef(v.toUpperCase())} max={12} /> : null}
               {err ? <Text style={styles.err}>{err}</Text> : null}
               <GradButton label={mode === 'up' ? 'Créer mon compte' : 'Se connecter'} onPress={submit} disabled={!can || busy} />
               {busy ? <ActivityIndicator color="#fff" /> : null}
@@ -167,6 +171,7 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
                   </View>
                 </>
               ) : null}
+              <Invite onToast={onToast} />
               <Pressable onPress={() => { setPs(me.pseudo ?? ''); setMode('pseudo'); }} hitSlop={8}><Text style={styles.link}>Changer de pseudo</Text></Pressable>
               <Pressable onPress={() => { setErr(null); setPw(''); setMode('newpass'); }} hitSlop={8}><Text style={styles.link}>Changer de mot de passe</Text></Pressable>
               {blocked ? (
