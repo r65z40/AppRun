@@ -39,6 +39,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
 }
 
 /* ---------- Première ouverture (§4.1) ---------- */
+/** premium : le lecteur veut voir l'offre Premium dès la fin de la présentation. */
 export type OnbResult = { active: string[]; quota: number; time: string; adsPersonalized: boolean; premium?: boolean; account?: boolean };
 export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) => void }) {
   const insets = useSafeAreaInsets();
@@ -47,7 +48,6 @@ export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) =>
   const [quota, setQuota] = useState(8);
   const [time, setTime] = useState('7 h 30');
   const [adsP, setAdsP] = useState(false);
-  const [prem, setPrem] = useState(false);
   // Dernière étape (avec la vraie base) : proposer un compte pour une édition plus pertinente.
   const N = accountsOn ? 6 : 5;
   const x = useSharedValue(0);
@@ -56,7 +56,7 @@ export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) =>
   }, [i, W]);
   const track = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
   const next = () => { setI((k) => Math.min(N - 1, k + 1)); feel('light'); };
-  const finish = (ads: boolean, more: Partial<OnbResult> = {}) => onDone({ active, quota, time, adsPersonalized: ads, premium: prem, ...more });
+  const finish = (ads: boolean, more: Partial<OnbResult> = {}) => onDone({ active, quota, time, adsPersonalized: ads, ...more });
   const toggle = (id: string) => { setActive((a) => (a.includes(id) ? a.filter((k) => k !== id) : [...a, id])); feel('select', 'tick'); };
   const step = (children: React.ReactNode) => (
     <View style={[styles.step, { width: W, paddingBottom: Math.max(30, insets.bottom + 16) }]}>{children}</View>
@@ -110,7 +110,7 @@ export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) =>
               </Row>
             </View>
             <GradButton label="Continuer" onPress={() => (accountsOn ? next() : finish(adsP))} />
-            <SoftButton label="Premium sans pub · 2,99 €/mois" onPress={() => { feel('success', 'ding'); setPrem(true); if (accountsOn) next(); else finish(false, { premium: true }); }} />
+            <SoftButton label="Premium sans pub" onPress={() => { feel('light'); finish(adsP, { premium: true }); }} />
           </>)}
           {accountsOn ? step(<>
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><AppIcon size={96} /></View>
@@ -137,8 +137,10 @@ export type Prefs = {
   /** Goût par rubrique, appris des likes et dislikes : ordonne « Mon édition » et la roue. */
   taste?: Record<string, number>;
 };
-export function Settings({ W, prefs, onSave, onClose, account, onAccount }: {
+export function Settings({ W, prefs, onSave, onClose, account, onAccount, premium, onPremium }: {
   W: number; prefs: Prefs; onSave: (p: Prefs) => void; onClose: () => void;
+  /** Premium en cours (abonnement, code, cadeau, ou démo) ; onPremium ouvre le volet Premium. */
+  premium: boolean; onPremium: () => void;
   /** Pseudo du lecteur connecté, '' sans pseudo, null s'il n'est pas connecté. */
   account: string | null; onAccount: () => void;
 }) {
@@ -194,12 +196,12 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount }: {
           <View style={styles.rows}>
             <Pressable onPress={onAccount} accessibilityRole="button">
               {account === null ? (
-                <Row label="Se connecter ou créer un compte" hint="Pour aimer les infos et commenter" last={d.premium}><Text style={styles.v}>›</Text></Row>
+                <Row label="Se connecter ou créer un compte" hint="Pour aimer les infos et commenter" last={premium}><Text style={styles.v}>›</Text></Row>
               ) : (
-                <Row label="Mon compte" last={d.premium}><Text style={styles.v}>{account || 'Choisir un pseudo'} ›</Text></Row>
+                <Row label="Mon compte" last={premium}><Text style={styles.v}>{account || 'Choisir un pseudo'} ›</Text></Row>
               )}
             </Pressable>
-            {!d.premium ? (
+            {!premium ? (
               <Row label="Pubs selon mes centres d'intérêt" hint="Les pubs restent en gratuit ; ceci règle seulement le ciblage" last>
                 <Toggle label="Pubs selon mes centres d'intérêt" on={d.adsPersonalized} onPress={() => set('adsPersonalized', !d.adsPersonalized)} />
               </Row>
@@ -207,10 +209,10 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount }: {
           </View>
           <LinearGradient colors={['rgba(200,107,250,0.28)', 'rgba(61,123,255,0.25)']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.prem}>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 16 }}>{d.premium ? 'Premium actif' : 'TITRE Premium'}</Text>
-              <Text style={[styles.p, { fontSize: 13 }]}>{d.premium ? 'Aucune pub dans votre fil.' : 'Zéro pub. 2,99 €/mois ou 24,99 €/an.'}</Text>
+              <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 16 }}>{premium ? 'Premium actif' : 'TITRE Premium'}</Text>
+              <Text style={[styles.p, { fontSize: 13 }]}>{premium ? 'Aucune pub dans votre fil.' : 'Zéro pub, sans engagement.'}</Text>
             </View>
-            <SoftButton label={d.premium ? 'Gérer' : 'Essayer'} onPress={() => { set('premium', !d.premium); if (!d.premium) feel('success', 'ding'); }} style={{ height: 38, borderRadius: 12 }} />
+            <SoftButton label={premium ? 'Gérer' : 'Découvrir'} onPress={() => { feel('light'); onPremium(); }} style={{ height: 38, borderRadius: 12 }} />
           </LinearGradient>
         </View>
         <View style={{ gap: 8 }}>
