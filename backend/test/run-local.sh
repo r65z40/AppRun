@@ -33,7 +33,7 @@ VIDE=${DB/titre_test/titre_vide}
 psql "$VIDE" -v ON_ERROR_STOP=1 -q -f test/supabase-stub.sql
 DATABASE_URL="$VIDE" npx tsx src/install.ts
 DATABASE_URL="$VIDE" npx tsx src/install.ts
-psql "$VIDE" -tAc "select case when count(*) = 17 then 'OK  base vide installée toute seule (16 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
+psql "$VIDE" -tAc "select case when count(*) = 18 then 'OK  base vide installée toute seule (17 migrations + sources)' else 'ÉCHEC  installation automatique' end from _titre_migrations"
 psql "$VIDE" -tAc "select case when count(*) >= 10 then 'OK  sources de départ présentes' else 'ÉCHEC  sources absentes' end from sources"
 
 echo "--- Pilote automatique (réglage par défaut) : l'édition se publie seule"

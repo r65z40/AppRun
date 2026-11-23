@@ -127,7 +127,7 @@ async function edition() {
   J.details.dropped = dropped;
   log(`   ${proposed.length} sujets proposés par l'IA, ${stories.length} gardés selon les réglages, sur ${items.length} titres`);
   J.details.stories = stories.map((s) => ({
-    label: s.label, rubric: s.rubric, importance: s.importance, essential: s.essential,
+    label: s.label, rubric: s.rubric, importance: s.importance, essential: s.essential, sensitive: !!s.sensitive,
     items: s.item_numbers.map((n) => items[n - 1]).filter(Boolean).map((i) => ({ source: i.source, title: i.title })),
   }));
   const usedN = new Set(stories.flatMap((s) => s.item_numbers));
@@ -161,13 +161,14 @@ async function edition() {
       const publish = AUTO_PUBLISH && (issues.length === 0 || cfg.publishFlagged()) && s.importance >= cfg.publishMinImportance();
       await q(
         `insert into articles (edition_date, rubric_id, status, rank, importance, essential, title, key_sentence, facts, summary,
-                               photo_tag, raw_item_ids, review_notes, model, published_at, photo_url, photo_credit)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+                               photo_tag, raw_item_ids, review_notes, model, published_at, photo_url, photo_credit, sensitive)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
         [
           DATE, s.rubric, publish ? 'published' : 'draft', (ranks[s.rubric] = (ranks[s.rubric] ?? 0) + 1) - 1,
           s.importance, s.essential, card.title.slice(0, 90), card.key_sentence, JSON.stringify(facts),
           JSON.stringify([card.summary.context, card.summary.change, card.summary.next]), card.photo_tag,
           its.map((i) => fresh[i.n - 1].id), issues, model(), publish ? new Date() : null, photo?.url ?? null, photo?.credit ?? null,
+          !!s.sensitive,
         ],
       );
       written++;

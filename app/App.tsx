@@ -75,10 +75,10 @@ function Main() {
     const saved = acc.currentMe()?.prefs as Partial<Prefs> | undefined;
     if (saved?.active?.length) {
       // L'édition personnelle arrive avant la première carte, pour qu'elle ne change pas sous le doigt.
-      fetchPicks(saved.active, saved.quota ?? 8, saved.perso !== false).then((r) => {
+      fetchPicks(saved.active, saved.quota ?? 24, saved.perso !== false).then((r) => {
         setPicks(r);
         setP((x) => ({ ...x, ...pickSaved(saved) }));
-        setLimit(saved.quota ?? 8);
+        setLimit(saved.quota ?? 24);
         setPhase('feed');
       });
     } else setPhase('onb');
@@ -98,7 +98,7 @@ function Main() {
   }, []);
   const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded, edVer]);
   const [overlay, setOverlay] = useState<Overlay>(null);
-  const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 8, sound: true, haptic: true, parallax: true, premium: false, time: NOTIF.default_time, adsPersonalized: false });
+  const [p, setP] = useState<Prefs>({ active: ['france', 'monde', 'eco', 'tech'], quota: 24, sound: true, haptic: true, parallax: true, premium: false, time: NOTIF.default_time, adsPersonalized: false });
 
   // Notification du matin : état de cet appareil, puis reprogrammée à chaque ouverture (heure et textes du moment).
   useEffect(() => { notifWanted().then((v) => setP((x) => ({ ...x, notif: v }))); }, []);
@@ -136,7 +136,7 @@ function Main() {
   const [ri, setRi] = useState(0);
   const [idx, setIdx] = useState<Record<string, number>>({});
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
-  const [limit, setLimit] = useState(8);
+  const [limit, setLimit] = useState(24);
   const [reactions, setReactions] = useState<Record<string, -1 | 0 | 1>>({});
   const [myEmoji, setMyEmoji] = useState<Record<string, string>>({});
   const [welcome, setWelcome] = useState<AppMessage | null>(null);

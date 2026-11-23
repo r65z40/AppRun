@@ -80,6 +80,19 @@ select case when not exists (select 1 from compose_edition(null, 'appareil-neuf'
 update app_settings set value = 'pas du json' where key = 'ALGO';
 select case when (algo_conf()->>'w_importance')::int = 45 then 'OK  réglage abîmé ignoré' else 'ÉCHEC  réglage abîmé' end;
 delete from app_settings where key = 'ALGO';
+-- Sujet sensible : très ouvert par les lecteurs, mais jamais poussé pour ça.
+insert into app_settings (key, value) values ('ALGO', '{"min_views": 1}');
+select track('lecteur-' || n, (select jsonb_agg(jsonb_build_object('a', id, 'k', k, 'ms', 5000)) from articles, unnest('{view,summary,share}'::text[]) k
+                                 where edition_date = current_date + 1 and title = 'Grève à la SNCF ce jeudi'))
+  from generate_series(1, 3) n;
+select track('lecteur-' || n, (select jsonb_agg(jsonb_build_object('a', id, 'k', 'view', 'ms', 5000)) from articles
+                                 where edition_date = current_date + 1 and title = 'Réforme du lycée'))
+  from generate_series(1, 3) n;
+select score as s_avant from compose_edition(null, 'appareil-neuf', '{france}', 8) e join articles a on a.id = e.article_id where a.title = 'Grève à la SNCF ce jeudi' \gset
+update articles set sensitive = true where title = 'Grève à la SNCF ce jeudi';
+select score as s_apres from compose_edition(null, 'appareil-neuf', '{france}', 8) e join articles a on a.id = e.article_id where a.title = 'Grève à la SNCF ce jeudi' \gset
+select case when :s_apres < :s_avant then 'OK  sujet sensible : pas de bonus parce qu''il attire les clics (score ' || :s_avant || ' → ' || :s_apres || ')' else 'ÉCHEC  sujet sensible boosté' end;
+delete from app_settings where key = 'ALGO';
 insert into algo_keywords (label, words) values ('Lycée', '{lycée,lycéens}');
 select case when (select topics from article_topics t join articles a on a.id = t.article_id where a.title = 'Réforme du lycée') @> '{Lycée}'
   then 'OK  nouveau mot-clé : infos récentes réétiquetées aussitôt' else 'ÉCHEC  réétiquetage' end;

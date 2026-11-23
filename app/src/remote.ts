@@ -15,6 +15,7 @@ type Row = {
   rank: number;
   importance: number;
   essential: boolean;
+  sensitive?: boolean;
   title: string;
   key_sentence: string;
   facts: { text: string; source: string; url: string }[];
@@ -84,6 +85,7 @@ export async function loadEdition(timeoutMs = 4000): Promise<string | null> {
           comments: st.get(a.id)?.comments ?? 0,
           summary: a.summary,
           essential: a.essential,
+          sensitive: !!a.sensitive,
           importance: a.importance,
           emojis: emojis.get(a.id) ?? {},
           media: `D'après ${media.join(', ')}`,

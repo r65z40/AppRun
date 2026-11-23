@@ -63,7 +63,12 @@ export function buildColumns(active: string[], quota: number, premium: boolean, 
   // Les pubs viennent des campagnes en cours ; sans campagne, aucune carte sponsorisée.
   if (!premium) {
     const ads = pickAds(Math.max(0, Math.ceil((edCards.length - 3) / 6)), active, adsPersonalized);
-    ads.forEach((c, n) => edCards.splice(3 + n * 7, 0, { ad: true, id: `ad-${n}-${c.id}`, c }));
+    ads.forEach((c, n) => {
+      // Jamais de pub juste après un sujet sensible (drame, attentat…) : elle glisse après l'info suivante.
+      let at = 3 + n * 7;
+      while (at < edCards.length && (edCards[at - 1] as Article).sensitive) at++;
+      edCards.splice(at, 0, { ad: true, id: `ad-${n}-${c.id}`, c });
+    });
   }
   return [
     { id: 'edition', name: 'Mon édition', cards: edCards, tags, why },
