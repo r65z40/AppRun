@@ -34,6 +34,8 @@ export async function migrate(log: (...a: unknown[]) => void = console.log): Pro
     const c = await pool.connect();
     try {
       await c.query('begin');
+      // Supabase coupe une requête au bout de 2 minutes : une migration qui reprend beaucoup de données a droit à 10.
+      await c.query("set local statement_timeout = '10min'");
       await c.query(sql);
       await c.query('insert into public._titre_migrations (name) values ($1)', [f]);
       await c.query('commit');
