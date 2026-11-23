@@ -170,6 +170,8 @@ a.btn { text-decoration: none; color: inherit; display: inline-flex; align-items
 .tile { padding: 16px; }
 .tile-v { font-size: 28px; font-weight: 800; margin: 4px 0; }
 .search { width: 100%; max-width: 460px; margin-bottom: 14px; }
+.side nav .nav-group { font: 600 10.5px/1 Archivo; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text3); padding: 16px 12px 6px; }
+@media (max-width: 860px) { .side nav .nav-group { display: none; } }
 
 /* Publicité */
 .adform { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 24px; margin-bottom: 24px; }
