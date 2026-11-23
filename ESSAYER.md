@@ -2,7 +2,7 @@
 
 À la fin, le moteur lit les médias, écrit les cartes du jour et les infos « Dernière minute ». Vous les relisez dans le back office, et elles s'affichent dans l'app sur votre iPhone.
 
-Il n'y a que **3 étapes**. Tout le reste (les clés Claude et Unsplash, le modèle, la publication automatique) se règle ensuite dans le back office, page **Réglages**.
+Il n'y a que **3 étapes**. Tout le reste (les clés Claude et Unsplash, le modèle, la publication automatique) se règle ensuite dans le back office, page **IA**.
 
 Pour voir le back office **sans rien installer**, ouvrez-le simplement : sans Supabase, il démarre en mode démo, avec des données fictives.
 
@@ -53,10 +53,10 @@ Après environ deux minutes, deux adresses fonctionnent :
 ## 3. Back office : votre compte et les réglages (5 min)
 
 1. Ouvrez le back office. La première fois, il affiche **Créer le compte administrateur** : saisissez votre adresse et un mot de passe. Le premier compte créé devient administrateur. Si Supabase vous envoie un e-mail de confirmation, cliquez sur le lien, puis connectez-vous.
-2. Ouvrez la page **Réglages** et collez vos clés :
+2. Ouvrez la page **IA**, onglet **Clés**, et collez vos clés :
    - **Clé Claude** : sur [console.anthropic.com](https://console.anthropic.com), ouvrez **API Keys > Create Key**, et ajoutez quelques euros de crédit dans **Billing**. Sans cette clé, le moteur ne peut pas écrire les cartes.
    - **Clé Unsplash** (gratuite, facultative) : sur [unsplash.com/developers](https://unsplash.com/developers), créez un compte développeur, puis ouvrez [New Application](https://unsplash.com/oauth/applications/new). Cochez les conditions, donnez un nom (par exemple TITRE), puis copiez l'**Access Key** (pas la *Secret Key*). Pour chaque article, Claude choisit des mots-clés et le moteur prend une vraie photo libre de droits, créditée à son auteur. La clé gratuite permet 50 recherches par heure, assez pour une édition. Pexels ne délivre plus de nouvelles clés.
-3. Sur la même page, réglez l'IA comme vous voulez : modèle et niveau de réflexion, **consignes de la rédaction** et **sujets à écarter** (en texte libre), nombre de sujets par rubrique et de cartes au total, importance et nombre de médias minimum, autocorrection, publication automatique, et tous les seuils de la Dernière minute. Un interrupteur **Mettre le moteur en pause** arrête tout en cas de besoin.
+3. Dans les onglets **Pilotage**, **Édition** et **Dernière minute** de la même page, réglez l'IA comme vous voulez : modèle et niveau de réflexion, **consignes de la rédaction** et **sujets à écarter** (en texte libre), nombre de sujets par rubrique et de cartes au total, importance et nombre de médias minimum, autocorrection, publication automatique, et tous les seuils de la Dernière minute. Un interrupteur **Mettre le moteur en pause** arrête tout en cas de besoin.
 
 Les clés sont rangées dans votre base Supabase et ne sont jamais réaffichées en entier : seuls les 4 derniers caractères apparaissent.
 
@@ -64,7 +64,7 @@ Les clés sont rangées dans votre base Supabase et ne sont jamais réaffichées
 - l'édition, chaque matin à 5 h 30 ;
 - la Dernière minute, toutes les 10 minutes de 6 h à 23 h.
 
-Avec le pilote automatique, l'IA choisit les sujets, écrit les cartes et publie l'édition sans vous. Une carte qui échoue aux contrôles (trop longue, source manquante, phrase reprise d'un média) est réécrite une fois par l'IA ; si elle reste en défaut, elle attend dans l'onglet **À relire**. Vous supervisez quand vous voulez : la page **Moteur** montre ce que l'IA a lu, retenu et écrit, et chaque carte peut être corrigée, dépubliée ou rejetée dans **Édition**.
+Avec le pilote automatique, l'IA choisit les sujets, écrit les cartes et publie l'édition sans vous. Une carte qui échoue aux contrôles (trop longue, source manquante, phrase reprise d'un média) est réécrite une fois par l'IA ; si elle reste en défaut, elle attend dans l'onglet **À relire**. Vous supervisez quand vous voulez : l'onglet **IA > Historique** montre ce que l'IA a lu, retenu et écrit, et chaque carte peut être corrigée, dépubliée ou rejetée dans **Articles**.
 
 Pour un essai tout de suite, cliquez sur **Lancer le moteur** dans le back office (ou [Actions > Édition du jour](https://github.com/r65z40/AppRun/actions/workflows/edition.yml) > Run workflow). Comptez quelques minutes, puis rechargez l'app.
 
@@ -99,6 +99,6 @@ Installez **Expo Go** sur l'iPhone et scannez le QR code affiché.
 
 - **« Installer la base » échoue** : utilisez l'adresse du *Session pooler*, pas *Direct connection*, et vérifiez le mot de passe dans le secret `DATABASE_URL`.
 - **Le back office affiche « Mode démo »** : les variables `SUPABASE_URL` et `SUPABASE_ANON_KEY` étaient vides lors de la mise en ligne. Relancez « Site en ligne ».
-- **Le moteur s'arrête avec « clé Claude manquante »** : collez la clé dans **Réglages**.
-- **Une source est en erreur** : la page Sources affiche l'erreur. Désactivez la source ou remplacez l'adresse du flux.
-- **Les anciens secrets `ANTHROPIC_API_KEY`, `UNSPLASH_ACCESS_KEY` et `PEXELS_API_KEY` dans GitHub** marchent toujours, mais la valeur saisie dans Réglages passe en priorité.
+- **Le moteur s'arrête avec « clé Claude manquante »** : collez la clé dans **IA > Clés**.
+- **Une source est en erreur** : la page IA > Sources affiche l'erreur. Désactivez la source ou remplacez l'adresse du flux.
+- **Les anciens secrets `ANTHROPIC_API_KEY`, `UNSPLASH_ACCESS_KEY` et `PEXELS_API_KEY` dans GitHub** marchent toujours, mais la valeur saisie dans le back office passe en priorité.
