@@ -10,7 +10,7 @@ import { C } from './src/theme';
 import { NOTIF, NUDGES, RULES } from './src/brand';
 import { notifWanted, setNotif, syncNotif } from './src/notify';
 import { RUBRICS } from './src/content';
-import { buildColumns, rubricOf, seedComments } from './src/edition';
+import { buildColumns, demoCard, rubricOf, seedComments } from './src/edition';
 import { adHit, loadAds } from './src/ads';
 import { Feed } from './src/Feed';
 import { SummarySheet, CommentsSheet } from './src/Sheets';
@@ -601,6 +601,7 @@ function Main() {
         onFlag={flagComment}
         onDelete={deleteComment}
         onBlock={blockComment}
+        loadCard={(c) => (acc.isLive(c.id) ? acc.readerCard(c.id) : Promise.resolve(demoCard(c)))}
       />
 
       {overlay === 'settings' ? (

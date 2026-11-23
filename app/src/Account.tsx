@@ -4,9 +4,11 @@ import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollVie
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, DRAWER_MS } from './theme';
-import { GradButton, st } from './ui';
+import { GradButton, Toggle, st } from './ui';
+import { BadgeList, SavedTime } from './Badges';
+import type { ReaderCard } from './types';
 import { feel } from './feel';
-import { blockedCount, resendConfirm, resetPassword, setPseudo, signIn, signOut, signUp, unblockAll, updatePassword, useMe, UserError } from './account';
+import { blockedCount, readerCard, setShowBadges, resendConfirm, resetPassword, setPseudo, signIn, signOut, signUp, unblockAll, updatePassword, useMe, UserError } from './account';
 
 const DRAWER = Easing.bezier(0.32, 0.72, 0, 1);
 type Mode = 'in' | 'up' | 'confirm' | 'pseudo' | 'me' | 'newpass' | 'sent';
@@ -26,7 +28,8 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(0);
-  useEffect(() => { if (mode === 'me') blockedCount().then(setBlocked); }, [mode]);
+  const [card, setCard] = useState<ReaderCard | null>(null);
+  useEffect(() => { if (mode === 'me') { blockedCount().then(setBlocked); readerCard().then(setCard); } }, [mode]);
   const x = useSharedValue(W);
   useEffect(() => { x.value = withTiming(0, { duration: DRAWER_MS, easing: DRAWER }); }, []);
   const a = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
@@ -151,6 +154,19 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
                 <View style={styles.row}><Text style={styles.rl}>Pseudo</Text><Text style={styles.rv}>{me.pseudo}</Text></View>
                 <View style={[styles.row, { borderBottomWidth: 0 }]}><Text style={styles.rl}>Adresse</Text><Text style={styles.rv} numberOfLines={1}>{me.email}</Text></View>
               </View>
+              {card ? (
+                <>
+                  <Text style={[st.label, { marginTop: 6 }]}>Mes reconnaissances</Text>
+                  {card.reads ? <SavedTime reads={card.reads} minutes={card.minutes_saved ?? 0} /> : null}
+                  {card.badges?.length ? <BadgeList badges={card.badges} /> : <Text style={styles.p}>Pas encore de badge : ils arrivent en lisant chaque jour.</Text>}
+                  <View style={styles.rows}>
+                    <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                      <Text style={styles.rl}>Montrer mes badges aux autres lecteurs</Text>
+                      <Toggle label="Montrer mes badges aux autres lecteurs" on={me.showBadges} onPress={() => run(async () => { await setShowBadges(!me.showBadges); feel('select'); })} />
+                    </View>
+                  </View>
+                </>
+              ) : null}
               <Pressable onPress={() => { setPs(me.pseudo ?? ''); setMode('pseudo'); }} hitSlop={8}><Text style={styles.link}>Changer de pseudo</Text></Pressable>
               <Pressable onPress={() => { setErr(null); setPw(''); setMode('newpass'); }} hitSlop={8}><Text style={styles.link}>Changer de mot de passe</Text></Pressable>
               {blocked ? (

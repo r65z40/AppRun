@@ -52,8 +52,8 @@ let comments: Comment[] = [
 ].map(([text, pseudo, article_id, status], i) => ({ id: `c${i}`, article_id: article_id!, user_id: `u${i}`, text: text!, status: status as Comment['status'], created_at: iso(i + 1), pseudo, article_title: articles.find((a) => a.id === article_id)?.title }));
 let reports: Report[] = [{ id: 'r1', comment_id: 'c2', reason: 'Propos agressifs', resolved: false, created_at: iso(1) }];
 let team: Profile[] = [
-  { id: 'u-admin', pseudo: 'fen', role: 'admin', premium: true, created_at: iso(200) },
-  { id: 'u-ed', pseudo: 'redaction_matin', role: 'editor', premium: false, created_at: iso(100) },
+  { id: 'u-admin', pseudo: 'fen', email: 'admin@exemple.fr', role: 'admin', premium: true, created_at: iso(200) },
+  { id: 'u-ed', pseudo: 'redaction_matin', email: 'redaction@exemple.fr', role: 'editor', premium: false, created_at: iso(100) },
 ];
 const fl = (min: number, title: string, sentence: string, srcs: string[], extra: Partial<Flash> = {}): Flash => ({
   id: `f${min}`, status: 'published', rubric_id: 'monde', importance: 8, title, sentence, manual: false, model: 'claude-opus-5-5',
