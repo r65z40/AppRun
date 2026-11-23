@@ -29,6 +29,7 @@ import { EMOJIS, PHOTOS } from './content';
 import { Icon, Press, Rich } from './ui';
 import { feel } from './feel';
 import { adHit } from './ads';
+import type { Signal } from './algo';
 
 const EXT = 140; // les photos débordent sur les côtés pour se fondre entre rubriques
 const MAX_COLS = 14; // Mon édition + Dernière minute + 12 rubriques
@@ -58,6 +59,10 @@ export type FeedApi = {
   myEmoji: Record<string, string>;
   onEmoji: (a: Article, e: string | null) => void;
   onToast: (msg: string) => void;
+  /** Ce que fait le lecteur, pour l'algorithme « Mon édition » (source, clic, partage). */
+  onSignal: (a: Article, k: Signal) => void;
+  /** « Moins de sujets comme ça » depuis « Pourquoi cette info ? ». */
+  onLess: (a: Article) => void;
   onSettings: () => void;
 };
 
@@ -222,7 +227,7 @@ export function Feed(p: FeedApi & { W: number; H: number }) {
           {cols.slice(0, MAX_COLS).map((col, ci) => (
             <ColumnStack key={'fg' + col.id} y={ys[ci]} W={W} H={H} ci={ci}>
               {col.cards.map((c, k) => (
-                <CardContent key={c.id} card={c} k={k} W={W} H={H} tag={col.tags[c.id]} api={p} bottom={insets.bottom} tiltX={p.tiltX} tiltY={p.tiltY} />
+                <CardContent key={c.id} card={c} k={k} W={W} H={H} tag={col.tags[c.id]} why={col.why?.[c.id]} api={p} bottom={insets.bottom} tiltX={p.tiltX} tiltY={p.tiltY} />
               ))}
             </ColumnStack>
           ))}
@@ -289,13 +294,14 @@ function Background({ card, k, ci, W, H, colX, y, tiltX, tiltY, parallax }: {
   );
 }
 
-function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
-  card: Card; k: number; W: number; H: number; tag?: Tag; api: FeedApi; bottom: number; tiltX: SharedValue<number>; tiltY: SharedValue<number>;
+function CardContent({ card, k, W, H, tag, why, api, bottom, tiltX, tiltY }: {
+  card: Card; k: number; W: number; H: number; tag?: Tag; why?: string; api: FeedApi; bottom: number; tiltX: SharedValue<number>; tiltY: SharedValue<number>;
 }) {
   // le texte bouge très peu, à l'opposé de la photo : effet de profondeur
   const depth = useAnimatedStyle(() => ({ transform: [{ translateX: -tiltX.value * 0.18 }, { translateY: -tiltY.value * 0.18 }] }));
   const pad = { paddingBottom: Math.max(28, bottom + 14) };
   const [pick, setPick] = useState(false); // choix d'un emoji ouvert
+  const [whyOpen, setWhyOpen] = useState(false); // « Pourquoi cette info ? » ouvert
   if (isFlash(card)) {
     return (
       <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
@@ -346,12 +352,29 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
   return (
     <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
       <Animated.View style={[styles.content, pad, depth]}>
-        <Text style={styles.kicker}>{rubricOf(a).name.toUpperCase()}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={styles.kicker}>{rubricOf(a).name.toUpperCase()}</Text>
+          {tag ? (
+            <Pressable onPress={() => { setWhyOpen(!whyOpen); feel('select'); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Pourquoi cette info ?" style={{ marginLeft: 'auto' }}>
+              <Text style={styles.whyLink}>Pourquoi ?</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        {whyOpen ? (
+          <View style={styles.whyBox}>
+            <Text style={styles.whyTxt}>{why ?? 'Choisie pour votre édition du jour.'}</Text>
+            {tag !== 'ess' ? (
+              <Pressable onPress={() => { setWhyOpen(false); api.onLess(a); }} hitSlop={8} accessibilityRole="button">
+                <Text style={styles.whyLess}>Moins de sujets comme ça</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
         <Text style={styles.title}>{a.title.toUpperCase()}</Text>
         <Text style={styles.key}>{a.key}</Text>
         <View>
           {a.facts.map((f, i) => (
-            <FactRow key={i} text={f.text} source={f.source} doc={f.doc} last={i === a.facts.length - 1} onSource={() => (/^https?:\/\//.test(f.doc) ? Linking.openURL(f.doc).catch(() => api.onToast('Lien indisponible')) : api.onToast('Ouverture de la source officielle'))} />
+            <FactRow key={i} text={f.text} source={f.source} doc={f.doc} last={i === a.facts.length - 1} onFlip={() => api.onSignal(a, 'source')} onSource={() => { api.onSignal(a, 'click'); if (/^https?:\/\//.test(f.doc)) Linking.openURL(f.doc).catch(() => api.onToast('Lien indisponible')); else api.onToast('Ouverture de la source officielle'); }} />
           ))}
         </View>
         <View style={styles.actions}>
@@ -374,7 +397,7 @@ function CardContent({ card, k, W, H, tag, api, bottom, tiltX, tiltY }: {
               <Text style={styles.icTxt}>{api.commentCount(a)}</Text>
             </Press>
           )}
-          <Press onPress={() => { api.onToast("Lien de l'info copié"); feel('light'); }} style={styles.ic} accessibilityLabel="Partager">
+          <Press onPress={() => { api.onSignal(a, 'share'); api.onToast("Lien de l'info copié"); feel('light'); }} style={styles.ic} accessibilityLabel="Partager">
             <Icon name="share" size={20} />
           </Press>
         </View>
@@ -453,7 +476,7 @@ function EmojiPicker({ mine, count, onPick }: { mine?: string; count: (e: string
 }
 
 /* Un fait : un tap le retourne et montre sa source (≈ 280 ms) */
-function FactRow({ text, source, doc, last, onSource }: { text: string; source: string; doc: string; last: boolean; onSource: () => void }) {
+function FactRow({ text, source, doc, last, onSource, onFlip }: { text: string; source: string; doc: string; last: boolean; onSource: () => void; onFlip: () => void }) {
   const rot = useSharedValue(0);
   const [back, setBack] = useState(false);
   const front = useAnimatedStyle(() => ({
@@ -467,6 +490,7 @@ function FactRow({ text, source, doc, last, onSource }: { text: string; source: 
   const flip = () => {
     const to = back ? 0 : 180;
     rot.value = withTiming(to, { duration: 280, easing: Easing.bezier(0.23, 1, 0.32, 1) });
+    if (!back) onFlip();
     setBack(!back);
     feel('select');
   };
@@ -598,8 +622,10 @@ const styles = StyleSheet.create({
   pill: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5 },
   pillTxt: { color: '#fff', fontFamily: F.semi, fontSize: 10, letterSpacing: 1.8 },
   metaTxt: { color: C.text2, fontFamily: F.regular, fontSize: 12 },
-  why: { marginLeft: 'auto', backgroundColor: 'rgba(123,92,255,0.25)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  whyTxt: { color: '#d6ccff', fontFamily: F.semi, fontSize: 11 },
+  whyLink: { color: C.text3, fontFamily: F.semi, fontSize: 11 },
+  whyBox: { marginTop: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
+  whyTxt: { color: C.text, fontFamily: F.regular, fontSize: 13, lineHeight: 18 },
+  whyLess: { color: '#d6ccff', fontFamily: F.semi, fontSize: 13 },
   kicker: { color: C.text2, fontFamily: F.semi, fontSize: 11, letterSpacing: 2 },
   title: { color: '#fff', fontFamily: F.black, fontSize: 33, lineHeight: 33, letterSpacing: -0.4 },
   key: { color: 'rgba(255,255,255,0.82)', fontFamily: F.regular, fontSize: 16.5, lineHeight: 24, marginTop: -4 },

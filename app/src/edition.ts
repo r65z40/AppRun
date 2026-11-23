@@ -1,6 +1,7 @@
 import { FLASHES, RUBRICS } from './content';
 import { pickAds } from './ads';
 import type { Article, Column, Comment, Tag } from './types';
+import type { Pick } from './algo';
 
 export const MEDIA = "D'après L'Écho national, Agence Presse Europe, Radio Horizon";
 
@@ -19,43 +20,53 @@ export function summaryOf(a: Article): string[] {
 export const TAGS: Record<Tag, { label: string; why: (a: Article) => string }> = {
   ess: { label: 'Essentiel', why: () => 'Sujet majeur du jour, proposé à tout le monde.' },
   pv: { label: 'Pour vous', why: (a) => `Vous suivez la rubrique ${rubricOf(a).name}.` },
-  dec: { label: 'Découverte', why: () => 'Pour sortir un peu de vos habitudes.' },
+  dec: { label: 'Découverte', why: (a) => `Pour découvrir la rubrique ${rubricOf(a).name}.` },
 };
 
 /**
- * taste : goût du lecteur par rubrique (likes moins dislikes). Les rubriques qu'il aime le plus passent en premier
- * dans « Mon édition » et dans la roue des rubriques.
+ * Colonnes du fil. « Mon édition » vient de l'algorithme de la base (picks, voir algo.ts) : sujets majeurs,
+ * infos selon les goûts, découverte. Sans base ou hors ligne, l'app la compose elle-même avec les mêmes
+ * proportions, à partir de taste (goût par rubrique : likes moins dislikes).
  */
-export function buildColumns(active: string[], quota: number, premium: boolean, taste: Record<string, number> = {}, adsPersonalized = false): Column[] {
-  // « Mon édition » : uniquement les rubriques choisies, sujets majeurs en tête, puis chaque rubrique à tour de rôle.
+export function buildColumns(active: string[], quota: number, premium: boolean, taste: Record<string, number> = {}, adsPersonalized = false, picks: Pick[] | null = null): Column[] {
   const score = (id: string) => taste[id] ?? 0;
   const act = RUBRICS.filter((r) => active.includes(r.id) && r.items.length > 0).sort((a, b) => score(b.id) - score(a.id));
   const others = RUBRICS.filter((r) => !active.includes(r.id) && r.items.length > 0);
-  const picked: { a: Article; tag: Tag }[] = [];
-  const all = act.flatMap((r) => r.items);
-  all.filter((a) => a.essential).slice(0, 4).forEach((a) => picked.length < quota && picked.push({ a, tag: 'pv' }));
-  for (let k = 0; picked.length < quota; k++) {
-    let more = false;
-    for (const r of act) {
-      const a = r.items[k];
-      if (!a) continue;
-      more = true;
-      if (picked.length < quota && !picked.some((p) => p.a === a)) picked.push({ a, tag: 'pv' });
+  const tags: Record<string, Tag> = {};
+  const why: Record<string, string> = {};
+  const picked: Article[] = [];
+  const take = (a: Article, t: Tag, w: string) => { picked.push(a); tags[a.id] = t; why[a.id] = w; };
+  const all = RUBRICS.flatMap((r) => r.items);
+  if (picks) {
+    const byId = new Map(all.map((a) => [a.id, a]));
+    for (const p of picks) {
+      const a = byId.get(p.article_id);
+      if (a && p.slot !== 'more' && picked.length < quota) take(a, p.slot, p.reason);
     }
-    if (!more) break;
+  }
+  if (!picked.length) {
+    // Même recette que la base : un quart de sujets majeurs, une découverte (1 sur 8), le reste selon les goûts.
+    const imp = (a: Article) => a.importance ?? 5;
+    const free = (a: Article) => !picked.includes(a);
+    [...all].sort((a, b) => Number(!!b.essential) - Number(!!a.essential) || imp(b) - imp(a))
+      .slice(0, Math.max(1, Math.round(quota * 0.25))).forEach((a) => take(a, 'ess', TAGS.ess.why(a)));
+    const dec = others.flatMap((r) => r.items).filter(free).sort((a, b) => imp(b) - imp(a)).slice(0, Math.max(1, Math.round(quota * 0.12)));
+    const pv = act.flatMap((r) => r.items).filter((a) => free(a) && !dec.includes(a))
+      .sort((a, b) => imp(b) + score(rubricOf(b).id) - imp(a) - score(rubricOf(a).id));
+    pv.slice(0, Math.max(0, quota - picked.length - dec.length)).forEach((a) => take(a, 'pv', TAGS.pv.why(a)));
+    const mid = Math.ceil(picked.length / 2);
+    dec.slice(0, quota - picked.length).forEach((a, i) => { picked.splice(mid + i, 0, a); tags[a.id] = 'dec'; why[a.id] = TAGS.dec.why(a); });
   }
 
-  const edCards: Column['cards'] = picked.map((p) => p.a);
+  const edCards: Column['cards'] = [...picked];
   // Version gratuite : une pub après la 3e info, puis une toutes les six (§4.6). Premium les retire.
   // Les pubs viennent des campagnes en cours ; sans campagne, aucune carte sponsorisée.
   if (!premium) {
     const ads = pickAds(Math.max(0, Math.ceil((edCards.length - 3) / 6)), active, adsPersonalized);
     ads.forEach((c, n) => edCards.splice(3 + n * 7, 0, { ad: true, id: `ad-${n}-${c.id}`, c }));
   }
-  const tags: Record<string, Tag> = {};
-
   return [
-    { id: 'edition', name: 'Mon édition', cards: edCards, tags },
+    { id: 'edition', name: 'Mon édition', cards: edCards, tags, why },
     // Dernière minute : juste après l'édition, la plus récente en haut.
     ...(FLASHES.length ? [{ id: 'flash', name: 'Dernière minute', cards: [...FLASHES].sort((a, b) => b.at.localeCompare(a.at)), tags: {} }] : []),
     ...act.map((r) => ({ id: r.id, name: r.name, cards: r.items, tags: {} })),

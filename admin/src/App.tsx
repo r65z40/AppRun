@@ -2,9 +2,10 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { PremiumPage, ReaderSubscription } from './Premium';
 import { premiumApi, type PremiumStats } from './premium-data';
 import { AdsPage } from './Ads';
+import { AlgoPage, ReaderTaste } from './Algo';
 import { api, AUDIENCES, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, PHOTO_TAGS, RUBRICS, type Article, type Comment, type Edition, type Fact, type EngineRun, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
 
-type Page = 'dashboard' | 'readers' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings';
+type Page = 'dashboard' | 'readers' | 'algo' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
 const PAGES: [Page, string, string][] = [
   ['dashboard', 'Tableau de bord', ''],
@@ -14,6 +15,7 @@ const PAGES: [Page, string, string][] = [
   ['readers', 'Lecteurs', 'Lecteurs'],
   ['moderation', 'Modération', 'Lecteurs'],
   ['messages', 'Messages', 'Lecteurs'],
+  ['algo', 'Algorithme', 'Lecteurs'],
   ['ads', 'Publicité', 'Revenus'],
   ['premium', 'Abonnements', 'Revenus'],
   ['team', 'Équipe', 'Administration'],
@@ -32,8 +34,8 @@ const ago = (iso: string | null) => {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   return m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`;
 };
-// Modération : seulement les commentaires. Rédaction : tout sauf les lecteurs, la publicité, les abonnements, l'équipe, le journal et les réglages.
-const ADMIN_ONLY: Page[] = ['readers', 'ads', 'premium', 'team', 'audit', 'settings'];
+// Modération : seulement les commentaires. Rédaction : tout sauf les lecteurs, l'algorithme, la publicité, les abonnements, l'équipe, le journal et les réglages.
+const ADMIN_ONLY: Page[] = ['readers', 'algo', 'ads', 'premium', 'team', 'audit', 'settings'];
 const allowed = (role: Role, p: Page) => role === 'admin' || (role === 'editor' ? !ADMIN_ONLY.includes(p) : p === 'moderation');
 const plain = (s: string) => s.replace(/<\/?b>/g, '');
 
@@ -91,6 +93,7 @@ export default function App() {
         {page === 'premium' && allowed(me.role, page) && <PremiumPage say={say} />}
         {page === 'audit' && allowed(me.role, page) && <AuditPage />}
         {page === 'ads' && allowed(me.role, page) && <AdsPage say={say} />}
+        {page === 'algo' && allowed(me.role, page) && <AlgoPage say={say} />}
         {page === 'team' && allowed(me.role, page) && <TeamPage say={say} me={me} />}
         {page === 'settings' && allowed(me.role, page) && <SettingsPage say={say} />}
       </main>
@@ -1092,6 +1095,7 @@ function ReaderSheet({ p, act }: { p: Reader; act: (f: () => Promise<unknown>, m
     <div className="body">
       {p.banned || suspended ? <p className="warn small">{p.banned ? 'Banni' : `Suspendu jusqu'au ${until(p.suspended_until!)}`}{p.ban_reason ? ` · motif : ${p.ban_reason}` : ''}</p> : null}
       {d ? <p className="muted small">{d.days_30} jour{d.days_30 > 1 ? 's' : ''} d'ouverture sur 30 · {d.likes} like{d.likes > 1 ? 's' : ''} donnés · {d.reports_made} signalement{d.reports_made > 1 ? 's' : ''} faits · bloqué par {d.blocked_by} lecteur{d.blocked_by > 1 ? 's' : ''}</p> : <p className="muted small">Chargement…</p>}
+      <ReaderTaste uid={p.id} />
       <ReaderSubscription id={p.id} />
       <div className="btns">
         {p.role === 'reader' && !p.banned ? <>
