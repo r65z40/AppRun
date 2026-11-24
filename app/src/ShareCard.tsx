@@ -182,7 +182,10 @@ export function ShareCardView({ a, onPhoto }: { a: Article; onPhoto?: () => void
               </View>
             ))}
           </View>
-        ) : null}
+        ) : (
+          // Sans faits sur l'image (format carré…), les médias restent cités.
+          <Text style={[styles.factSrc, { marginTop: 10 }]} numberOfLines={1}>Sources : {[...new Set(a.facts.map((f) => f.source).filter(Boolean))].join(', ')}</Text>
+        )}
         <LinearGradient colors={GRAD3} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.bar, { marginTop: story ? 26 : 16 }]} />
         <View style={styles.foot}>
           <Text style={styles.tag} numberOfLines={2}>{tagline}</Text>

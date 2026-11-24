@@ -208,7 +208,8 @@ async function edition() {
         return;
       }
       const photo = pexelsOn() ? await findPhoto(card.photo_query).catch((e) => { log(`   photo introuvable (${e instanceof Error ? e.message : e})`); return null; }) : null;
-      const publish = AUTO_PUBLISH && (issues.every(minorIssue) || cfg.publishFlagged()) && s.importance >= cfg.publishMinImportance();
+      // Une reprise mot pour mot d'un média ne part jamais seule, même avec « Publier aussi les cartes avec alerte ».
+      const publish = AUTO_PUBLISH && (issues.every(minorIssue) || (cfg.publishFlagged() && !issues.some((i) => i.startsWith('reprise')))) && s.importance >= cfg.publishMinImportance();
       await q(
         `insert into articles (edition_date, rubric_id, status, rank, importance, essential, title, key_sentence, facts, summary,
                                photo_tag, raw_item_ids, review_notes, model, published_at, photo_url, photo_credit, sensitive)

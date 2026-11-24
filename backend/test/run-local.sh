@@ -150,6 +150,7 @@ psql "$VIDE" -tAc "select case when public.app_config()->'brand'->>'name' = 'Bri
 psql "$VIDE" -qc "insert into app_settings (key, value) values ('SMTP_PASS_KEY', 'secret-smtp')"
 psql "$VIDE" -tAc "select case when public.app_config()::text not like '%secret-smtp%' and (select count(*) from setting_keys where key in ('BRAND','APP_TEXTS','NOTIFICATIONS','SMTP_PASS_KEY','MAIL_CONFIRM_BODY')) = 5 then 'OK  réglages d''e-mails acceptés, mot de passe jamais envoyé à l''app' else 'ÉCHEC  clés de personnalisation' end"
 npx tsx test/mail.ts
+npx tsx test/tdm.ts
 
 echo "--- Règles de l'app réglables dans le back office"
 psql "$VIDE" -qc "insert into app_settings (key, value) values ('APP_RULES', '{\"default_quota\":16,\"ad_every\":8}'), ('NUDGES', '{\"premium\":{\"enabled\":false}}')"

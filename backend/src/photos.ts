@@ -10,8 +10,7 @@ export const PHOTO_TAGS = {
   batiment: 'bâtiment blanc moderne, entreprise, économie, architecture',
   sommet: 'sommet enneigé, exploit, record, sport de montagne',
   route: 'route de montagne, voyage, énergie, territoire',
-  livre: 'reliure de livre, culture, littérature, éducation, histoire',
-  lampe: 'lampe, idée, science, technologie, innovation',
+  livre: 'reliure de livre, culture, littérature, éducation, histoire, science, idée',
 } as const;
 export type PhotoTag = keyof typeof PHOTO_TAGS;
 export const PHOTO_TAG_LIST = Object.keys(PHOTO_TAGS) as [PhotoTag, ...PhotoTag[]];
