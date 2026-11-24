@@ -145,6 +145,28 @@ export type Prefs = {
   /** Notification du matin demandée sur cet appareil. */
   notif?: boolean;
 };
+/** Éditions précédentes : les N derniers jours en gratuit (back office > Règles de l'app), toutes en Premium. */
+export function PastDays({ premium, pastDay, onPick, onPremium }: { premium: boolean; pastDay: string | null; onPick: (day: string | null) => void; onPremium: () => void }) {
+  const [days, setDays] = useState<string[]>([]);
+  useEffect(() => { loadEditionDates().then((l) => setDays(l.filter((x) => x < isoDay()))); }, []);
+  const open = premium ? days : days.filter((x) => x >= isoDay(-RULES.past_days_free));
+  if (!open.length && (!days.length || premium)) return null;
+  return (
+    <View style={{ gap: 12 }}>
+      <Text style={st.label}>Éditions précédentes</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        <Chip label="Aujourd'hui" on={!pastDay} onPress={() => { feel('select', 'tick'); onPick(null); }} />
+        {open.map((x) => <Chip key={x} label={shortDay(x)} on={pastDay === x} onPress={() => { feel('select', 'tick'); onPick(x); }} />)}
+        {!premium && days.length > open.length ? <Chip label="Toutes les dates avec Premium 💎" on={false} onPress={() => { feel('light'); onPremium(); }} /> : null}
+      </ScrollView>
+    </View>
+  );
+}
+
+/** Série : jours d'affilée, jusqu'à aujourd'hui, où l'app a été ouverte sur ce téléphone. */
+export const streakOf = (visits: string[]) => { let n = 0; while (visits.includes(isoDay(-n))) n++; return n; };
+const daysTxt = (n: number) => `${n} jour${n > 1 ? 's' : ''}`;
+
 export function Settings({ W, prefs, onSave, onClose, account, onAccount, premium, onPremium, onResetTaste, onTopics, pastDay, onPast }: {
   W: number; prefs: Prefs; onSave: (p: Prefs) => void; onClose: () => void;
   /** Édition passée affichée (null = la plus récente) ; onPast en ouvre une autre. */
@@ -164,11 +186,7 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
   const a = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
   const leave = (cb: () => void) => { x.value = withTiming(W, { duration: 380, easing: DRAWER }); setTimeout(cb, 360); };
   const set = (k: keyof Prefs, v: Prefs[keyof Prefs]) => setD((p) => ({ ...p, [k]: v }));
-  // Éditions passées : les N derniers jours en gratuit (back office > Règles de l'app), toutes en Premium.
-  const [days, setDays] = useState<string[]>([]);
-  useEffect(() => { loadEditionDates().then((l) => setDays(l.filter((x) => x < isoDay()))); }, []);
-  const open = premium ? days : days.filter((x) => x >= isoDay(-RULES.past_days_free));
-  const go = (day: string | null) => { feel('select', 'tick'); leave(() => { onClose(); onPast(day); }); };
+  const go = (day: string | null) => leave(() => { onClose(); onPast(day); });
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: C.night }, a]}>
       <View style={[styles.setHead, { paddingTop: insets.top + 18 }]}>
@@ -198,16 +216,7 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
           {/* Temps gagné chaque jour avec ce nombre d'infos (minutes par info : back office > Reconnaissance). */}
           <SavedTime reads={d.quota} minutes={d.quota * RECOG.minutes_per_article} />
         </View>
-        {open.length || (days.length && !premium) ? (
-          <View style={{ gap: 12 }}>
-            <Text style={st.label}>Éditions précédentes</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-              <Chip label="Aujourd'hui" on={!pastDay} onPress={() => go(null)} />
-              {open.map((x) => <Chip key={x} label={shortDay(x)} on={pastDay === x} onPress={() => go(x)} />)}
-              {!premium && days.length > open.length ? <Chip label="Toutes les dates avec Premium 💎" on={false} onPress={() => { feel('light'); onPremium(); }} /> : null}
-            </ScrollView>
-          </View>
-        ) : null}
+        <PastDays premium={premium} pastDay={pastDay} onPick={go} onPremium={onPremium} />
         <View style={{ gap: 12 }}>
           <Text style={st.label}>Mes goûts</Text>
           <View style={styles.rows}>
@@ -384,7 +393,16 @@ export function Welcome({ title, body, onClose }: { title: string; body: string;
 }
 
 /* ---------- Bravo (§4.7) + série (§16.6) ---------- */
-export function Bravo({ n, realMs, canMore, moreCount, onMore, onTomorrow }: { n: number; realMs: number; canMore: boolean; moreCount: number; onMore: () => void; onTomorrow: () => void }) {
+export function Bravo({ n, realMs, canMore, moreCount, onMore, onTomorrow, visits, past }: {
+  n: number; realMs: number; canMore: boolean; moreCount: number; onMore: () => void; onTomorrow: () => void;
+  /** Jours où l'app a été ouverte (« 2026-11-24 »), pour la série. */
+  visits: string[];
+  /** Les éditions précédentes, proposées en fin de fil. */
+  past: React.ReactNode;
+}) {
+  const streak = streakOf(visits);
+  const goal = [7, 30, 100].find((x) => x > streak); // mêmes paliers que les badges Série
+  const monday = (new Date(`${isoDay()}T12:00:00Z`).getUTCDay() + 6) % 7; // 0 = lundi
   const insets = useSafeAreaInsets();
   const [how, setHow] = useState(false);
   const real = Math.max(realMs, n * 25000);
@@ -413,21 +431,20 @@ export function Bravo({ n, realMs, canMore, moreCount, onMore, onTomorrow }: { n
         <Stag d={220}>
           <View style={{ gap: 12 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 17 }}>5 jours d'affilée</Text>
-              <Text style={{ color: C.text3, fontFamily: F.regular, fontSize: 12 }}>Prochain palier : 7 jours</Text>
+              <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 17 }}>{daysTxt(streak)} d'affilée</Text>
+              {goal ? <Text style={{ color: C.text3, fontFamily: F.regular, fontSize: 12 }}>Prochain palier : {goal} jours</Text> : null}
             </View>
             <View style={{ flexDirection: 'row', gap: 6 }}>
               {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((l, k) => {
-                const on = k >= 1 && k <= 5;
+                const on = visits.includes(isoDay(k - monday));
                 const Box: any = on ? LinearGradient : View;
                 return (
-                  <Box key={k} {...(on ? { colors: GRAD } : {})} style={[styles.day, !on && { backgroundColor: C.surface }, k === 5 && { borderWidth: 2, borderColor: '#fff' }]}>
+                  <Box key={k} {...(on ? { colors: GRAD } : {})} style={[styles.day, !on && { backgroundColor: C.surface }, k === monday && { borderWidth: 2, borderColor: '#fff' }]}>
                     <Text style={{ color: on ? '#fff' : C.text3, fontFamily: F.semi, fontSize: 11 }}>{l}</Text>
                   </Box>
                 );
               })}
             </View>
-            <Text style={{ color: C.text3, fontFamily: F.regular, fontSize: 12, lineHeight: 17 }}>Un joker disponible cette semaine : une journée manquée ne casse pas la série.</Text>
           </View>
         </Stag>
         <Stag d={260}>
@@ -440,6 +457,7 @@ export function Bravo({ n, realMs, canMore, moreCount, onMore, onTomorrow }: { n
             {canMore ? <SoftButton label={`Charger plus (${moreCount} infos)`} onPress={onMore} /> : null}
           </View>
         </Stag>
+        <Stag d={340}>{past}</Stag>
       </ScrollView>
     </Animated.View>
   );
@@ -449,7 +467,7 @@ function Stag({ d, children }: { d: number; children: React.ReactNode }) {
 }
 
 /* ---------- Fin de journée (§4.8) ---------- */
-export function End({ n, realMs, allRead, left, onReread }: { n: number; realMs: number; allRead: boolean; left: number; onReread: () => void }) {
+export function End({ n, realMs, allRead, left, onReread, visits }: { n: number; realMs: number; allRead: boolean; left: number; onReread: () => void; visits: string[] }) {
   const insets = useSafeAreaInsets();
   useEffect(() => { feel(null, 'soft'); }, []);
   const real = Math.max(realMs, n * 25000);
@@ -459,10 +477,10 @@ export function End({ n, realMs, allRead, left, onReread }: { n: number; realMs:
         <View style={styles.moon} />
         <Text style={styles.endH}>{allRead ? TEXTS.end_title : 'Bonne journée.'}{'\n'}<Text style={{ color: C.soft }}>{TEXTS.end_bye}</Text></Text>
         <Text style={[styles.p, { fontSize: 17 }]}>
-          {allRead ? 'Vous avez lu toutes les infos du jour. ' : `Il reste ${left} infos aujourd'hui si vous changez d'avis. `}Prochaine édition {tomorrowLabel()} à {RULES.next_edition}.
+          {allRead ? 'Vous avez lu toutes les infos du jour. ' : `Il reste ${left} infos aujourd'hui si vous changez d'avis. `}De nouvelles infos arrivent au fil de la journée, et l'édition complète {tomorrowLabel()} à {RULES.next_edition}.
         </Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
-          {[[String(n), 'infos lues'], [fmt(real).replace(/ \d+ s$/, ''), 'de lecture'], ['5 jours', "d'affilée"]].map(([b, s]) => (
+          {[[String(n), 'infos lues'], [fmt(real).replace(/ \d+ s$/, ''), 'de lecture'], [daysTxt(streakOf(visits)), "d'affilée"]].map(([b, s]) => (
             <View key={s} style={styles.stat}><Text style={styles.statN}>{b}</Text><Text style={{ color: C.text3, fontFamily: F.regular, fontSize: 12 }}>{s}</Text></View>
           ))}
         </View>

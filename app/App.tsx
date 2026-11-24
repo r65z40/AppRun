@@ -14,10 +14,10 @@ import { buildColumns, demoCard, rubricOf, seedComments } from './src/edition';
 import { adHit, loadAds } from './src/ads';
 import { Feed } from './src/Feed';
 import { SummarySheet, CommentsSheet } from './src/Sheets';
-import { Bravo, End, Onboarding, Settings, Splash, Toast, Welcome, type OnbResult, type Prefs } from './src/Screens';
+import { Bravo, End, Onboarding, PastDays, Settings, Splash, Toast, Welcome, type OnbResult, type Prefs } from './src/Screens';
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
 import { syncWidget } from './src/headline';
-import { dayLabel, shortDay } from './src/dates';
+import { dayLabel, isoDay, shortDay } from './src/dates';
 import { loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, type AppMessage } from './src/remote';
 import { Account } from './src/Account';
 import { Premium } from './src/Premium';
@@ -87,7 +87,7 @@ function Main() {
       fetchPicks(saved.active, saved.quota ?? RULES.default_quota, saved.perso !== false).then((r) => {
         setPicks(r);
         setP((x) => ({ ...x, ...pickSaved(saved), ...pickDevice(saved) }));
-        setLimit(saved.quota ?? RULES.default_quota);
+        restoreSeen(saved.quota ?? RULES.default_quota);
         setPhase('feed');
       });
     } else setPhase('onb');
@@ -160,7 +160,29 @@ function Main() {
   const [ri, setRi] = useState(0);
   const [idx, setIdx] = useState<Record<string, number>>({});
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
+  // Infos lues aujourd'hui, gardées sur le téléphone : le quota ne repart pas à zéro quand on rouvre l'app.
+  const restoreSeen = (quota: number) => {
+    setLimit(quota);
+    return acc.getLocal(SEEN).then((v) => {
+      try {
+        const s = JSON.parse(v ?? '');
+        if (s.day === isoDay()) { setSeen(new Set(s.ids)); setLimit(Math.max(quota, s.limit)); }
+      } catch { /* rien de gardé */ }
+    });
+  };
   const [limit, setLimit] = useState(RULES.default_quota);
+  useEffect(() => { if (!pastDay && seen.size) acc.setLocal(SEEN, JSON.stringify({ day: isoDay(), ids: [...seen], limit })); }, [seen, limit, pastDay]);
+  // Jours où l'app a été ouverte (60 derniers), pour la série de l'écran Bravo.
+  const [visits, setVisits] = useState<string[]>([]);
+  useEffect(() => {
+    acc.getLocal(VISITS).then((v) => {
+      let l: string[] = [];
+      try { l = JSON.parse(v ?? '[]'); } catch { /* rien de gardé */ }
+      if (!l.includes(isoDay())) l = [...l, isoDay()].slice(-60);
+      setVisits(l);
+      acc.setLocal(VISITS, JSON.stringify(l));
+    });
+  }, []);
   const [reactions, setReactions] = useState<Record<string, -1 | 0 | 1>>({});
   const [myEmoji, setMyEmoji] = useState<Record<string, string>>({});
   const [welcome, setWelcome] = useState<AppMessage | null>(null);
@@ -565,6 +587,7 @@ function Main() {
       pastRef.current = day;
       setPastDay(day);
       setSeen(new Set());
+      if (!day) restoreSeen(p.quota);
       bravoShown.current = false;
       setRi(0);
       setIdx({});
@@ -700,9 +723,11 @@ function Main() {
           moreCount={moreCount}
           onMore={onMore}
           onTomorrow={() => setOverlay('end')}
+          visits={visits}
+          past={<PastDays premium={premium} pastDay={pastDay} onPick={(d) => { setOverlay(null); onPast(d); }} onPremium={() => setShowPremium(true)} />}
         />
       ) : null}
-      {overlay === 'end' ? <End n={seen.size} realMs={readMs.current} allRead={allRead} left={remaining} onReread={onReread} /> : null}
+      {overlay === 'end' ? <End n={seen.size} realMs={readMs.current} allRead={allRead} left={remaining} onReread={onReread} visits={visits} /> : null}
 
       {showPremium ? (
         <Premium
@@ -745,6 +770,8 @@ function Main() {
 
 
 const LOCAL_PREFS = 'titre.prefs';
+const SEEN = 'titre.seen';
+const VISITS = 'titre.visits';
 /** Réglages propres à ce téléphone (sons, vibrations, profondeur, pubs ciblées). */
 function pickDevice(s: Partial<Prefs>): Partial<Prefs> {
   const o: Partial<Prefs> = {};
