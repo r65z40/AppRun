@@ -18,9 +18,9 @@
 import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
 import { collect } from './collect.js';
-import { startJournal, type Journal } from './journal.js';
+import { nothingNew, startJournal, type Journal } from './journal.js';
 import { findPhoto, pexelsOn } from './pexels.js';
-import { AiStopped, budget, model, checkCard, minorIssue, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
+import { AiStopped, budget, model, cardText, checkCard, doubtIssue, minorIssue, reviewText, type CardOut, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 import { sendTopicAlerts } from './alerts.js';
@@ -46,6 +46,7 @@ const log = (...a: unknown[]) => J.log(...a);
 
 async function main() {
   J = await startJournal('edition');
+  budget.log = log;
   try {
     await edition();
     // Alertes des sujets suivis (les infos publiées la nuit n'en déclenchent pas : voir le back office).
@@ -100,6 +101,9 @@ async function edition() {
 
   log('1/4 Récupération des sources');
   const fetched = await collect(FIXTURES, log);
+  // Mise à jour de la journée sans aucune dépêche nouvelle depuis la précédente : pas d'appel à l'IA.
+  if (UPDATE && await nothingNew('edition', J.id)) return J.finish('ok', `Mise à jour : ${fetched} titres lus, aucune dépêche nouvelle depuis le dernier passage, IA non appelée (économie).`, { fetched });
+  J.details.seen = new Date().toISOString();
 
   // Fenêtre : les WINDOW_H dernières heures, jusqu'à maintenant (ou jusqu'au lendemain 6 h pour une date passée).
   const until = new Date(new Date(`${DATE}T06:00:00+01:00`).getTime() + 86400e3);
@@ -181,18 +185,27 @@ async function edition() {
   existing.forEach((e) => (ranks[e.rubric_id] = e.n));
   const sorted = [...stories].sort((a, b) => Number(b.essential) - Number(a.essential) || b.importance - a.importance);
   let written = 0, flagged = 0, failed = 0, fixed = 0;
+  // Limite de publications automatiques par jour (heure de Paris), toutes éditions et mises à jour comprises.
+  let pubToday = (await q<{ n: number }>(`select count(*)::int as n from articles where status = 'published' and published_at >= date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris'`))[0].n;
   let stopped = '';
 
   const work = async (s: Story) => {
     const its = s.item_numbers.map((n) => items[n - 1]);
     try {
+      // Contrôles automatiques, puis seconde lecture par l'IA si la carte partirait en ligne sans relecture humaine.
+      const check = async (c: CardOut) => {
+        const found = checkCard(c, its);
+        if ((AUTO_PUBLISH || TEST) && found.every((i) => minorIssue(i) || doubtIssue(i)))
+          found.push(...await reviewText(cardText(c), its).catch((e) => [`relecture IA impossible (${e instanceof Error ? e.message : e})`]));
+        return found;
+      };
       let card = await writeCard(s, its);
-      let issues = checkCard(card, its);
+      let issues = await check(card);
       if (issues.length && cfg.autoFix()) {
-        // Autocorrection : l'IA réécrit la carte en sachant ce qui n'allait pas.
+        // Autocorrection : l'IA réécrit la carte en sachant ce qui n'allait pas (ton, chiffres, relecture comprises).
         log(`   ↻ [${s.rubric}] réécriture : ${issues.join(', ')}`);
         const again = await writeCard(s, its, issues).catch(() => null);
-        const left = again ? checkCard(again, its) : issues;
+        const left = again ? await check(again) : issues;
         if (again && left.length < issues.length) { card = again; issues = left; fixed++; }
       }
       const facts = card.facts.map((f) => {
@@ -209,17 +222,19 @@ async function edition() {
       }
       const photo = pexelsOn() ? await findPhoto(card.photo_query).catch((e) => { log(`   photo introuvable (${e instanceof Error ? e.message : e})`); return null; }) : null;
       // Une reprise mot pour mot d'un média ne part jamais seule, même avec « Publier aussi les cartes avec alerte ».
-      const publish = AUTO_PUBLISH && (issues.every(minorIssue) || (cfg.publishFlagged() && !issues.some((i) => i.startsWith('reprise')))) && s.importance >= cfg.publishMinImportance();
+      let publish = AUTO_PUBLISH && (issues.every(minorIssue) || (!cfg.guardHold() && issues.every((i) => minorIssue(i) || doubtIssue(i))) || (cfg.publishFlagged() && !issues.some((i) => i.startsWith('reprise')))) && s.importance >= cfg.publishMinImportance();
+      if (publish && cfg.publishMaxPerDay() && pubToday >= cfg.publishMaxPerDay()) { publish = false; issues.push(`limite de ${cfg.publishMaxPerDay()} publications par jour atteinte`); }
+      if (publish) pubToday++;
       await q(
         `insert into articles (edition_date, rubric_id, status, rank, importance, essential, title, key_sentence, facts, summary,
-                               photo_tag, raw_item_ids, review_notes, model, published_at, photo_url, photo_credit, sensitive)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+                               photo_tag, raw_item_ids, review_notes, model, published_at, photo_url, photo_credit, sensitive, run_id)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
         [
           DATE, s.rubric, publish ? 'published' : 'draft', (ranks[s.rubric] = (ranks[s.rubric] ?? 0) + 1) - 1,
           s.importance, s.essential, card.title.slice(0, 90), card.key_sentence, JSON.stringify(facts),
           JSON.stringify([card.summary.context, card.summary.change, card.summary.next]), card.photo_tag,
           its.flatMap((i) => [fresh[i.n - 1].id, ...(fresh[i.n - 1].dups ?? [])]), issues, model(), publish ? new Date() : null, photo?.url ?? null, photo?.credit ?? null,
-          !!s.sensitive,
+          !!s.sensitive, J.id,
         ],
       );
       written++;
