@@ -15,3 +15,11 @@ usage.calls = 1000;
 const stop = await budget.check().then(() => null, (e) => e);
 console.log(stop instanceof AiStopped && /boucle/.test(stop.message) ? "OK  anti-boucle : passage arrêté au-delà de 200 appels à l'IA" : `ÉCHEC  anti-boucle : ${stop}`);
 usage.calls = 0;
+
+// « Voir les angles » : un angle par média, sources valables, au moins 2 sinon rien.
+import { cleanAngles, type CardOut } from '../src/ai.js';
+const two: Item[] = [items[0], { n: 2, source: 'Le Figaro', title: 'Smic', description: '', publishedAt: null }];
+const card = (angles: CardOut['angles']) => ({ angles }) as CardOut;
+const ok2 = cleanAngles(card([{ item_number: 1, text: 'Insiste sur le pouvoir d’achat' }, { item_number: 2, text: 'Insiste sur le coût pour les entreprises' }, { item_number: 2, text: 'doublon' }, { item_number: 9, text: 'source inconnue' }]), two);
+const one = cleanAngles(card([{ item_number: 1, text: 'Seul angle' }]), two);
+console.log(ok2?.length === 2 && ok2[1].source === 'Le Figaro' && one === null ? 'OK  angles des médias : un par média, au moins 2, sinon rien' : `ÉCHEC  angles : ${JSON.stringify([ok2, one])}`);
