@@ -54,19 +54,23 @@ export async function loadEdition(timeoutMs = 4000): Promise<string | null> {
     const eds = await get<{ date: string }[]>('editions?select=date&status=eq.published&order=date.desc&limit=1', ctl.signal);
     if (!eds.length) return null;
     const date = eds[0].date;
-    const [rows, rubs, stats] = await Promise.all([
+    const [rows, rubs] = await Promise.all([
       get<Row[]>(`articles?select=*&edition_date=eq.${date}&status=eq.published&order=rank.asc`, ctl.signal),
       get<{ id: string; name: string }[]>('rubrics?select=id,name&active=eq.true&order=position.asc', ctl.signal),
-      get<Stat[]>('article_stats?select=article_id,likes,dislikes,views,comments', ctl.signal)
-        // Base pas encore à jour (sans la colonne views) : on garde au moins les likes.
-        .catch(() => get<Stat[]>('article_stats?select=article_id,likes,comments', ctl.signal))
-        .catch(() => [] as Stat[]),
     ]);
     if (!rows.length) return null;
     // Toujours les infos les plus importantes en tête, puis les plus récentes (l'édition se complète dans la journée).
     const at = (a: Row) => a.published_at ?? a.created_at;
     rows.sort((a, b) => b.importance - a.importance || at(b).localeCompare(at(a)));
-    const emo = await get<{ article_id: string; emoji: string; n: number }[]>(`article_emoji_stats?select=article_id,emoji,n&article_id=in.(${rows.map((r) => r.id).join(',')})`, ctl.signal).catch(() => []);
+    // Compteurs des seules infos du jour : sans filtre, la base recalculait toutes les infos depuis le début (et coupait à 1 000).
+    const ids = `article_id=in.(${rows.map((r) => r.id).join(',')})`;
+    const [stats, emo] = await Promise.all([
+      get<Stat[]>(`article_stats?select=article_id,likes,dislikes,views,comments&${ids}`, ctl.signal)
+        // Base pas encore à jour (sans la colonne views) : on garde au moins les likes.
+        .catch(() => get<Stat[]>(`article_stats?select=article_id,likes,comments&${ids}`, ctl.signal))
+        .catch(() => [] as Stat[]),
+      get<{ article_id: string; emoji: string; n: number }[]>(`article_emoji_stats?select=article_id,emoji,n&${ids}`, ctl.signal).catch(() => []),
+    ]);
     const emojis = new Map<string, Record<string, number>>();
     emo.forEach((e) => emojis.set(e.article_id, { ...emojis.get(e.article_id), [e.emoji]: e.n }));
     RUBRIC_LIST.splice(0, RUBRIC_LIST.length, ...rubs);

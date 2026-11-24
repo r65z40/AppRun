@@ -20,7 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install "graphifyy[sql]"
+      # Version figée : ce passage a le droit d'écrire dans le dépôt, une nouvelle version piégée ne doit pas en profiter.
+      - run: pip install "graphifyy[sql]==0.9.118"
       - run: graphify update . --force
       - name: Enregistrer la carte si elle a changé
         run: |
