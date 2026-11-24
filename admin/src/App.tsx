@@ -600,7 +600,8 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
   const set = <K extends keyof Article>(k: K, v: Article[K]) => setD((x) => ({ ...x, [k]: v }));
   const setFact = (i: number, k: keyof Fact, v: string) => setD((x) => ({ ...x, facts: x.facts.map((f, j) => (j === i ? { ...f, [k]: v } : f)) }));
   const over = plain(d.title).length > LIMITS.title || d.key_sentence.length > LIMITS.key || d.facts.some((f) => plain(f.text).length > LIMITS.fact) || d.summary.some((s) => s.length > LIMITS.summary);
-  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, rubric_id: d.rubric_id, essential: d.essential, sensitive: d.sensitive, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
+  const angles = (d.angles ?? []).filter((g) => g.text.trim());
+  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, angles: angles.length >= 2 ? angles : null, rubric_id: d.rubric_id, essential: d.essential, sensitive: d.sensitive, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     addEventListener('keydown', k);
@@ -632,6 +633,14 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
           {d.summary.map((s, i) => (
             <label key={i}>{SUMMARY_HEADS[i]} <Count v={s} max={LIMITS.summary} /><textarea rows={3} value={s} onChange={(e) => setD((x) => ({ ...x, summary: x.summary.map((y, j) => (j === i ? e.target.value : y)) }))} /></label>
           ))}
+          {a.angles?.length ? (
+            <>
+              <div className="lbl">Angles des médias <span className="muted small">lien discret « Voir les angles » dans l'app ; videz un texte pour le retirer (moins de 2 = lien masqué)</span></div>
+              {d.angles!.map((g, i) => (
+                <label key={i}>{g.source}<input value={g.text} onChange={(e) => setD((x) => ({ ...x, angles: x.angles!.map((y, j) => (j === i ? { ...y, text: e.target.value } : y)) }))} /></label>
+              ))}
+            </>
+          ) : null}
           <div className="row2">
             <label>Photo d'ambiance<select value={d.photo_tag ?? ''} onChange={(e) => set('photo_tag', e.target.value || null)}><option value="">Dégradé</option>{PHOTO_TAGS.map((t) => <option key={t}>{t}</option>)}</select></label>
             <label>Ou adresse d'une photo libre de droits<input placeholder="https://…" value={d.photo_url ?? ''} onChange={(e) => setD((x) => ({ ...x, photo_url: e.target.value, photo_credit: null }))} /></label>
@@ -913,6 +922,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
             <h2>Édition : écriture et publication</h2>
             {st.Toggle({ k: 'AUTO_FIX', label: 'Autocorrection', help: "Une carte qui échoue aux contrôles (trop longue, source manquante, phrase reprise d'un média) est réécrite une fois par l'IA.", def: true })}
             {st.Toggle({ k: 'PUBLISH_FLAGGED', label: 'Publier aussi les cartes avec alerte', help: "Déconseillé. Les alertes simples (texte un peu long, ponctuation, gras manquant) ne bloquent jamais la publication. Coupé, une carte avec une alerte grave (source manquante, reprise mot pour mot…) attend dans « À relire ».", def: false })}
+            {st.Toggle({ k: 'MEDIA_ANGLES', label: 'Angles des médias', help: "Sur un sujet qui divise, l'IA note en une phrase neutre ce sur quoi chaque média insiste, dans le même appel que la carte (pas de coût en plus). L'app affiche alors un petit lien « Voir les angles des médias » en bas de l'article, seulement si 2 médias ou plus ont un angle différent.", def: true })}
             {st.Pick({ k: 'PUBLISH_MIN_IMPORTANCE', label: 'Publication automatique à partir de', help: 'Avec le pilote automatique, seules les cartes au moins aussi importantes sont publiées ; les autres attendent en brouillon.', def: '1', options: [['1', 'Toutes les cartes'], ...st.nums(range(3, 9)).map(([v, l]) => [v, `Importance ${l} et plus`] as [string, string])] })}
           </section>
           <section className="panel settings">

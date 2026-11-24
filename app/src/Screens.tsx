@@ -4,7 +4,7 @@ import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, wi
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, GRAD, GRAD3, DRAWER_MS, alpha } from './theme';
-import { BRAND, NOTIF, RECOG, RULES, TEXTS } from './brand';
+import { BRAND, NOTIF, RECAP, RECOG, RULES, TEXTS } from './brand';
 import { setNotif } from './notify';
 import { RUBRIC_LIST } from './content';
 import { accountsOn } from './account';
@@ -12,7 +12,7 @@ import { SavedTime } from './Badges';
 import { AppIcon, Chip, GradButton, SoftButton, Toggle, st } from './ui';
 import { feel } from './feel';
 import { isoDay, shortDay, todayLabel, tomorrowLabel } from './dates';
-import { loadEditionDates } from './remote';
+import { WEEK, loadEditionDates } from './remote';
 
 const DRAWER = Easing.bezier(0.32, 0.72, 0, 1);
 const OUT = Easing.bezier(0.23, 1, 0.32, 1);
@@ -150,12 +150,15 @@ export function PastDays({ premium, pastDay, onPick, onPremium }: { premium: boo
   const [days, setDays] = useState<string[]>([]);
   useEffect(() => { loadEditionDates().then((l) => setDays(l.filter((x) => x < isoDay()))); }, []);
   const open = premium ? days : days.filter((x) => x >= isoDay(-RULES.past_days_free));
-  if (!open.length && (!days.length || premium)) return null;
+  // Récap de la semaine : proposé à tous, le jour réglé dans le back office.
+  const week = RECAP.enabled && days.length > 0 && new Date(`${isoDay()}T12:00:00Z`).getUTCDay() === RECAP.day;
+  if (!week && !open.length && (!days.length || premium)) return null;
   return (
     <View style={{ gap: 12 }}>
       <Text style={st.label}>Éditions précédentes</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
         <Chip label="Aujourd'hui" on={!pastDay} onPress={() => { feel('select', 'tick'); onPick(null); }} />
+        {week ? <Chip label="La semaine" on={pastDay === WEEK} onPress={() => { feel('select', 'tick'); onPick(WEEK); }} /> : null}
         {open.map((x) => <Chip key={x} label={shortDay(x)} on={pastDay === x} onPress={() => { feel('select', 'tick'); onPick(x); }} />)}
         {!premium && days.length > open.length ? <Chip label="Toutes les dates avec Premium 💎" on={false} onPress={() => { feel('light'); onPremium(); }} /> : null}
       </ScrollView>

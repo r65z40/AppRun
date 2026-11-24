@@ -101,7 +101,12 @@ export const RUBRICS: Rubric[] = [
     "likes": 611,
     "dislikes": 49,
     "views": 978,
-    "comments": 86
+    "comments": 86,
+    "angles": [
+     { "source": "Quotidien économique", "text": "insiste sur le recul des prix de gros en Europe" },
+     { "source": "Journal régional", "text": "met en avant les foyers qui se chauffent encore au fioul" },
+     { "source": "Site d'info grand public", "text": "s'attarde sur l'économie réelle pour un petit logement" }
+    ]
    },
    {
     "id": "france-2",

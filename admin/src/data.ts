@@ -17,6 +17,8 @@ export type Article = {
   key_sentence: string;
   facts: Fact[];
   summary: string[];
+  /** Sujet qui divise : ce sur quoi chaque média insiste (« Voir les angles » dans l'app). */
+  angles?: { source: string; text: string }[] | null;
   photo_tag: string | null;
   photo_url: string | null;
   photo_credit?: string | null;
