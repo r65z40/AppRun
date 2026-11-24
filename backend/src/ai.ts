@@ -173,7 +173,7 @@ const CardSchema = z.object({
         item_number: z.number().int().describe('Numéro de la dépêche d’où vient ce fait'),
       }),
     )
-    .describe('Exactement 3 faits'),
+    .describe('0 à 3 faits. Chacun apporte une info absente du titre, de la phrase clé et des autres faits (chiffre, date, conséquence, contexte). Aucun fait plutôt qu’un fait qui répète'),
   summary: z.object({
     context: z.string().describe('Contexte : pourquoi on en parle, 280 caractères maximum'),
     change: z.string().describe('Ce qui change concrètement, 280 caractères maximum'),
@@ -199,7 +199,8 @@ Style :
 - Écris avec tes propres mots. Ne recopie jamais une phrase d'un média : reprends seulement les faits.
 - N'invente rien. Chaque fait doit venir des dépêches fournies ; indique le numéro de la dépêche.
 - Si les médias se contredisent, dis-le simplement (« selon X… »).
-- Dans chaque fait, mets entre <b> et </b> l'élément clé : un chiffre, une date, un nom. Une seule balise par fait.
+- Faits : de 0 à 3. Chaque fait doit apprendre quelque chose de nouveau au lecteur : un chiffre, une date, une conséquence, un contexte qui ne sont ni dans le titre, ni dans la phrase clé, ni dans un autre fait. Ne reformule jamais le titre ou la phrase clé. S'il n'y a rien de plus à dire, ne mets aucun fait.
+- Dans chaque fait, mets entre <b> et </b> l'élément clé, celui que le titre et la phrase clé ne disent pas. Une seule balise par fait.
 - « Pourquoi c'est important » : une phrase factuelle sur l'effet concret pour le lecteur (argent, quotidien, droits, sécurité…). Jamais de jugement ni de conseil.
 - Respecte les longueurs maximales.
 - « angles » : laisse la liste vide, sauf si les médias choisissent vraiment des angles différents sur un sujet qui divise. Alors, pour chaque média, dis en une phrase neutre ce sur quoi il insiste (« insiste sur le coût pour les communes »), sans juger ni classer les médias, sans recopier leurs mots.
@@ -238,7 +239,7 @@ export function checkCard(c: CardOut, items: Item[]): string[] {
   if (new Set(c.facts.map((f) => norm(f.text))).size < c.facts.length) issues.push('deux faits identiques');
   if (c.key_sentence.length > 170) issues.push('phrase clé trop longue');
   if (c.matters.length > 150) issues.push('« pourquoi c’est important » trop long');
-  if (c.facts.length !== 3) issues.push(`${c.facts.length} faits au lieu de 3`);
+  if (c.facts.length > 3) issues.push(`${c.facts.length} faits au lieu de 3 maximum`);
   const nums = new Set(items.map((i) => i.n));
   c.facts.forEach((f, k) => {
     if (!nums.has(f.item_number)) issues.push(`fait ${k + 1} sans source valable`);
@@ -258,6 +259,20 @@ export function checkCard(c: CardOut, items: Item[]): string[] {
   }
   issues.push(...guardText([c.title, c.key_sentence, ...c.facts.map((f) => f.text), c.summary.context, c.summary.change, c.summary.next, c.matters, ...c.angles.map((a) => a.text)], items));
   return [...new Set(issues)];
+}
+
+/** Faits gardés pour l'app : on retire, sans IA, ceux qui répètent le titre, la phrase clé ou un fait déjà gardé
+ *  (élément en gras déjà dit, ou au moins 60 % des mots déjà présents). Zéro fait est permis. */
+export function cleanFacts(c: CardOut): CardOut['facts'] {
+  const words = (t: string) => norm(t).split(' ').filter((w) => w.length > 3 || /\d/.test(w));
+  const said = new Set(words(c.title + ' ' + c.key_sentence));
+  return c.facts.slice(0, 3).filter((f) => {
+    const all = words(f.text.replace(/\bselon [^,.]+/i, ''));
+    const bold = words(/<b>(.*?)<\/b>/.exec(f.text)?.[1] ?? '');
+    const repeats = (bold.length && bold.every((w) => said.has(w))) || all.filter((w) => said.has(w)).length >= 0.6 * all.length;
+    if (!repeats) words(f.text).forEach((w) => said.add(w));
+    return !repeats;
+  });
 }
 
 /** Angles gardés pour l'app : un par média, source valable, texte court ; rien s'il en reste moins de 2. */

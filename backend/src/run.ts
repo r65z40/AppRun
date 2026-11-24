@@ -20,7 +20,7 @@ import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { nothingNew, startJournal, type Journal } from './journal.js';
 import { findPhoto, pexelsOn } from './pexels.js';
-import { AiStopped, budget, model, cardText, checkCard, cleanAngles, doubtIssue, minorIssue, reviewText, type CardOut, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
+import { AiStopped, budget, model, cardText, checkCard, cleanAngles, cleanFacts, doubtIssue, minorIssue, reviewText, type CardOut, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 import { sendTopicAlerts } from './alerts.js';
@@ -208,7 +208,7 @@ async function edition() {
         const left = again ? await check(again) : issues;
         if (again && left.length < issues.length) { card = again; issues = left; fixed++; }
       }
-      const facts = card.facts.map((f) => {
+      const facts = cleanFacts(card).map((f) => {
         const r = fresh[f.item_number - 1] ?? fresh[its[0].n - 1];
         return { text: f.text, source: r.source, url: r.link };
       });

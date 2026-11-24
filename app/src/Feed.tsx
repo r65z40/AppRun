@@ -416,7 +416,8 @@ function CardContent({ card, k, here, step, W, H, tag, why, api, bottom, tiltX, 
         {/* Toucher le grand titre (ou la phrase clé) ouvre l'article, comme le bouton « Lire ». */}
         <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.title} onPress={() => api.onRead(a)} suppressHighlighting accessibilityRole="button" accessibilityHint="Ouvre le résumé de l'info" {...nav}>{a.title.toUpperCase()}</Text>
         <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.key} onPress={() => api.onRead(a)} suppressHighlighting>{a.key}</Text>
-        <View>
+        {/* Sans fait (aucun n'apportait d'info nouvelle), un peu d'air entre la phrase clé et les boutons. */}
+        <View style={!a.facts.length && { height: 16 }}>
           {a.facts.map((f, i) => (
             <FactRow key={i} text={f.text} source={f.source} doc={f.doc} last={i === a.facts.length - 1} onFlip={() => api.onSignal(a, 'source')} onSource={() => { api.onSignal(a, 'click'); if (/^https?:\/\//.test(f.doc)) Linking.openURL(f.doc).catch(() => api.onToast('Lien indisponible')); else api.onToast('Ouverture de la source officielle'); }} />
           ))}

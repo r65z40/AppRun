@@ -23,3 +23,17 @@ const card = (angles: CardOut['angles']) => ({ angles }) as CardOut;
 const ok2 = cleanAngles(card([{ item_number: 1, text: 'Insiste sur le pouvoir d’achat' }, { item_number: 2, text: 'Insiste sur le coût pour les entreprises' }, { item_number: 2, text: 'doublon' }, { item_number: 9, text: 'source inconnue' }]), two);
 const one = cleanAngles(card([{ item_number: 1, text: 'Seul angle' }]), two);
 console.log(ok2?.length === 2 && ok2[1].source === 'Le Figaro' && one === null ? 'OK  angles des médias : un par média, au moins 2, sinon rien' : `ÉCHEC  angles : ${JSON.stringify([ok2, one])}`);
+
+// Faits : ceux qui répètent le titre ou la phrase clé sont retirés (exemple réel du budget 2027).
+import { cleanFacts } from '../src/ai.js';
+const budget27 = {
+  title: 'Budget 2027 : Lecornu écrit aux parlementaires',
+  key_sentence: "Le Premier ministre propose cinq thèmes de compromis aux parlementaires pour le budget 2027, faute de majorité à l'Assemblée.",
+  facts: [
+    { item_number: 1, text: 'Sébastien Lecornu a envoyé une lettre aux <b>parlementaires</b> pour chercher un compromis.' },
+    { item_number: 1, text: 'Il propose <b>cinq thèmes</b> de compromis, selon Ouest-France.' },
+    { item_number: 1, text: "Les projets de budget de l'État et de la Sécurité sociale ont été <b>rejetés</b> à l'Assemblée." },
+  ],
+} as CardOut;
+const kept = cleanFacts(budget27);
+console.log(kept.length === 1 && kept[0].text.includes('rejetés') ? 'OK  faits : les faits qui répètent le titre ou la phrase clé sont retirés' : `ÉCHEC  faits : ${JSON.stringify(kept)}`);
