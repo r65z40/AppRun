@@ -33,6 +33,12 @@ export const cfg = {
   /** Plafonds de dépense en dollars ; 0 = sans limite. */
   budgetDay: () => num('AI_BUDGET_DAY', 0, 0, 10000),
   budgetMonth: () => num('AI_BUDGET_MONTH', 0, 0, 100000),
+  /** Plafond d'un seul passage, en dollars ; 0 = sans limite. */
+  budgetRun: () => num('AI_BUDGET_RUN', 0, 0, 1000),
+  /** Alerte (journal et bandeau du back office) à ce pourcentage d'un plafond. */
+  budgetAlert: () => num('AI_BUDGET_ALERT', 80, 50, 99),
+  /** Anti-boucle : appels à Claude au plus par passage. */
+  maxCalls: () => num('AI_MAX_CALLS', 200, 10, 1000),
   effort: () => (['low', 'medium', 'high'].includes(process.env.TITRE_EFFORT ?? '') ? process.env.TITRE_EFFORT : 'medium') as 'low' | 'medium' | 'high',
   guidelines: () => text('AI_GUIDELINES'),
   avoid: () => text('AI_AVOID'),
@@ -57,6 +63,18 @@ export const cfg = {
   autoFix: () => on('AUTO_FIX', true),
   publishFlagged: () => on('PUBLISH_FLAGGED', false),
   publishMinImportance: () => num('PUBLISH_MIN_IMPORTANCE', 1, 1, 10),
+  /** Cartes publiées automatiquement par jour, au plus ; 0 = sans limite. */
+  publishMaxPerDay: () => num('PUBLISH_MAX_PER_DAY', 0, 0, 500),
+
+  // Garde-fous de publication : ton neutre, rien d'inventé.
+  /** Règles gratuites : mots d'opinion ou sensationnels, chiffres absents des sources. */
+  guardRules: () => on('GUARD_RULES', true),
+  /** Seconde lecture par l'IA de chaque carte avant publication automatique (coût : un petit appel par carte). */
+  guardAiCheck: () => on('GUARD_AI_CHECK', true),
+  /** Mots à surveiller en plus de la liste de base, un par ligne. */
+  guardWords: () => text('GUARD_WORDS'),
+  /** Garder en relecture humaine une carte encore douteuse après correction. Coupé (défaut) : tout se publie seul, le doute est noté. */
+  guardHold: () => on('GUARD_HOLD', false),
 
   // Mises à jour de l'édition au fil de la journée
   liveUpdates: () => on('LIVE_UPDATES', true),
@@ -94,11 +112,13 @@ export function snapshot(kind: 'edition' | 'flash') {
         mises_a_jour: cfg.liveUpdates(), importance_min_mise_a_jour: cfg.liveMinImportance(),
         fenetre_mise_a_jour_h: cfg.updateWindowHours(), cartes_max_mise_a_jour: cfg.liveMaxCards() || 'auto', cartes_min_mise_a_jour: cfg.liveMinCards(),
         depeches_max: cfg.maxItems(), ia_en_parallele: cfg.aiConcurrency(),
+        publications_max_jour: cfg.publishMaxPerDay() || 'sans limite', regles_ton: cfg.guardRules(), relecture_ia: cfg.guardAiCheck(), doutes_en_relecture: cfg.guardHold(),
       }
     : {
         ...common, active: cfg.flashEnabled(), publication_auto: cfg.flashAutoPublish(), importance_min: cfg.flashMinImportance(),
         medias_min: cfg.flashMinSources(), max_par_jour: cfg.flashMaxPerDay(), fenetre_h: cfg.flashWindowHours(),
         min_par_jour: cfg.flashMinPerDay(), importance_si_retard: cfg.flashRelaxImportance(),
+        regles_ton: cfg.guardRules(), relecture_ia: cfg.guardAiCheck(), doutes_en_relecture: cfg.guardHold(),
       };
 }
 
