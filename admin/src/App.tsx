@@ -574,7 +574,7 @@ function EditionPage({ say, go }: { say: (m: string) => void; go: (p: Page) => v
           onSave={async (patch, pub) => {
             if (!edit.id) {
               const f = patch.facts ?? [];
-              if (!patch.title?.trim() || !patch.key_sentence?.trim() || f.some((x) => !x.text.trim() || !x.source.trim())) return say('Remplissez le titre, la phrase clé et les 3 faits avec leur source');
+              if (!patch.title?.trim() || !patch.key_sentence?.trim() || f.some((x) => !x.source.trim())) return say('Remplissez le titre, la phrase clé et la source de chaque fait');
               await api.createArticle({ ...patch, edition_date: edit.edition_date, rubric_id: patch.rubric_id ?? edit.rubric_id, status: pub ? 'published' : 'draft', published_at: pub ? new Date().toISOString() : null });
               setEdit(null);
               await reload(edit.edition_date);
@@ -595,13 +595,13 @@ function Count({ v, max }: { v: string; max: number }) {
 }
 
 function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSave: (p: Partial<Article>, publish: boolean) => void }) {
-  const [d, setD] = useState({ ...a, facts: a.facts.map((f) => ({ ...f })), summary: [...a.summary] });
+  const [d, setD] = useState({ ...a, facts: [0, 1, 2].map((i) => ({ ...(a.facts[i] ?? { text: '', source: '', url: '' }) })), summary: [...a.summary] });
   const [uploading, setUploading] = useState(false);
   const set = <K extends keyof Article>(k: K, v: Article[K]) => setD((x) => ({ ...x, [k]: v }));
   const setFact = (i: number, k: keyof Fact, v: string) => setD((x) => ({ ...x, facts: x.facts.map((f, j) => (j === i ? { ...f, [k]: v } : f)) }));
   const over = plain(d.title).length > LIMITS.title || d.key_sentence.length > LIMITS.key || d.facts.some((f) => plain(f.text).length > LIMITS.fact) || d.summary.some((s) => s.length > LIMITS.summary) || (d.matters ?? '').length > LIMITS.matters;
   const angles = (d.angles ?? []).filter((g) => g.text.trim());
-  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, matters: d.matters?.trim() || null, angles: angles.length >= 2 ? angles : null, rubric_id: d.rubric_id, essential: d.essential, sensitive: d.sensitive, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
+  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts.filter((f) => f.text.trim()), summary: d.summary, matters: d.matters?.trim() || null, angles: angles.length >= 2 ? angles : null, rubric_id: d.rubric_id, essential: d.essential, sensitive: d.sensitive, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     addEventListener('keydown', k);
@@ -619,7 +619,7 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
           </div>
           <label>Titre <Count v={d.title} max={LIMITS.title} /><input value={d.title} onChange={(e) => set('title', e.target.value)} /></label>
           <label>Phrase clé <Count v={d.key_sentence} max={LIMITS.key} /><textarea rows={2} value={d.key_sentence} onChange={(e) => set('key_sentence', e.target.value)} /></label>
-          <div className="lbl">Les 3 faits <span className="muted small">mettez l'élément clé entre &lt;b&gt; et &lt;/b&gt;</span></div>
+          <div className="lbl">Faits (0 à 3) <span className="muted small">seulement s'ils apportent une info absente du titre et de la phrase clé ; un fait vide est retiré ; élément clé entre &lt;b&gt; et &lt;/b&gt;</span></div>
           {d.facts.map((f, i) => (
             <div key={i} className="fact">
               <label>Fait {i + 1} <Count v={f.text} max={LIMITS.fact} /><input value={f.text} onChange={(e) => setFact(i, 'text', e.target.value)} /></label>
@@ -666,7 +666,7 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
               <div className="pline"><span className="ppill">{RUBRICS[d.rubric_id]?.toUpperCase()}</span>{d.essential ? <span className="ptag">Essentiel</span> : null}</div>
               <div className="ptitle">{d.title}</div>
               <div className="pkey">{d.key_sentence}</div>
-              {d.facts.map((f, i) => <div key={i} className="pfact" dangerouslySetInnerHTML={{ __html: safeBold(f.text) }} />)}
+              {d.facts.filter((f) => f.text.trim()).map((f, i) => <div key={i} className="pfact" dangerouslySetInnerHTML={{ __html: safeBold(f.text) }} />)}
               <div className="pbtn">Lire · 1 min</div>
             </div>
           </div>
