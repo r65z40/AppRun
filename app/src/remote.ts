@@ -3,6 +3,7 @@
 import { FLASHES, PHOTOS, RUBRICS, RUBRIC_LIST } from './content';
 import { C } from './theme';
 import type { Article, Flash, Rubric } from './types';
+import { dayLabel } from './dates';
 
 const URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -51,9 +52,11 @@ export async function loadEdition(timeoutMs = 4000): Promise<string | null> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const eds = await get<{ date: string }[]>('editions?select=date&status=eq.published&order=date.desc&limit=1', ctl.signal);
+    // Dernier jour qui a au moins une info en ligne : l'édition du jour s'affiche dès ses premières cartes,
+    // sans attendre la fin du passage (avant, l'app gardait celle de la veille, datée d'aujourd'hui).
+    const eds = await get<{ edition_date: string }[]>('articles?select=edition_date&status=eq.published&order=edition_date.desc&limit=1', ctl.signal);
     if (!eds.length) return null;
-    const date = eds[0].date;
+    const date = eds[0].edition_date;
     const [rows, rubs] = await Promise.all([
       get<Row[]>(`articles?select=*&edition_date=eq.${date}&status=eq.published&order=rank.asc`, ctl.signal),
       get<{ id: string; name: string }[]>('rubrics?select=id,name&active=eq.true&order=position.asc', ctl.signal),
@@ -84,6 +87,7 @@ export async function loadEdition(timeoutMs = 4000): Promise<string | null> {
           id: a.id,
           title: a.title,
           hour: hour(a.published_at ?? a.created_at),
+          day: dayLabel(a.published_at ?? a.created_at),
           key: a.key_sentence,
           facts: a.facts.map((f) => ({ text: f.text, source: f.source, doc: f.url })),
           photo: a.photo_url ? { uri: a.photo_url } : (PHOTOS as Record<string, number>)[a.photo_tag ?? ''] ?? null,

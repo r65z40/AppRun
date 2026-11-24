@@ -181,7 +181,7 @@ function when(iso: string) {
 }
 
 const styles = StyleSheet.create({
-  followBox: { borderTopWidth: 1, borderColor: C.line, paddingTop: 14, marginTop: 22, gap: 10 },
+  followBox: { borderTopWidth: 1, borderColor: C.line, paddingTop: 14, marginBottom: 26, gap: 10 },
   lbl: { color: C.text3, fontFamily: F.semi, fontSize: 11, letterSpacing: 1.6 },
   hint: { color: C.text3, fontFamily: F.regular, fontSize: 12 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
