@@ -20,5 +20,7 @@
   <body>
     <noscript>Activez JavaScript pour lire TITRE.</noscript>
     <div id="root"></div>
+    <!-- iPhone : la page reste parfois remontée après la fermeture du clavier. -->
+    <script>addEventListener('focusout', function () { setTimeout(function () { if (scrollY) scrollTo(0, 0); }, 100); });</script>
   </body>
 </html>

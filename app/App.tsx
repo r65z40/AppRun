@@ -44,7 +44,9 @@ const fetchPicks = (active: string[], quota: number, perso: boolean) =>
 // Sur ordinateur (version web), l'app s'affiche dans un cadre de téléphone au centre de la page.
 const framed = (w: number) => Platform.OS === 'web' && w > 560;
 function useFrame() {
-  const { width, height } = useWindowDimensions();
+  const { width, height: visible } = useWindowDimensions();
+  // Web : hauteur de la page, pas la zone visible, qui rétrécit quand le clavier s'ouvre (iPhone) et décalait tout le fil.
+  const height = Platform.OS === 'web' ? document.documentElement.clientHeight || visible : visible;
   return framed(width) ? { width: 400, height: Math.min(height - 48, 860) } : { width, height };
 }
 
