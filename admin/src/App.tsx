@@ -832,10 +832,11 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
           </section>
           <section className="panel settings">
             <h2>Garde-fous de publication</h2>
-            <p className="muted small">Avant de publier seule, l'IA est contrôlée. Au moindre doute, la carte attend dans Articles « À relire » (et l'info Dernière minute reste masquée) au lieu de partir en ligne. La raison est notée sur la carte et dans Historique.</p>
+            <p className="muted small">Avant de publier seule, l'IA est contrôlée. Une carte douteuse est réécrite une fois par l'IA avec la liste des problèmes. S'il reste un doute, elle est publiée quand même (l'app tourne sans vous) et le doute est noté sur la carte, visible dans Articles et Historique.</p>
             {st.Toggle({ k: 'GUARD_RULES', label: 'Ton neutre et chiffres vérifiés', help: "Gratuit, sans IA : repère les mots d'opinion, sensationnels ou partisans (scandale, incroyable, heureusement…), les points d'exclamation, et tout nombre qui n'apparaît pas dans les dépêches des médias.", def: true })}
             {st.Toggle({ k: 'GUARD_AI_CHECK', label: 'Seconde lecture par l’IA', help: "Une deuxième IA relit chaque carte avant publication automatique : rien d'inventé par rapport aux sources, pas d'opinion, pas de parti pris, rien d'extrême. Coût : un petit appel par carte publiée (environ +15 % sur la facture).", def: true })}
-            {st.Pick({ k: 'PUBLISH_MAX_PER_DAY', label: 'Cartes publiées par jour, au plus', help: "Au-delà, les cartes suivantes attendent en brouillon jusqu'à ce que vous les publiiez. Protège contre une IA qui publierait en rafale.", def: '80', options: [['0', 'Sans limite'], ...st.nums([20, 40, 60, 80, 120, 200])] })}
+            {st.Toggle({ k: 'GUARD_HOLD', label: 'Retenir les cartes encore douteuses', help: "Coupé (conseillé pour une app autonome) : tout se publie seul. Activé : une carte encore douteuse après correction attend votre relecture dans Articles « À relire », et l'info Dernière minute reste masquée.", def: false })}
+            {st.Pick({ k: 'PUBLISH_MAX_PER_DAY', label: 'Cartes publiées par jour, au plus', help: "Protège contre une IA qui publierait en rafale : au-delà, les cartes suivantes attendent en brouillon. Sans limite par défaut, pour ne manquer aucune info.", def: '0', options: [['0', 'Sans limite'], ...st.nums([20, 40, 60, 80, 120, 200])] })}
             {st.Text({ k: 'GUARD_WORDS', label: 'Mots à surveiller en plus', help: "Une carte qui contient un de ces mots part en relecture. Séparez-les par des virgules ou des retours à la ligne.", placeholder: 'mot1, mot2, une expression' })}
           </section>
           <section className="panel settings">
@@ -1050,7 +1051,7 @@ const CONFIG_LABEL: Record<string, string> = {
   publication_auto: 'Publication sans relecture', max_par_jour: 'Infos par jour', mises_a_jour: 'Mises à jour', importance_min_mise_a_jour: 'Importance min. mise à jour',
   fenetre_mise_a_jour_h: 'Période mise à jour (h)', cartes_max_mise_a_jour: 'Cartes par mise à jour', cartes_min_mise_a_jour: 'Cartes au moins par mise à jour',
   min_par_jour: 'Infos par jour, au moins', importance_si_retard: 'Importance si en retard', depeches_max: 'Dépêches lues', ia_en_parallele: 'Cartes en parallèle',
-  publications_max_jour: 'Publications par jour', regles_ton: 'Ton et chiffres vérifiés', relecture_ia: 'Seconde lecture IA',
+  publications_max_jour: 'Publications par jour', regles_ton: 'Ton et chiffres vérifiés', relecture_ia: 'Seconde lecture IA', doutes_en_relecture: 'Cartes douteuses retenues',
 };
 function RunDetails({ r }: { r: EngineRun }) {
   const d = r.details ?? {};

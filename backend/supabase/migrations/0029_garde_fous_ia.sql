@@ -3,7 +3,7 @@
 
 insert into public.setting_keys (key) values
   ('AI_BUDGET_RUN'), ('AI_BUDGET_ALERT'), ('AI_MAX_CALLS'),
-  ('PUBLISH_MAX_PER_DAY'), ('GUARD_RULES'), ('GUARD_AI_CHECK'), ('GUARD_WORDS')
+  ('PUBLISH_MAX_PER_DAY'), ('GUARD_RULES'), ('GUARD_AI_CHECK'), ('GUARD_WORDS'), ('GUARD_HOLD')
 on conflict do nothing;
 
 -- Chaque carte et info publiée par le moteur garde son passage : on peut tout retirer d'un coup.

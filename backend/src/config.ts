@@ -64,7 +64,7 @@ export const cfg = {
   publishFlagged: () => on('PUBLISH_FLAGGED', false),
   publishMinImportance: () => num('PUBLISH_MIN_IMPORTANCE', 1, 1, 10),
   /** Cartes publiées automatiquement par jour, au plus ; 0 = sans limite. */
-  publishMaxPerDay: () => num('PUBLISH_MAX_PER_DAY', 80, 0, 500),
+  publishMaxPerDay: () => num('PUBLISH_MAX_PER_DAY', 0, 0, 500),
 
   // Garde-fous de publication : ton neutre, rien d'inventé.
   /** Règles gratuites : mots d'opinion ou sensationnels, chiffres absents des sources. */
@@ -73,6 +73,8 @@ export const cfg = {
   guardAiCheck: () => on('GUARD_AI_CHECK', true),
   /** Mots à surveiller en plus de la liste de base, un par ligne. */
   guardWords: () => text('GUARD_WORDS'),
+  /** Garder en relecture humaine une carte encore douteuse après correction. Coupé (défaut) : tout se publie seul, le doute est noté. */
+  guardHold: () => on('GUARD_HOLD', false),
 
   // Mises à jour de l'édition au fil de la journée
   liveUpdates: () => on('LIVE_UPDATES', true),
@@ -110,13 +112,13 @@ export function snapshot(kind: 'edition' | 'flash') {
         mises_a_jour: cfg.liveUpdates(), importance_min_mise_a_jour: cfg.liveMinImportance(),
         fenetre_mise_a_jour_h: cfg.updateWindowHours(), cartes_max_mise_a_jour: cfg.liveMaxCards() || 'auto', cartes_min_mise_a_jour: cfg.liveMinCards(),
         depeches_max: cfg.maxItems(), ia_en_parallele: cfg.aiConcurrency(),
-        publications_max_jour: cfg.publishMaxPerDay() || 'sans limite', regles_ton: cfg.guardRules(), relecture_ia: cfg.guardAiCheck(),
+        publications_max_jour: cfg.publishMaxPerDay() || 'sans limite', regles_ton: cfg.guardRules(), relecture_ia: cfg.guardAiCheck(), doutes_en_relecture: cfg.guardHold(),
       }
     : {
         ...common, active: cfg.flashEnabled(), publication_auto: cfg.flashAutoPublish(), importance_min: cfg.flashMinImportance(),
         medias_min: cfg.flashMinSources(), max_par_jour: cfg.flashMaxPerDay(), fenetre_h: cfg.flashWindowHours(),
         min_par_jour: cfg.flashMinPerDay(), importance_si_retard: cfg.flashRelaxImportance(),
-        regles_ton: cfg.guardRules(), relecture_ia: cfg.guardAiCheck(),
+        regles_ton: cfg.guardRules(), relecture_ia: cfg.guardAiCheck(), doutes_en_relecture: cfg.guardHold(),
       };
 }
 

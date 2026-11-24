@@ -20,7 +20,7 @@ import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { nothingNew, startJournal, type Journal } from './journal.js';
 import { findPhoto, pexelsOn } from './pexels.js';
-import { AiStopped, budget, model, cardText, checkCard, minorIssue, reviewText, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
+import { AiStopped, budget, model, cardText, checkCard, doubtIssue, minorIssue, reviewText, type CardOut, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 import { sendTopicAlerts } from './alerts.js';
@@ -192,18 +192,21 @@ async function edition() {
   const work = async (s: Story) => {
     const its = s.item_numbers.map((n) => items[n - 1]);
     try {
+      // Contrôles automatiques, puis seconde lecture par l'IA si la carte partirait en ligne sans relecture humaine.
+      const check = async (c: CardOut) => {
+        const found = checkCard(c, its);
+        if ((AUTO_PUBLISH || TEST) && found.every((i) => minorIssue(i) || doubtIssue(i)))
+          found.push(...await reviewText(cardText(c), its).catch((e) => [`relecture IA impossible (${e instanceof Error ? e.message : e})`]));
+        return found;
+      };
       let card = await writeCard(s, its);
-      let issues = checkCard(card, its);
+      let issues = await check(card);
       if (issues.length && cfg.autoFix()) {
-        // Autocorrection : l'IA réécrit la carte en sachant ce qui n'allait pas.
+        // Autocorrection : l'IA réécrit la carte en sachant ce qui n'allait pas (ton, chiffres, relecture comprises).
         log(`   ↻ [${s.rubric}] réécriture : ${issues.join(', ')}`);
         const again = await writeCard(s, its, issues).catch(() => null);
-        const left = again ? checkCard(again, its) : issues;
+        const left = again ? await check(again) : issues;
         if (again && left.length < issues.length) { card = again; issues = left; fixed++; }
-      }
-      // Seconde lecture par l'IA, seulement pour une carte qui partirait en ligne sans relecture humaine.
-      if ((AUTO_PUBLISH || TEST) && issues.every(minorIssue)) {
-        issues.push(...await reviewText(cardText(card), its).catch((e) => [`relecture IA impossible (${e instanceof Error ? e.message : e})`]));
       }
       const facts = card.facts.map((f) => {
         const r = fresh[f.item_number - 1] ?? fresh[its[0].n - 1];
@@ -219,7 +222,7 @@ async function edition() {
       }
       const photo = pexelsOn() ? await findPhoto(card.photo_query).catch((e) => { log(`   photo introuvable (${e instanceof Error ? e.message : e})`); return null; }) : null;
       // Une reprise mot pour mot d'un média ne part jamais seule, même avec « Publier aussi les cartes avec alerte ».
-      let publish = AUTO_PUBLISH && (issues.every(minorIssue) || (cfg.publishFlagged() && !issues.some((i) => i.startsWith('reprise')))) && s.importance >= cfg.publishMinImportance();
+      let publish = AUTO_PUBLISH && (issues.every(minorIssue) || (!cfg.guardHold() && issues.every((i) => minorIssue(i) || doubtIssue(i))) || (cfg.publishFlagged() && !issues.some((i) => i.startsWith('reprise')))) && s.importance >= cfg.publishMinImportance();
       if (publish && cfg.publishMaxPerDay() && pubToday >= cfg.publishMaxPerDay()) { publish = false; issues.push(`limite de ${cfg.publishMaxPerDay()} publications par jour atteinte`); }
       if (publish) pubToday++;
       await q(

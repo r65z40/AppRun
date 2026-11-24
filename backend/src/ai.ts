@@ -319,6 +319,9 @@ export async function reviewText(text: string, items: Item[]): Promise<string[]>
   return out.ok && !out.problems.length ? [] : (out.problems.length ? out.problems : ['doute de la relecture IA']).slice(0, 3).map((p) => `relecture IA : ${p}`);
 }
 
+/** Doute des garde-fous (ton, chiffre, relecture IA) : publié quand même si GUARD_HOLD est coupé, mais noté sur la carte. */
+export const doubtIssue = (i: string) => /^(ton :|chiffre absent|relecture IA)/.test(i);
+
 /** La carte en texte simple, pour la relecture. */
 export const cardText = (c: CardOut) =>
   [`Titre : ${c.title}`, `Phrase clé : ${c.key_sentence}`, ...c.facts.map((f) => `Fait : ${f.text.replace(/<\/?b>/g, '')}`), `Contexte : ${c.summary.context}`, `Ce qui change : ${c.summary.change}`, `Et après : ${c.summary.next}`].join('\n');
