@@ -7,7 +7,7 @@ type Signals = Record<string, number>;
 export type AlgoConf = {
   enabled: boolean; share_essential: number; share_discovery: number;
   w_importance: number; w_affinity: number; w_collective: number; w_fresh: number;
-  affinity_start: number; ramp: number; half_life: number; smooth: number;
+  affinity_start: number; ramp: number; half_life: number; smooth: number; decay_hours: number;
   skip_ms: number; long_ms: number; min_views: number; max_rubric: number; keep_days: number; signals: Signals;
 };
 type Keyword = { id: number; label: string; words: string[]; active: boolean };
@@ -19,7 +19,7 @@ type ReaderAlgo = { taste: { rubrics: Record<string, number>; topics: Record<str
 const DEFAULTS: AlgoConf = {
   enabled: true, share_essential: 25, share_discovery: 12,
   w_importance: 45, w_affinity: 35, w_collective: 10, w_fresh: 10,
-  affinity_start: 10, ramp: 50, half_life: 21, smooth: 5,
+  affinity_start: 10, ramp: 50, half_life: 21, smooth: 5, decay_hours: 6,
   skip_ms: 2000, long_ms: 12000, min_views: 200, max_rubric: 50, keep_days: 90,
   signals: { click: 3, share: 3, summary_end: 2, like: 2, comment: 2, summary: 1.5, source: 1, long: 1, back: 0.5, skip: -0.5, dislike: -0.5, less: -3 },
 };
@@ -133,11 +133,12 @@ function Settings({ say }: { say: (m: string) => void }) {
       <section className="panel settings">
         <h2>Composition de l'édition</h2>
         <div className="row2" style={{ alignItems: 'start' }}>
-          {num('share_essential', 'Sujets majeurs pour tous', `Sur 8 infos : ${per8(c.share_essential)}. Toujours en tête.`, '%')}
-          {num('share_discovery', 'Découverte', c.share_discovery > 0 ? `Sur 8 infos : ${per8(c.share_discovery)}. Un sujet important d'une rubrique peu lue, placé au milieu.` : 'Coupée.', '%')}
+          {num('share_essential', 'Sujets majeurs pour tous', `Sur 8 infos : ${per8(c.share_essential)}. Les plus importants du moment, toujours en tête.`, '%')}
+          {num('share_discovery', 'Découverte', c.share_discovery > 0 ? `Sur 8 infos : ${per8(c.share_discovery)}. Un sujet important d'une rubrique peu lue.` : 'Coupée.', '%')}
         </div>
         <p className="muted small">Le reste est choisi selon les goûts (sur 8 infos : {Math.max(0, 8 - per8(c.share_essential) - (c.share_discovery > 0 ? per8(c.share_discovery) : 0))}).</p>
         {num('max_rubric', 'Part maximum d’une rubrique', "Aucune rubrique ne prend plus que cette part de l'édition (sauf si le lecteur n'en suit qu'une ou deux).", '%')}
+        {num('decay_hours', 'Une info perd la moitié de son importance en', "Renouvellement de la journée : à chaque mise à jour, les infos fraîches et importantes montent, les dépassées descendent puis sortent vers « Charger plus ». Le nombre d'infos reste celui choisi par le lecteur. Sous les sujets majeurs, l'ordre va du plus pertinent au moins pertinent. 0 = jamais.", 'heures')}
       </section>
       <section className="panel settings">
         <h2>Score d'une info <span className={sum === 100 ? 'muted' : 'error'} style={{ fontWeight: 400, fontSize: 13 }}>· total {sum} / 100</span></h2>

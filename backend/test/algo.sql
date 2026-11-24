@@ -29,15 +29,26 @@ select case when count(*) filter (where slot = 'ess') = 2 and count(*) filter (w
 select case when count(*) filter (where slot = 'ess') = 4 and count(*) filter (where slot = 'dec') = 2 and count(*) filter (where slot = 'pv') = 10
   then 'OK  mêmes proportions pour 16 infos (4 / 10 / 2)' else 'ÉCHEC  proportions à 16' end from compose_edition(null, 'appareil-neuf', '{france,monde,eco,tech}', 16);
 
+-- Renouvellement de la journée : sous les majeurs, l'ordre descend avec le score ; une info vieille de 12 h
+-- (importance divisée par 4 avec la demi-vie de 6 h) cède sa place à une plus fraîche.
+select case when bool_and(ok) then 'OK  plus on descend, moins l''info est pertinente' else 'ÉCHEC  ordre décroissant' end
+  from (select score <= lag(score) over (order by pos) or lag(slot) over (order by pos) = 'ess' or pos = 0 as ok from e1 where slot <> 'more') x where ok is not null;
+update articles set published_at = now() - interval '12 hours' where title = 'Le gouvernement présente son budget' and edition_date = current_date + 1;
+select case when (select slot from compose_edition(null, 'appareil-neuf', '{france,monde,eco,tech}', 8) e join articles a on a.id = e.article_id where a.title = 'Le gouvernement présente son budget') <> 'ess'
+        and (select a.title from compose_edition(null, 'appareil-neuf', '{france,monde,eco,tech}', 8) e join articles a on a.id = e.article_id where e.pos = 0) = 'Sommet à Bruxelles sur l''Ukraine'
+  then 'OK  turn over : l''info majeure du matin laisse la tête à une plus fraîche' else 'ÉCHEC  turn over' end;
+update articles set published_at = now() where title = 'Le gouvernement présente son budget' and edition_date = current_date + 1;
+
 -- Il lit beaucoup d'infos sur l'IA (clic vers l'article, résumé lu jusqu'au bout) : l'IA remonte.
 select track('appareil-ia-1', (select jsonb_agg(jsonb_build_object('a', id, 'k', k)) from articles, unnest('{click,summary_end,summary}'::text[]) k
                                  where edition_date = current_date + 1 and title in ('Une IA pour les médecins', 'Nouvel iPhone'))) ;
 select track('appareil-ia-1', (select jsonb_agg(jsonb_build_object('a', id, 'k', 'view', 'ms', 900)) from articles where edition_date = current_date + 1 and rubric_id = 'france'));
 create temp table e2 as select * from compose_edition(null, 'appareil-ia-1', '{france,monde,eco,tech}', 8);
-select case when (select a.rubric_id from e2 join articles a on a.id = e2.article_id where pos = 2) = 'tech'
+select case when (select min(pos) from e2 join articles a on a.id = e2.article_id where a.rubric_id = 'tech' and slot = 'pv')
+             < (select min(pos) from e2 join articles a on a.id = e2.article_id where a.rubric_id = 'france' and slot = 'pv')
         and (select reason from e2 join articles a on a.id = e2.article_id where a.title = 'OpenAI dévoile une IA') = 'Vous lisez souvent : IA.'
         and (reader_taste(null, 'appareil-ia-1')->'rubrics'->>'france')::numeric < 0
-  then 'OK  goûts appris : l''IA passe juste après les sujets majeurs, « Pourquoi : vous lisez souvent : IA », France passée trop vite = points négatifs'
+  then 'OK  goûts appris : l''IA passe devant France, « Pourquoi : vous lisez souvent : IA », France passée trop vite = points négatifs'
   else 'ÉCHEC  goûts : ' || (select string_agg(a.rubric_id || ':' || e2.slot, ' ' order by pos) from e2 join articles a on a.id = e2.article_id) end;
 select case when (select count(*) from e2 join articles a on a.id = e2.article_id where slot <> 'more' and a.rubric_id = 'tech') <= 4
   then 'OK  aucune rubrique ne dépasse la moitié de l''édition' else 'ÉCHEC  plafond par rubrique' end;
