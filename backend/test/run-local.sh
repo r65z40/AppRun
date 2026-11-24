@@ -154,7 +154,8 @@ psql "$VIDE" -qtAc "set role anon; select case when (select count(*) from public
 psql "$VIDE" -tAc "select case when not has_table_privilege('anon', 'ad_campaigns', 'select') and not has_table_privilege('anon', 'ad_stats', 'select') then 'OK  pubs : prix et statistiques fermés au public' else 'ÉCHEC  campagnes visibles' end"
 psql "$VIDE" -qc "insert into ad_campaigns (name, advertiser, title, url, exclusive, pricing, price) values ('Sponsor', 'Horizon', 'Pub S', 'https://s.test', true, 'flat', 1500)"
 psql "$VIDE" -qtAc "set role anon; select case when (select string_agg(advertiser, ',') from public.live_ads()) = 'Horizon' then 'OK  sponsor exclusif : seul annonceur visible' else 'ÉCHEC  sponsor exclusif' end"
-psql "$VIDE" -qtAc "set role anon; select public.ad_hit((select id from public.live_ads() limit 1)); select public.ad_hit((select id from public.live_ads() limit 1), true);" >/dev/null
+psql "$VIDE" -qtAc "set role anon; select public.ad_hits('appareil-test', jsonb_build_array(jsonb_build_object('i', '00000000-0000-0000-0000-0000000000a1', 'c', (select id from public.live_ads() limit 1)))); select public.ad_hits('appareil-test', '[{\"i\": \"00000000-0000-0000-0000-0000000000a1\", \"k\": \"click\"}]');" >/dev/null
+psql "$VIDE" -tAc "select case when not has_function_privilege('anon', 'public.ad_hit(uuid, boolean)', 'execute') then 'OK  ancien compteur de pubs sans limite fermé au public' else 'ÉCHEC  ad_hit encore ouvert' end"
 psql "$VIDE" -qc "update ad_campaigns set max_views = 1 where name = 'Sponsor'"
 psql "$VIDE" -tAc "select case when (select views || '/' || clicks from ad_stats) = '1/1' and (select count(*) from public.live_ads()) = 2 then 'OK  affichages et clics comptés, plafond atteint : les autres campagnes reprennent' else 'ÉCHEC  comptage ou plafond' end"
 
