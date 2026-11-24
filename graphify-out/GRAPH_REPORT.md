@@ -1,7 +1,7 @@
 # Graph Report - AppRun  (2026-11-24)
 
 ## Corpus Check
-- 120 files · ~143,675 words
+- 120 files · ~143,739 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 13 file(s) not represented in the graph (top: (none) 4, .xml 4, .example 3)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `38ec2e41`
+- Built from commit: `3d5c90b5`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
