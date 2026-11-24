@@ -240,3 +240,4 @@ label.btn { cursor: pointer; }
 .reach-row div { height: 10px; border-radius: 5px; background: rgba(123,92,255,.12); overflow: hidden; }
 .reach-row i { display: block; height: 100%; background: var(--grad); }
 .reach-row b { text-align: right; }
+.cost-parts { display: flex; flex-wrap: wrap; gap: 6px 18px; }
