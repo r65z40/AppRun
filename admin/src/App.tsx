@@ -1168,7 +1168,7 @@ function SourcesPage({ say }: { say: (m: string) => void }) {
   const urlOk = (u: string) => /^https?:\/\/\S+$/.test(u.trim());
   return (
     <>
-      <p className="muted">Le moteur lit le titre et le chapô de ces flux RSS, jamais l'article complet, plusieurs à la fois et seulement s'ils ont changé. Une source en échec trop de fois d'affilée est mise à l'écart toute seule. Vérifiez que chaque média autorise cet usage.</p>
+      <p className="muted">Le moteur lit le titre et le chapô de ces flux RSS, jamais l'article complet, plusieurs à la fois et seulement s'ils ont changé. Une source en échec trop de fois d'affilée est mise à l'écart toute seule. Chaque nuit, le moteur regarde aussi si le média refuse la fouille de ses textes par l'IA (robots.txt, tdmrep.json) et désactive la source si c'est le cas. Les conditions d'utilisation écrites, elles, sont à vérifier vous-même.</p>
       <div className="toolbar">
         <div className="tabs" style={{ margin: 0, border: 0 }}>
           {([['all', 'Toutes', list.length], ['error', 'En erreur', list.filter(bad).length], ['off', 'Désactivées', list.filter((s) => !s.active).length]] as const).map(([k, l, n]) => (
@@ -1202,9 +1202,11 @@ function SourcesPage({ say }: { say: (m: string) => void }) {
                 {s.last_error ? <span className="pill rejected" title={s.last_error}>Erreur{s.fail_count && s.fail_count > 1 ? ` ×${s.fail_count}` : ''} : {s.last_error}</span>
                   : s.last_fetch_at ? <span className="pill published">OK{s.last_count != null ? ` · ${s.last_count} titres` : ''}</span> : <span className="pill">Pas encore lue</span>}
                 {s.disabled_reason && !s.active ? <div className="muted small">{s.disabled_reason}</div> : null}
+                {s.ai_refusal ? <div className="small"><span className="pill rejected" title={s.ai_refusal}>Refuse l'IA{s.ai_accepted ? ' · réactivée par l’équipe' : ''}</span> <span className="muted">{s.ai_refusal}</span></div>
+                  : s.ai_checked_at ? <div className="muted small">Aucun refus de l'IA trouvé (robots.txt, tdmrep.json) {ago(s.ai_checked_at)}</div> : null}
               </td>
               <td className="btns">
-                <button className="btn sm" onClick={() => act(() => api.saveSource({ id: s.id, active: !s.active, ...(!s.active ? { fail_count: 0, disabled_reason: null } : {}) }), s.active ? 'Source désactivée' : 'Source activée')}>{s.active ? 'Désactiver' : 'Activer'}</button>
+                <button className="btn sm" onClick={() => (s.active || !s.ai_refusal || confirm(`${s.name} refuse que l'IA lise ses textes. La réactiver quand même ? Faites-le seulement avec un accord du média ou l'avis d'un avocat.`)) && act(() => api.saveSource({ id: s.id, active: !s.active, ...(!s.active ? { fail_count: 0, disabled_reason: null, ...(s.ai_refusal ? { ai_accepted: true } : {}) } : {}) }), s.active ? 'Source désactivée' : 'Source activée')}>{s.active ? 'Désactiver' : 'Activer'}</button>
                 <button className="btn sm" onClick={() => setEdit({ ...s })}>Modifier</button>
                 <button className="btn ghost sm" onClick={() => confirm(`Supprimer ${s.name} et ses dépêches récentes ? Les cartes déjà écrites restent.`) && act(() => api.deleteSource(s.id), 'Source supprimée')}>Supprimer</button>
               </td>

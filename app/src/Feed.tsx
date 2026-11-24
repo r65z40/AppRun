@@ -253,7 +253,7 @@ function ColumnStack({ y, W, H, ci, children }: { y: SharedValue<number>; W: num
 function Background({ card, k, ci, W, H, colX, y, tiltX, tiltY, parallax }: {
   card: Card; k: number; ci: number; W: number; H: number; colX: SharedValue<number>; y: SharedValue<number>; tiltX: SharedValue<number>; tiltY: SharedValue<number>; parallax: boolean;
 }) {
-  const photo = isAd(card) ? (card.c.image_url ? { uri: card.c.image_url } : PHOTOS.lampe) : isFlash(card) ? null : card.photo;
+  const photo = isAd(card) ? (card.c.image_url ? { uri: card.c.image_url } : PHOTOS.livre) : isFlash(card) ? null : card.photo;
   const grad = isArticle(card) ? card.grad : isFlash(card) ? FLASH_GRAD : null;
   const a = useAnimatedStyle(() => {
     const ox = ci * W + colX.value;

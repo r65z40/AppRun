@@ -30,6 +30,8 @@ export type Source = {
   id: string; name: string; url: string; rubric_hint: string | null; active: boolean; last_fetch_at: string | null; last_error: string | null;
   /** Suivi du moteur (migration 0018) : titres au dernier passage, dernière dépêche, échecs d'affilée, mise à l'écart automatique. */
   last_count?: number | null; last_item_at?: string | null; fail_count?: number; disabled_reason?: string | null; etag?: string | null; last_modified?: string | null;
+  /** Fouille par l'IA (migration 0028) : refus trouvé, date de la vérification, réactivée exprès par l'équipe. */
+  ai_refusal?: string | null; ai_checked_at?: string | null; ai_accepted?: boolean;
   /** Statistiques : titres reçus en 24 h, cartes écrites en 7 jours. */
   items_24h?: number; cards_7d?: number;
 };
@@ -88,7 +90,7 @@ export const RUBRICS: Record<string, string> = {
 export type Audience = 'all' | 'free' | 'premium' | 'guests' | 'members';
 export const AUDIENCES: Record<Audience, string> = { all: 'Tout le monde', free: 'Lecteurs gratuits', premium: 'Abonnés Premium', guests: 'Sans compte', members: 'Avec un compte' };
 export type AppMessage = { id: string; title: string; body: string; audience: Audience; active: boolean; ends_at: string | null; created_at: string };
-export const PHOTO_TAGS = ['train', 'neige', 'eau', 'fjord', 'facade', 'velo', 'batiment', 'sommet', 'route', 'livre', 'lampe'];
+export const PHOTO_TAGS = ['train', 'neige', 'eau', 'fjord', 'facade', 'velo', 'batiment', 'sommet', 'route', 'livre'];
 
 export interface Api {
   demo: boolean;

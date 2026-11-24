@@ -30,7 +30,7 @@ let articles: Article[] = [
   ], ['Les prix avaient fortement augmenté en 2022 et 2023.', 'Le pouvoir d’achat progresse légèrement.', 'La BCE se réunit le 11 décembre.'], { photo_tag: 'batiment', status: 'published', published_at: iso(1) }),
   art('tech', 'IA médicale : une start-up lyonnaise lève 120 M€', 'Son logiciel aide les radiologues à repérer plus tôt certains cancers.', [
     ['<b>120 millions d’euros</b> levés', 'Les Echos'], ['Déjà utilisé dans <b>40 hôpitaux</b>', 'Numerama'], ['<b>200 embauches</b> prévues', 'Les Echos'],
-  ], ['L’imagerie médicale est un terrain clé de l’IA.', 'L’argent servira à se lancer aux États-Unis.', 'Une autorisation américaine est attendue en 2027.'], { photo_tag: 'lampe' }),
+  ], ['L’imagerie médicale est un terrain clé de l’IA.', 'L’argent servira à se lancer aux États-Unis.', 'Une autorisation américaine est attendue en 2027.'], { photo_tag: 'livre' }),
   art('sport', 'Ligue des champions : le PSG gagne 3-1 à Munich', 'Les Parisiens prennent une option sur la qualification grâce à un doublé en seconde période.', [
     ['Victoire <b>3-1</b> à Munich', 'L’Équipe'], ['Doublé en <b>seconde période</b>', 'L’Équipe'], ['Match retour le <b>3 décembre</b>', 'L’Équipe'],
   ], ['Le PSG restait sur deux défaites en Europe.', 'Il prend la tête de son groupe.', 'Le retour se joue au Parc des Princes.'], { photo_tag: 'sommet', review_notes: ['fait 2 sans source valable'] }),
@@ -74,7 +74,7 @@ let flashes: Flash[] = [
 const SIMULATED: Article[] = [
   art('tech', 'L’Europe impose le chargeur universel aux PC', 'Dès 2027, tous les ordinateurs portables vendus dans l’UE devront se charger en USB-C.', [
     ['Obligation à partir du <b>28 avril 2027</b>', 'Numerama'], ['Concerne aussi les <b>tablettes et liseuses</b>', 'Le Monde'], ['Bruxelles vise <b>11 000 tonnes</b> de déchets en moins', 'franceinfo'],
-  ], ['Les smartphones sont déjà concernés depuis 2024.', 'Les fabricants de PC doivent adapter leurs prises.', 'Des contrôles seront menés par chaque pays.'], { importance: 6, photo_tag: 'lampe', created_at: new Date().toISOString() }),
+  ], ['Les smartphones sont déjà concernés depuis 2024.', 'Les fabricants de PC doivent adapter leurs prises.', 'Des contrôles seront menés par chaque pays.'], { importance: 6, photo_tag: 'livre', created_at: new Date().toISOString() }),
   art('culture', 'Le Louvre ouvre une nouvelle entrée', 'Un accès par la Colonnade doit désengorger la pyramide, saturée aux heures de pointe.', [
     ['Ouverture prévue en <b>2031</b>', 'Le Monde'], ['Coût estimé : <b>700 M€</b>', 'Les Echos'], ['<b>8,7 millions</b> de visiteurs en 2025', 'franceinfo'],
   ], ['La pyramide a été conçue pour 4 millions de visiteurs.', 'Une seconde entrée et de nouvelles salles.', 'Un concours d’architectes sera lancé l’an prochain.'], { importance: 5, photo_tag: 'batiment', created_at: new Date().toISOString() }),
