@@ -7,7 +7,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C, F, DRAWER_MS, GRAD3, alpha } from './theme';
-import { BRAND } from './brand';
+import { BRAND, RULES } from './brand';
 import type { Article, Comment, ReaderCard } from './types';
 import { BadgeIcons, ReaderCardView, pseudoColor } from './Badges';
 import { rubricOf, summaryOf } from './edition';
@@ -144,6 +144,12 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
                 <Text style={styles.blkP}>{t}</Text>
               </View>
             ))}
+            {a.matters && RULES.show_matters ? (
+              <View style={{ marginBottom: 26 }}>
+                <Text style={styles.blkH}>POURQUOI C'EST IMPORTANT</Text>
+                <Text style={styles.blkP}>{a.matters}</Text>
+              </View>
+            ) : null}
             {extra}
             <Angles a={a} />
             <View style={styles.srcList}>

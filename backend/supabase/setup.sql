@@ -3954,6 +3954,11 @@ revoke all on function public.compose_edition(uuid, text, text[], int, boolean) 
 alter table public.articles add column if not exists angles jsonb;  -- [{source, text}] ou null
 insert into public.setting_keys (key) values ('MEDIA_ANGLES') on conflict do nothing;
 
+-- ===== supabase/migrations/0034_pourquoi_important.sql
+-- « Pourquoi c'est important » : une phrase écrite par l'IA dans le même appel que la carte,
+-- affichée dans la lecture plein écran (réglage APP_RULES.show_matters, 1 par défaut) et modifiable dans Articles.
+alter table public.articles add column if not exists matters text;
+
 -- ===== supabase/migrations/0035_stats_lecture.sql
 -- Statistiques de lecture (tableau de bord), tirées du journal reading_events déjà tenu par l'app.
 -- Rien de nouveau n'est noté : un lecteur qui a coupé « Édition selon mes goûts » n'envoie aucun signal, il n'est donc pas compté.

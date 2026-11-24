@@ -446,7 +446,7 @@ function Mail({ get, save }: { get: (k: string) => string; save: Save }) {
 const RULES_DEF = {
   default_rubrics: ['france', 'monde', 'eco', 'tech'], default_quota: 24, quota_max: 60, next_edition: '6 h 00',
   emojis: ['❤️', '😂', '😮', '😢', '😡', '👏'], premium_benefits: ['Zéro pub dans votre fil', 'Le badge Premium à côté de votre pseudo', 'Vous soutenez {nom} directement'],
-  edition_refresh_min: 10, live_refresh_min: 3, past_days_free: 2,
+  edition_refresh_min: 10, live_refresh_min: 3, past_days_free: 2, show_matters: 1,
 };
 type Rules = typeof RULES_DEF;
 const HOURS = Array.from({ length: 24 }, (_, i) => { const m = 240 + i * 15; return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; });
@@ -491,6 +491,7 @@ function Rules({ raw, save }: { raw: string; save: Save }) {
         <h2>Lecture</h2>
         {pick('next_edition', 'Heure annoncée de la prochaine édition', 'Affichée sur l’écran de fin de journée. Le moteur prépare l’édition vers 5 h 30.', HOURS.map((h) => [h, h] as [string, string]), false)}
         {pick('edition_refresh_min', 'Rafraîchir l’édition toutes les', 'L’app recharge les nouvelles infos pendant qu’elle est ouverte (et à chaque retour dans l’app).', opts([5, 10, 15, 30, 60], ' min'))}
+        {pick('show_matters', 'Ligne « Pourquoi c’est important »', 'Une phrase écrite par l’IA, en bas du résumé « Lire » (jamais sur la carte du fil). Modifiable dans Articles.', [['1', 'Affichée'], ['0', 'Masquée']])}
         {pick('live_refresh_min', 'Rafraîchir la Dernière minute toutes les', 'Plus court = plus réactif, un peu plus de batterie.', opts([1, 2, 3, 5, 10], ' min'))}
         <div className="setting">
           <div><b>Réactions emoji</b><p className="muted small">En mode « emoji » (page Réglages). Séparées par un espace, 2 à 8.</p></div>

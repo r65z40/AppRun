@@ -227,14 +227,14 @@ async function edition() {
       if (publish) pubToday++;
       await q(
         `insert into articles (edition_date, rubric_id, status, rank, importance, essential, title, key_sentence, facts, summary,
-                               photo_tag, raw_item_ids, review_notes, model, published_at, photo_url, photo_credit, sensitive, run_id, angles)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+                               photo_tag, raw_item_ids, review_notes, model, published_at, photo_url, photo_credit, sensitive, run_id, angles, matters)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
         [
           DATE, s.rubric, publish ? 'published' : 'draft', (ranks[s.rubric] = (ranks[s.rubric] ?? 0) + 1) - 1,
           s.importance, s.essential, card.title.slice(0, 90), card.key_sentence, JSON.stringify(facts),
           JSON.stringify([card.summary.context, card.summary.change, card.summary.next]), card.photo_tag,
           its.flatMap((i) => [fresh[i.n - 1].id, ...(fresh[i.n - 1].dups ?? [])]), issues, model(), publish ? new Date() : null, photo?.url ?? null, photo?.credit ?? null,
-          !!s.sensitive, J.id, ((x) => (x ? JSON.stringify(x) : null))(cleanAngles(card, its)),
+          !!s.sensitive, J.id, ((x) => (x ? JSON.stringify(x) : null))(cleanAngles(card, its)), card.matters || null,
         ],
       );
       written++;

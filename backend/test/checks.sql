@@ -7,6 +7,7 @@ select count(*) as brouillons, count(*) > 0 as ok from articles where status = '
 \echo ÉCHEC  aucun brouillon
 \quit
 \endif
+select case when bool_and(matters is not null) then 'OK  « pourquoi c''est important » écrit avec chaque carte' else 'ÉCHEC  « pourquoi c''est important » manquant' end from articles \g
 -- 2. Un visiteur anonyme ne voit pas les brouillons
 set role anon;
 select count(*) as vus from articles \gset
