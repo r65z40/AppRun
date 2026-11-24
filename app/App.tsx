@@ -24,7 +24,7 @@ import { Premium } from './src/Premium';
 import { ShareCardHost } from './src/ShareCard';
 import { storeLogin } from './src/purchases';
 import * as acc from './src/account';
-import { loadMyEdition, resetTaste, signal, type Pick, type Signal } from './src/algo';
+import { loadMyEdition, resetTaste, setCollect, signal, type Pick, type Signal } from './src/algo';
 import { isAd, isArticle, type Article, type Badge, type Card, type Comment } from './src/types';
 import { BadgeToast } from './src/Badges';
 import { FollowRow, TopicsScreen } from './src/Topics';
@@ -125,6 +125,7 @@ function Main() {
   // Notification du matin : état de cet appareil, puis reprogrammée à chaque ouverture (heure et textes du moment).
   useEffect(() => { notifWanted().then((v) => setP((x) => ({ ...x, notif: v }))); }, []);
   useEffect(() => { if (phase === 'feed') syncNotif(p.time, p.quota); }, [phase, p.time, p.quota]);
+  useEffect(() => setCollect(p.perso !== false), [p.perso]);
 
   // Fil
   // Dernière minute et campagnes de pub : rechargées toutes les 3 minutes et au retour dans l'app.

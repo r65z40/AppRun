@@ -18,9 +18,13 @@ async function flush() {
 }
 AppState.addEventListener('change', (s) => s !== 'active' && flush());
 
+let collect = true;
+/** Réglages > « Édition selon mes goûts » coupé : l'app ne note plus rien de ce que lit le lecteur (RGPD). */
+export function setCollect(on: boolean) { collect = on; if (!on) queue = []; }
+
 /** Note un signal de lecture (infos de la vraie base seulement), envoyé par paquets toutes les 15 s. */
 export function signal(articleId: string, k: Signal, ms?: number) {
-  if (!acc.isLive(articleId)) return;
+  if (!collect || !acc.isLive(articleId)) return;
   queue.push({ a: articleId, k, ...(ms === undefined ? {} : { ms: Math.round(ms) }) });
   if (queue.length >= 20) flush();
   else if (!timer) timer = setTimeout(flush, 15000);

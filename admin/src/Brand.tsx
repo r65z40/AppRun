@@ -46,8 +46,8 @@ const FORMATS: [Share['format'], string, string, number][] = [
   ['square', 'Carré', 'Messages, X, LinkedIn (sans les faits)', 360],
 ];
 type Notif = typeof NOTIF_DEF;
-type Tab = 'identity' | 'share' | 'texts' | 'rules' | 'nudges' | 'notif' | 'mail';
-const TABS: [Tab, string][] = [['identity', 'Identité'], ['share', 'Carte de partage'], ['texts', 'Textes de l’app'], ['rules', 'Règles de l’app'], ['nudges', 'Compte et Premium'], ['notif', 'Notification'], ['mail', 'E-mails']];
+type Tab = 'identity' | 'share' | 'texts' | 'rules' | 'nudges' | 'notif' | 'mail' | 'legal';
+const TABS: [Tab, string][] = [['identity', 'Identité'], ['share', 'Carte de partage'], ['texts', 'Textes de l’app'], ['rules', 'Règles de l’app'], ['nudges', 'Compte et Premium'], ['notif', 'Notification'], ['mail', 'E-mails'], ['legal', 'Pages légales']];
 const isHex = (v: string) => /^#[0-9a-f]{6}$/i.test(v);
 const parse = <T,>(v: string, d: T): T => { try { return v ? { ...d, ...JSON.parse(v) } : d; } catch { return d; } };
 
@@ -67,7 +67,7 @@ export function BrandPage({ say }: { say: (m: string) => void }) {
         <div>
           <div className="eyebrow">Personnalisation</div>
           <h1>L’app à votre image</h1>
-          <p className="muted">Nom, logo, couleurs, police, textes, notification du matin et e-mails. L’app lit ces réglages à chaque ouverture : pas besoin de nouvelle version sur les stores. Un champ laissé vide garde la valeur d’origine.</p>
+          <p className="muted">Nom, logo, couleurs, police, textes, notification du matin, e-mails et pages légales. L’app lit ces réglages à chaque ouverture : pas besoin de nouvelle version sur les stores. Un champ laissé vide garde la valeur d’origine.</p>
         </div>
       </header>
       <div className="tabs">{TABS.map(([t, l]) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{l}</button>)}</div>
@@ -76,6 +76,7 @@ export function BrandPage({ say }: { say: (m: string) => void }) {
       {tab === 'texts' ? <Texts key={get('APP_TEXTS')} raw={get('APP_TEXTS')} save={save} /> : null}
       {tab === 'notif' ? <NotifTab key={get('NOTIFICATIONS')} raw={get('NOTIFICATIONS')} brand={parse(get('BRAND'), { name: 'TITRE' } as Brand).name || 'TITRE'} save={save} /> : null}
       {tab === 'mail' ? <Mail get={get} save={save} /> : null}
+      {tab === 'legal' ? <Legal get={get} save={save} /> : null}
       {tab === 'rules' ? <Rules key={get('APP_RULES')} raw={get('APP_RULES')} save={save} /> : null}
       {tab === 'nudges' ? <Nudges key={get('NUDGES')} raw={get('NUDGES')} save={save} /> : null}
     </>
@@ -394,6 +395,34 @@ function Mail({ get, save }: { get: (k: string) => string; save: Save }) {
       <div className="setting-actions">
         <span className="muted small">Il faut le secret GitHub SUPABASE_ACCESS_TOKEN (le même que pour Premium).</span>
         <button className="btn primary" disabled={!dirty.length && !pass.trim()} onClick={saveAll}>Enregistrer</button>
+      </div>
+    </>
+  );
+}
+
+/* ---------- Pages légales ---------- */
+// Lues dans l'app (Réglages > Informations) et sur le site : c'est l'adresse à donner à l'App Store et à Google Play.
+const LEGAL: [string, string, string][] = [['LEGAL_PRIVACY', 'Politique de confidentialité', 'privacy'], ['LEGAL_TERMS', 'Conditions d’utilisation', 'terms'], ['LEGAL_NOTICE', 'Mentions légales', 'notice']];
+
+function Legal({ get, save }: { get: (k: string) => string; save: Save }) {
+  const [d, setD] = useState<Record<string, string>>(() => Object.fromEntries(LEGAL.map(([k]) => [k, get(k)])));
+  const dirty = LEGAL.filter(([k]) => (d[k] ?? '').trim() !== get(k));
+  const site = new URL('..', location.href).href; // le back office est dans /admin/, l'app juste au-dessus
+  const saveAll = async () => { for (const [k] of dirty) if (!(await save(k, d[k] ?? '', 'Pages légales enregistrées'))) return; };
+  return (
+    <>
+      <p className="warn small">Ces textes sont des modèles de départ : remplacez chaque [crochet] par vos informations et faites-les relire par un juriste avant la publication sur les stores.</p>
+      <section className="panel settings">
+        {LEGAL.map(([k, label, page]) => (
+          <div className="setting column" key={k}>
+            <div><b>{label}</b><p className="muted small">Adresse publique : <a href={`${site}?legal=${page}`} target="_blank" rel="noreferrer">{`${site}?legal=${page}`}</a>. {'{nom}'} devient le nom de l’app. Texte simple : une ligne vide sépare les paragraphes.</p></div>
+            <textarea rows={14} maxLength={20000} value={d[k] ?? ''} placeholder="Modèle rempli à l’installation de la base" onChange={(e) => setD({ ...d, [k]: e.target.value })} aria-label={label} />
+          </div>
+        ))}
+      </section>
+      <div className="setting-actions">
+        <span className="muted small">Visible dans l’app et sur le site dès l’enregistrement.</span>
+        <button className="btn primary" disabled={!dirty.length} onClick={saveAll}>Enregistrer</button>
       </div>
     </>
   );
