@@ -149,7 +149,7 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
             <View style={styles.srcList}>
               <Text style={styles.lbl}>SOURCES CONSULTÉES</Text>
               {[...new Map(a.facts.map((f) => [f.source, f.doc])).entries()].map(([m, url]) => (
-                <Text key={m} style={styles.srcLink} onPress={() => { onSignal('click'); if (typeof url === 'string' && url.startsWith('http')) Linking.openURL(url); }}>Lire l'article complet sur {m} ›</Text>
+                <Text key={m} style={styles.srcLink} accessibilityRole="link" onPress={() => { onSignal('click'); if (typeof url === 'string' && url.startsWith('http')) Linking.openURL(url); }}>Lire l'article complet sur {m} ›</Text>
               ))}
               {a.credit ? <Text style={[styles.srcLink, { color: C.text3, fontSize: 12, marginTop: 8 }]}>Photo : {a.credit}</Text> : null}
             </View>
@@ -237,7 +237,7 @@ export function CommentsSheet({ a, open, onClose, H, comments, total, loading, o
         <Text style={{ color: '#fff', fontFamily: F.black, fontSize: 17 }}>{total} commentaire{total > 1 ? 's' : ''}</Text>
         <View style={styles.sort}>
           {(['pert', 'rec'] as const).map((k) => (
-            <Pressable key={k} onPress={() => setSort(k)} style={[styles.sortBtn, sort === k && styles.sortOn]}>
+            <Pressable key={k} onPress={() => setSort(k)} style={[styles.sortBtn, sort === k && styles.sortOn]} accessibilityRole="button" accessibilityState={{ selected: sort === k }}>
               <Text style={[styles.sortTxt, sort === k && { color: '#fff' }]}>{k === 'pert' ? 'Pertinence' : 'Récents'}</Text>
             </Pressable>
           ))}
@@ -298,20 +298,20 @@ function CommentRow({ c, fresh, onWho, onVote, onFlag, onBlock }: { c: Comment; 
       </View>
       <Text style={styles.cmtTxt}>{c.text}</Text>
       <View style={styles.cmtAct}>
-        <Pressable onPress={() => onVote(1)} style={styles.vote} hitSlop={8} accessibilityLabel="J'aime ce commentaire">
+        <Pressable accessibilityRole="button" onPress={() => onVote(1)} style={styles.vote} hitSlop={8} accessibilityLabel="J'aime ce commentaire">
           <Icon name="up" size={15} color={c.mine === 1 ? C.soft : C.text2} fill={c.mine === 1 ? C.violet : 'none'} />
           <Text style={styles.voteTxt}>{c.likes + (c.mine === 1 ? 1 : 0)}</Text>
         </Pressable>
-        <Pressable onPress={() => onVote(-1)} style={styles.vote} hitSlop={8} accessibilityLabel="Je n'aime pas ce commentaire">
+        <Pressable accessibilityRole="button" onPress={() => onVote(-1)} style={styles.vote} hitSlop={8} accessibilityLabel="Je n'aime pas ce commentaire">
           <Icon name="down" size={15} color={c.mine === -1 ? C.coral : C.text2} fill={c.mine === -1 ? C.coral : 'none'} />
           <Text style={styles.voteTxt}>{c.dislikes + (c.mine === -1 ? 1 : 0)}</Text>
         </Pressable>
         {c.own ? null : (
-          <Pressable onPress={onBlock} style={[styles.vote, { marginLeft: 'auto' }]} hitSlop={8} accessibilityLabel={`Ne plus voir les commentaires de ${c.who}`}>
+          <Pressable accessibilityRole="button" onPress={onBlock} style={[styles.vote, { marginLeft: 'auto' }]} hitSlop={8} accessibilityLabel={`Ne plus voir les commentaires de ${c.who}`}>
             <Text style={styles.voteTxt}>Bloquer</Text>
           </Pressable>
         )}
-        <Pressable onPress={onFlag} style={[styles.vote, c.own ? { marginLeft: 'auto' } : null]} hitSlop={8}>
+        <Pressable onPress={onFlag} style={[styles.vote, c.own ? { marginLeft: 'auto' } : null]} hitSlop={8} accessibilityRole="button">
           {c.own ? null : <Icon name="flag" size={15} color={C.text2} />}
           <Text style={styles.voteTxt}>{c.own ? 'Supprimer' : 'Signaler'}</Text>
         </Pressable>

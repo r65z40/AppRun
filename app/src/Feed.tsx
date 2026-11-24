@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Linking, Platform, StyleSheet, Text, View, Pressable, type LayoutChangeEvent } from 'react-native';
+import { AccessibilityInfo, Linking, Platform, StyleSheet, Text, View, Pressable, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -67,6 +67,10 @@ export type FeedApi = {
   onLess: (a: Article) => void;
   onSettings: () => void;
 };
+
+// Le fil est fait d'écrans fixes : le texte y grandit avec le réglage du téléphone, jusqu'à +30 %.
+// Le résumé (« Lire ») et les réglages défilent : là, il grandit sans limite.
+const MAX_SCALE = 1.3;
 
 /* Projection de l'élan (Apple, « Designing Fluid Interfaces ») */
 function project(v: number) {
@@ -161,12 +165,14 @@ export function Feed(p: FeedApi & { W: number; H: number }) {
     q.setPos(n, col.id, first >= 0 ? first : q.idx[col.id] ?? 0);
   }
 
+  // Une info plus bas (d = 1) ou plus haut (d = -1), comme le geste : molette, flèches, lecteur d'écran.
+  const stepY = (d: number) => { const q = latest.current; releaseY(Math.max(0, (q.idx[q.cols[q.ri].id] ?? 0) + d), 0); };
+
   // Ordinateur : la molette et les flèches du clavier font comme les gestes, seulement si rien n'est ouvert par-dessus le fil.
   const root = useRef<unknown>(null);
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const onTop = () => (root.current as unknown as HTMLElement)?.contains(document.elementFromPoint(innerWidth / 2, innerHeight / 2));
-    const stepY = (d: number) => { const q = latest.current; releaseY(Math.max(0, (q.idx[q.cols[q.ri].id] ?? 0) + d), 0); };
     let until = 0;
     const wheel = (e: WheelEvent) => {
       if (!onTop()) return;
@@ -255,7 +261,7 @@ export function Feed(p: FeedApi & { W: number; H: number }) {
           {cols.slice(0, MAX_COLS).map((col, ci) => (
             <ColumnStack key={'fg' + col.id} y={ys[ci]} W={W} H={H} ci={ci}>
               {col.cards.map((c, k) => (
-                <CardContent key={c.id} card={c} k={k} W={W} H={H} tag={col.tags[c.id]} why={col.why?.[c.id]} api={p} bottom={insets.bottom} tiltX={p.tiltX} tiltY={p.tiltY} />
+                <CardContent key={c.id} card={c} k={k} here={ci === p.ri && k === (p.idx[col.id] ?? 0)} step={stepY} W={W} H={H} tag={col.tags[c.id]} why={col.why?.[c.id]} api={p} bottom={insets.bottom} tiltX={p.tiltX} tiltY={p.tiltY} />
               ))}
             </ColumnStack>
           ))}
@@ -297,7 +303,7 @@ function Background({ card, k, ci, W, H, colX, y, tiltX, tiltY, parallax }: {
   });
   return (
     // Le cadre coupe en haut et en bas (une carte par écran) mais déborde sur les côtés
-    <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: k * H, left: -EXT, width: W + 2 * EXT, height: H, overflow: 'hidden' }, fade]}>
+    <Animated.View pointerEvents="none" aria-hidden style={[{ position: 'absolute', top: k * H, left: -EXT, width: W + 2 * EXT, height: H, overflow: 'hidden' }, fade]}>
       <Animated.View style={[{ position: 'absolute', left: -30, right: -30, top: -H * 0.25, bottom: -H * 0.25 }, a]}>
         {photo ? (
           <Image source={photo} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={8} />
@@ -322,28 +328,37 @@ function Background({ card, k, ci, W, H, colX, y, tiltX, tiltY, parallax }: {
   );
 }
 
-function CardContent({ card, k, W, H, tag, why, api, bottom, tiltX, tiltY }: {
-  card: Card; k: number; W: number; H: number; tag?: Tag; why?: string; api: FeedApi; bottom: number; tiltX: SharedValue<number>; tiltY: SharedValue<number>;
+function CardContent({ card, k, here, step, W, H, tag, why, api, bottom, tiltX, tiltY }: {
+  card: Card; k: number; here: boolean; step: (d: number) => void; W: number; H: number; tag?: Tag; why?: string; api: FeedApi; bottom: number; tiltX: SharedValue<number>; tiltY: SharedValue<number>;
 }) {
   // le texte bouge très peu, à l'opposé de la photo : effet de profondeur
   const depth = useAnimatedStyle(() => ({ transform: [{ translateX: -tiltX.value * 0.18 }, { translateY: -tiltY.value * 0.18 }] }));
   const pad = { paddingBottom: Math.max(28, bottom + 14) };
   const [pick, setPick] = useState(false); // choix d'un emoji ouvert
   const [whyOpen, setWhyOpen] = useState(false); // « Pourquoi cette info ? » ouvert
+  // Lecteur d'écran (VoiceOver, TalkBack) : seule l'info à l'écran est lue ; on passe à la suivante par les actions du titre.
+  const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
+  useEffect(() => { if (here && Platform.OS !== 'web' && titleRef.current) AccessibilityInfo.sendAccessibilityEvent(titleRef.current, 'focus'); }, [here]);
+  const nav = {
+    ref: titleRef,
+    accessibilityActions: [{ name: 'next', label: 'Info suivante' }, { name: 'prev', label: 'Info précédente' }],
+    onAccessibilityAction: (e: AccessibilityActionEvent) => step(e.nativeEvent.actionName === 'next' ? 1 : -1),
+  };
+  const box = [styles.card, { top: k * H, width: W, height: H }];
   if (isFlash(card)) {
     return (
-      <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
+      <View style={box} pointerEvents="box-none" aria-hidden={!here}>
         <Animated.View style={[styles.content, pad, depth]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <LiveDot size={8} />
-            <Text style={styles.kicker}><Text style={{ color: C.coral }}>EN DIRECT</Text> · {flashTime(card.at).toUpperCase()}</Text>
+            <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.kicker}><Text maxFontSizeMultiplier={MAX_SCALE} style={{ color: C.coral }}>EN DIRECT</Text> · {flashTime(card.at).toUpperCase()}</Text>
           </View>
-          <Text style={[styles.title, { marginTop: 14 }]}>{card.title}</Text>
-          <Text style={styles.key}>{card.sentence}</Text>
+          <Text maxFontSizeMultiplier={MAX_SCALE} style={[styles.title, { marginTop: 14 }]} {...nav}>{card.title}</Text>
+          <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.key}>{card.sentence}</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 6 }}>
             {card.sources.map((s) => (
-              <Pressable key={s.url} onPress={() => (s.url.startsWith('http') ? Linking.openURL(s.url) : api.onToast(`Ouvre l'article : ${s.source}`))} hitSlop={8}>
-                <Text style={styles.flashSrc}>{s.source} ↗</Text>
+              <Pressable key={s.url} onPress={() => (s.url.startsWith('http') ? Linking.openURL(s.url) : api.onToast(`Ouvre l'article : ${s.source}`))} hitSlop={8} accessibilityRole="link">
+                <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.flashSrc}>{s.source} ↗</Text>
               </Pressable>
             ))}
           </View>
@@ -353,11 +368,11 @@ function CardContent({ card, k, W, H, tag, why, api, bottom, tiltX, tiltY }: {
   }
   if (isAd(card)) {
     return (
-      <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
+      <View style={box} pointerEvents="box-none" aria-hidden={!here}>
         <Animated.View style={[styles.content, pad, depth]}>
-          <Text style={styles.kicker}>SPONSORISÉ · {card.c.advertiser.toUpperCase()}</Text>
-          <Text style={styles.title}>{card.c.title.toUpperCase()}</Text>
-          {card.c.body ? <Text style={styles.key}>{card.c.body}</Text> : null}
+          <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.kicker}>SPONSORISÉ · {card.c.advertiser.toUpperCase()}</Text>
+          <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.title} {...nav}>{card.c.title.toUpperCase()}</Text>
+          {card.c.body ? <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.key}>{card.c.body}</Text> : null}
           <Press
             onPress={() => {
               if (!card.c.url) return api.onToast("Ouvre le site de l'annonceur");
@@ -366,7 +381,7 @@ function CardContent({ card, k, W, H, tag, why, api, bottom, tiltX, tiltY }: {
             }}
             style={styles.adCta}
           >
-            <Text style={{ color: '#fff', fontFamily: F.semi, fontSize: 15 }}>{card.c.cta}</Text>
+            <Text maxFontSizeMultiplier={MAX_SCALE} style={{ color: '#fff', fontFamily: F.semi, fontSize: 15 }}>{card.c.cta}</Text>
           </Press>
         </Animated.View>
       </View>
@@ -378,29 +393,29 @@ function CardContent({ card, k, W, H, tag, why, api, bottom, tiltX, tiltY }: {
   const emo = (e: string) => (a.emojis?.[e] ?? 0) + (mine === e ? 1 : 0);
   const emoTotal = RULES.emojis.reduce((n, e) => n + emo(e), 0);
   return (
-    <View style={[styles.card, { top: k * H, width: W, height: H }]} pointerEvents="box-none">
+    <View style={box} pointerEvents="box-none" aria-hidden={!here}>
       <Animated.View style={[styles.content, pad, depth]}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Text style={styles.kicker}>{rubricOf(a).name.toUpperCase()}</Text>
+          <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.kicker}>{rubricOf(a).name.toUpperCase()}</Text>
           {tag ? (
             <Pressable onPress={() => { setWhyOpen(!whyOpen); feel('select'); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Pourquoi cette info ?" style={{ marginLeft: 'auto' }}>
-              <Text style={styles.whyLink}>Pourquoi ?</Text>
+              <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.whyLink}>Pourquoi ?</Text>
             </Pressable>
           ) : null}
         </View>
         {whyOpen ? (
           <View style={styles.whyBox}>
-            <Text style={styles.whyTxt}>{why ?? 'Choisie pour votre édition du jour.'}</Text>
+            <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.whyTxt}>{why ?? 'Choisie pour votre édition du jour.'}</Text>
             {tag !== 'ess' ? (
               <Pressable onPress={() => { setWhyOpen(false); api.onLess(a); }} hitSlop={8} accessibilityRole="button">
-                <Text style={styles.whyLess}>Moins de sujets comme ça</Text>
+                <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.whyLess}>Moins de sujets comme ça</Text>
               </Pressable>
             ) : null}
           </View>
         ) : null}
         {/* Toucher le grand titre (ou la phrase clé) ouvre l'article, comme le bouton « Lire ». */}
-        <Text style={styles.title} onPress={() => api.onRead(a)} suppressHighlighting accessibilityRole="button" accessibilityHint="Ouvre le résumé de l'info">{a.title.toUpperCase()}</Text>
-        <Text style={styles.key} onPress={() => api.onRead(a)} suppressHighlighting>{a.key}</Text>
+        <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.title} onPress={() => api.onRead(a)} suppressHighlighting accessibilityRole="button" accessibilityHint="Ouvre le résumé de l'info" {...nav}>{a.title.toUpperCase()}</Text>
+        <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.key} onPress={() => api.onRead(a)} suppressHighlighting>{a.key}</Text>
         <View>
           {a.facts.map((f, i) => (
             <FactRow key={i} text={f.text} source={f.source} doc={f.doc} last={i === a.facts.length - 1} onFlip={() => api.onSignal(a, 'source')} onSource={() => { api.onSignal(a, 'click'); if (/^https?:\/\//.test(f.doc)) Linking.openURL(f.doc).catch(() => api.onToast('Lien indisponible')); else api.onToast('Ouverture de la source officielle'); }} />
@@ -411,19 +426,19 @@ function CardContent({ card, k, W, H, tag, why, api, bottom, tiltX, tiltY }: {
             <EmojiPicker mine={mine} count={emo} onPick={(e) => { setPick(false); api.onEmoji(a, e === mine ? null : e); }} />
           ) : null}
           <Press onPress={() => api.onRead(a)} accessibilityLabel="Lire le résumé, 1 minute" style={[styles.read, { marginRight: 'auto' }]}>
-            <Text style={styles.readTxt}>Lire · 1 min</Text>
+            <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.readTxt}>Lire · 1 min</Text>
           </Press>
           <ReactBtn icon="up" n={a.likes + (r === 1 ? 1 : 0)} on={r === 1} color={C.like} ratio={shares(a, r).up} onPress={() => api.onReact(a, 1)} label="J'aime" />
           <ReactBtn icon="down" on={r === -1} color={C.dislike} ratio={shares(a, r).down} onPress={() => api.onReact(a, -1)} label="Je n'aime pas" />
           {api.emojiMode ? (
             <Press onPress={() => { setPick(!pick); feel('select'); }} style={styles.ic} accessibilityLabel="Réagir avec un emoji">
-              {mine ? <Text style={{ fontSize: 20 }}>{mine}</Text> : <Icon name="smile" size={20} />}
-              <Text style={styles.icTxt}>{emoTotal}</Text>
+              {mine ? <Text maxFontSizeMultiplier={MAX_SCALE} style={{ fontSize: 20 }}>{mine}</Text> : <Icon name="smile" size={20} />}
+              <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.icTxt}>{emoTotal}</Text>
             </Press>
           ) : (
             <Press onPress={() => api.onComments(a)} style={styles.ic} accessibilityLabel="Commentaires">
               <Icon name="cmt" size={20} />
-              <Text style={styles.icTxt}>{api.commentCount(a)}</Text>
+              <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.icTxt}>{api.commentCount(a)}</Text>
             </Press>
           )}
           <Press onPress={() => { feel('light'); onShare(a, api); }} style={styles.ic} accessibilityLabel="Partager en image">
@@ -501,7 +516,7 @@ export function ReactBtn({ icon, n, on, color, ratio, onPress, label, row }: { i
           </Animated.View>
         </Animated.View>
       </View>
-      {n != null ? <Text style={row ? styles.footTxt : styles.icTxt}>{n}</Text> : null}
+      {n != null ? <Text maxFontSizeMultiplier={MAX_SCALE} style={row ? styles.footTxt : styles.icTxt}>{n}</Text> : null}
     </Pressable>
   );
 }
@@ -524,8 +539,8 @@ function EmojiPicker({ mine, count, onPick }: { mine?: string; count: (e: string
     <Animated.View entering={FadeIn.duration(160)} exiting={FadeOut.duration(120)} style={styles.picker}>
       {RULES.emojis.map((e) => (
         <Press key={e} scaleTo={0.85} onPress={() => { feel('light', 'pop'); onPick(e); }} style={[styles.pickBtn, mine === e && styles.pickOn]} accessibilityLabel={`Réagir ${e}`}>
-          <Text style={{ fontSize: 24 }}>{e}</Text>
-          <Text style={styles.icTxt}>{count(e)}</Text>
+          <Text maxFontSizeMultiplier={MAX_SCALE} style={{ fontSize: 24 }}>{e}</Text>
+          <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.icTxt}>{count(e)}</Text>
         </Press>
       ))}
     </Animated.View>
@@ -554,14 +569,14 @@ function FactRow({ text, source, doc, last, onSource, onFlip }: { text: string; 
   return (
     <Pressable onPress={flip} accessibilityRole="button" accessibilityHint="Affiche la source de ce fait">
       <Animated.View style={[styles.fact, last && styles.factLast, front]}>
-        <Rich text={text} style={styles.factTxt} />
+        <Rich text={text} style={styles.factTxt} maxScale={MAX_SCALE} />
       </Animated.View>
       <Animated.View style={[styles.factBack, rear]} pointerEvents={back ? 'auto' : 'none'}>
-        <Text style={styles.backTxt} numberOfLines={2}>
-          ↳ {source}{/^https?:\/\//.test(doc) ? null : <Text style={{ color: C.text2 }}> · {doc}</Text>}
+        <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.backTxt} numberOfLines={2}>
+          ↳ {source}{/^https?:\/\//.test(doc) ? null : <Text maxFontSizeMultiplier={MAX_SCALE} style={{ color: C.text2 }}> · {doc}</Text>}
         </Text>
-        <Pressable onPress={onSource} hitSlop={10}>
-          <Text style={styles.backLink}>Voir ›</Text>
+        <Pressable onPress={onSource} hitSlop={10} accessibilityRole="link" accessibilityLabel={`Voir la source : ${source}`}>
+          <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.backLink}>Voir ›</Text>
         </Pressable>
       </Animated.View>
     </Pressable>
@@ -636,7 +651,7 @@ function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; 
               >
                 <TabFade x={lay[i]?.x} w={lay[i]?.w} tx={tx} boxW={boxW}>
                   {c.id === 'flash' ? <LiveDot size={7} /> : null}
-                  <Text style={[styles.rubTxt, c.extra && { opacity: 0.55 }, c.id === 'flash' && flashFresh && i !== api.ri && { color: C.coral }, i === api.ri && styles.rubOn]}>{c.name}</Text>
+                  <Text maxFontSizeMultiplier={MAX_SCALE} style={[styles.rubTxt, c.extra && { opacity: 0.55 }, c.id === 'flash' && flashFresh && i !== api.ri && { color: C.coral }, i === api.ri && styles.rubOn]}>{c.name}</Text>
                 </TabFade>
                 {i === api.ri ? <View style={styles.rubDot} /> : null}
               </Pressable>
@@ -653,13 +668,13 @@ function Header({ api, top, W, goRub }: { api: FeedApi; top: number; W: number; 
             <LinearGradient colors={GRAD3} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
           </Animated.View>
         </View>
-        <Text style={styles.progTxt}>
+        <Text maxFontSizeMultiplier={MAX_SCALE} style={styles.progTxt}>
           {api.cols[api.ri]?.id === 'flash' ? (
             'Mise à jour en continu'
           ) : (
             <>
               {api.cols[api.ri]?.id === 'edition' ? 'Sélection selon vos choix · ' : ''}
-              <Text style={{ color: '#fff' }}>{api.seenN}</Text> / {api.limit}
+              <Text maxFontSizeMultiplier={MAX_SCALE} style={{ color: '#fff' }}>{api.seenN}</Text> / {api.limit}
             </>
           )}
         </Text>

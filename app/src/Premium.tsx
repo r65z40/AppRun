@@ -121,7 +121,7 @@ export function Premium({ W, onClose, onToast, onNeedAccount, demo, demoOn, onDe
       <LinearGradient colors={['rgba(200,107,250,0.30)', alpha(C.blue, 0.10), alpha(C.night, 0)]} style={[StyleSheet.absoluteFill, { height: '55%' }]} />
       <View style={[styles.head, { paddingTop: insets.top + 18 }]}>
         <View style={{ flex: 1 }} />
-        <Pressable onPress={() => leave(onClose)} hitSlop={12}><Text style={styles.close}>Fermer</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={() => leave(onClose)} hitSlop={12}><Text style={styles.close}>Fermer</Text></Pressable>
       </View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 26, paddingBottom: Math.max(30, insets.bottom + 16), gap: 18 }} keyboardShouldPersistTaps="handled">
@@ -153,7 +153,7 @@ export function Premium({ W, onClose, onToast, onNeedAccount, demo, demoOn, onDe
               ) : null}
               {sub?.status === 'cancelled' ? <Text style={styles.small}>Résilié : vous gardez Premium jusqu’à la date de fin, sans nouveau prélèvement.</Text> : null}
               {sub?.status === 'grace' ? <Text style={[styles.small, { color: C.coral }]}>Le dernier paiement n’est pas passé. Mettez à jour votre moyen de paiement dans le store pour garder Premium.</Text> : null}
-              {demo ? <Pressable onPress={() => { onDemo(false); feel('light'); }} hitSlop={8}><Text style={styles.link}>Revenir à la version gratuite (démo)</Text></Pressable> : null}
+              {demo ? <Pressable accessibilityRole="button" onPress={() => { onDemo(false); feel('light'); }} hitSlop={8}><Text style={styles.link}>Revenir à la version gratuite (démo)</Text></Pressable> : null}
             </>
           ) : (
             <>
@@ -184,8 +184,8 @@ export function Premium({ W, onClose, onToast, onNeedAccount, demo, demoOn, onDe
               ) : null}
               {!demo ? (
                 <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 22 }}>
-                  {storeOn ? <Pressable onPress={onRestore} hitSlop={8}><Text style={styles.link}>{busy === 'restore' ? 'Recherche…' : 'Restaurer mes achats'}</Text></Pressable> : null}
-                  <Pressable onPress={() => { setErr(null); setCode(code === null ? '' : null); }} hitSlop={8}><Text style={styles.link}>J’ai un code</Text></Pressable>
+                  {storeOn ? <Pressable accessibilityRole="button" onPress={onRestore} hitSlop={8}><Text style={styles.link}>{busy === 'restore' ? 'Recherche…' : 'Restaurer mes achats'}</Text></Pressable> : null}
+                  <Pressable accessibilityRole="button" onPress={() => { setErr(null); setCode(code === null ? '' : null); }} hitSlop={8}><Text style={styles.link}>J’ai un code</Text></Pressable>
                 </View>
               ) : null}
               {code !== null ? (
@@ -200,8 +200,8 @@ export function Premium({ W, onClose, onToast, onNeedAccount, demo, demoOn, onDe
 
           {TERMS || PRIVACY ? (
             <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 18 }}>
-              {TERMS ? <Pressable onPress={() => Linking.openURL(TERMS)}><Text style={styles.legal}>Conditions d’utilisation</Text></Pressable> : null}
-              {PRIVACY ? <Pressable onPress={() => Linking.openURL(PRIVACY)}><Text style={styles.legal}>Confidentialité</Text></Pressable> : null}
+              {TERMS ? <Pressable accessibilityRole="link" onPress={() => Linking.openURL(TERMS)}><Text style={styles.legal}>Conditions d’utilisation</Text></Pressable> : null}
+              {PRIVACY ? <Pressable accessibilityRole="link" onPress={() => Linking.openURL(PRIVACY)}><Text style={styles.legal}>Confidentialité</Text></Pressable> : null}
             </View>
           ) : null}
         </ScrollView>
