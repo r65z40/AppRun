@@ -67,7 +67,8 @@ export const RUBRICS: Rubric[] = [
      "Les trains de nuit entre Paris et l'Italie avaient été suspendus fin 2020, faute de voyageurs pendant la crise sanitaire et à cause du coût de rénovation des voitures-couchettes. Depuis, plusieurs liaisons de nuit ont rouvert en Europe, portées par la demande de voyages moins émetteurs que l'avion.",
      "La ligne reprend le 14 décembre avec trois allers-retours par semaine. Le train part de Paris en fin de soirée, s'arrête à Dijon, Turin et Florence, et arrive à Rome en milieu de matinée. Les réservations ouvrent lundi. Trois classes sont proposées : places assises, couchettes à six et cabines privatives.",
      "La compagnie prévoit de passer à un départ quotidien à l'été 2027 si le taux de remplissage dépasse 70 %. Une prolongation vers Naples est à l'étude. Les associations d'usagers demandent déjà des tarifs réduits pour les moins de 26 ans."
-    ]
+    ],
+    "matters": "Un Paris-Rome sans avion redevient possible, et la nuit à bord remplace une nuit d'hôtel."
    },
    {
     "id": "france-1",

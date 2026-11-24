@@ -17,6 +17,8 @@ export type Article = {
   views?: number;
   comments: number;
   summary?: string[];
+  /** « Pourquoi c'est important » : une phrase, montrée dans la lecture plein écran. */
+  matters?: string;
   /** Sujet majeur du jour (choisi par la rédaction). */
   essential?: boolean;
   /** Sujet triste ou choquant : aucune pub juste après. */

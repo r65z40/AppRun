@@ -15,7 +15,7 @@ const art = (rubric_id: string, title: string, key_sentence: string, facts: [str
 let articles: Article[] = [
   art('france', 'Grève SNCF : un TGV sur deux lundi', 'Les contrôleurs protestent contre la réforme de leurs primes ; le trafic sera très perturbé lundi.', [
     ['<b>1 TGV sur 2</b> circulera lundi selon la SNCF', 'franceinfo'], ['Aucun accord trouvé lors de la réunion de <b>vendredi</b>', 'Le Monde'], ['Les TER sont touchés dans <b>7 régions</b>', 'franceinfo'],
-  ], ['Les syndicats contestent depuis octobre la réforme des primes des contrôleurs.', 'Lundi, un TGV sur deux et une partie des TER seront supprimés.', 'Une nouvelle réunion est prévue mardi au ministère.'], { essential: true, importance: 9, photo_tag: 'train' }),
+  ], ['Les syndicats contestent depuis octobre la réforme des primes des contrôleurs.', 'Lundi, un TGV sur deux et une partie des TER seront supprimés.', 'Une nouvelle réunion est prévue mardi au ministère.'], { essential: true, importance: 9, photo_tag: 'train', matters: 'Les trajets domicile-travail et les départs en week-end seront difficiles lundi.' }),
   art('france', 'Budget 2027 adopté en première lecture', 'Les députés ont voté le projet de loi de finances dans la nuit de vendredi à samedi.', [
     ['Adopté par <b>289 voix</b> contre 260', 'franceinfo'], ['Le déficit visé est de <b>4,6 %</b> du PIB', 'Les Echos'], ['Le texte part au Sénat le <b>25 novembre</b>', 'Le Monde'],
   ], ['Le gouvernement veut réduire le déficit public.', 'Le budget prévoit 30 milliards d’euros d’économies.', 'Le Sénat l’examine à partir du 25 novembre.'], { importance: 8, rank: 1 }),

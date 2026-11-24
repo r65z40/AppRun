@@ -69,6 +69,8 @@ export const RULES = {
   live_refresh_min: 3,
   /** Éditions passées lisibles en gratuit (2 = hier et avant-hier) ; Premium : toutes les dates. */
   past_days_free: 2,
+  /** Ligne « Pourquoi c'est important » dans la lecture plein écran (0 = masquée). */
+  show_matters: 1,
 };
 
 /** Carte image créée quand un lecteur partage une info (Personnalisation > Carte de partage). */
@@ -171,6 +173,7 @@ function applyRules(r: Record<string, unknown>, g: Record<string, unknown>) {
   const er = int(r.edition_refresh_min, 2, 120); if (er) RULES.edition_refresh_min = er;
   const lr = int(r.live_refresh_min, 1, 60); if (lr) RULES.live_refresh_min = lr;
   const pd = int(r.past_days_free, 0, 30); if (pd !== null) RULES.past_days_free = pd;
+  if (r.show_matters === 0) RULES.show_matters = 0;
   for (const k of ['account', 'premium'] as const) {
     const x = (g[k] ?? {}) as Record<string, unknown>;
     const d = NUDGES[k] as { enabled: boolean; every_days: number; after_cards: number; text?: string };
