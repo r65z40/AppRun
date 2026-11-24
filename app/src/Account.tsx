@@ -81,7 +81,7 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
           <Text style={styles.h}>{title}</Text>
           {reason && mode !== 'me' ? <Text style={[styles.p, { marginTop: 8 }]}>{reason}</Text> : null}
         </View>
-        <Pressable onPress={() => leave(onClose)} hitSlop={12}><Text style={styles.close}>Fermer</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={() => leave(onClose)} hitSlop={12}><Text style={styles.close}>Fermer</Text></Pressable>
       </View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 26, paddingBottom: 30, gap: 16 }} keyboardShouldPersistTaps="handled">
@@ -96,16 +96,16 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
               {err ? <Text style={styles.err}>{err}</Text> : null}
               <GradButton label={mode === 'up' ? 'Créer mon compte' : 'Se connecter'} onPress={submit} disabled={!can || busy} />
               {busy ? <ActivityIndicator color="#fff" /> : null}
-              <Pressable onPress={() => { setErr(null); setMode(mode === 'up' ? 'in' : 'up'); }} hitSlop={8}>
+              <Pressable accessibilityRole="button" onPress={() => { setErr(null); setMode(mode === 'up' ? 'in' : 'up'); }} hitSlop={8}>
                 <Text style={styles.link}>{mode === 'up' ? 'J’ai déjà un compte' : 'Créer un compte'}</Text>
               </Pressable>
               {mode === 'in' ? (
-                <Pressable hitSlop={8} onPress={forgot}>
+                <Pressable accessibilityRole="button" hitSlop={8} onPress={forgot}>
                   <Text style={[styles.link, { color: C.text3 }]}>Mot de passe oublié</Text>
                 </Pressable>
               ) : null}
               {err?.startsWith('Confirmez') ? (
-                <Pressable hitSlop={8} onPress={() => run(async () => { await resendConfirm(email); setMode('confirm'); })}>
+                <Pressable accessibilityRole="button" hitSlop={8} onPress={() => run(async () => { await resendConfirm(email); setMode('confirm'); })}>
                   <Text style={styles.link}>Renvoyer l’e-mail de confirmation</Text>
                 </Pressable>
               ) : null}
@@ -117,7 +117,7 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
               <Text style={styles.p}>Nous avons envoyé un lien à <Text style={{ color: '#fff' }}>{email.trim()}</Text>. Ouvrez-le pour activer votre compte, puis revenez ici pour vous connecter.</Text>
               <GradButton label="J’ai confirmé, me connecter" onPress={() => { setErr(null); setMode('in'); }} />
               {err ? <Text style={styles.err}>{err}</Text> : null}
-              <Pressable hitSlop={8} onPress={() => run(async () => { await resendConfirm(email); onToast('E-mail renvoyé.'); })}>
+              <Pressable accessibilityRole="button" hitSlop={8} onPress={() => run(async () => { await resendConfirm(email); onToast('E-mail renvoyé.'); })}>
                 <Text style={[styles.link, { color: C.text3 }]}>Rien reçu ? Regardez dans les indésirables, ou renvoyez l’e-mail</Text>
               </Pressable>
             </>
@@ -128,7 +128,7 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
               <Text style={styles.p}>Si un compte existe avec <Text style={{ color: '#fff' }}>{email.trim()}</Text>, un lien vient d’y être envoyé. Ouvrez-le pour choisir un nouveau mot de passe (pensez aux indésirables).</Text>
               <GradButton label="Retour à la connexion" onPress={() => { setErr(null); setMode('in'); }} />
               {err ? <Text style={styles.err}>{err}</Text> : null}
-              <Pressable hitSlop={8} onPress={forgot}><Text style={[styles.link, { color: C.text3 }]}>Renvoyer le lien</Text></Pressable>
+              <Pressable accessibilityRole="button" hitSlop={8} onPress={forgot}><Text style={[styles.link, { color: C.text3 }]}>Renvoyer le lien</Text></Pressable>
             </>
           ) : null}
 
@@ -172,14 +172,14 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
                 </>
               ) : null}
               <Invite onToast={onToast} />
-              <Pressable onPress={() => { setPs(me.pseudo ?? ''); setMode('pseudo'); }} hitSlop={8}><Text style={styles.link}>Changer de pseudo</Text></Pressable>
-              <Pressable onPress={() => { setErr(null); setPw(''); setMode('newpass'); }} hitSlop={8}><Text style={styles.link}>Changer de mot de passe</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => { setPs(me.pseudo ?? ''); setMode('pseudo'); }} hitSlop={8}><Text style={styles.link}>Changer de pseudo</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => { setErr(null); setPw(''); setMode('newpass'); }} hitSlop={8}><Text style={styles.link}>Changer de mot de passe</Text></Pressable>
               {blocked ? (
-                <Pressable onPress={() => run(async () => { await unblockAll(); setBlocked(0); onToast('Vous revoyez les commentaires de tout le monde.'); })} hitSlop={8}>
+                <Pressable accessibilityRole="button" onPress={() => run(async () => { await unblockAll(); setBlocked(0); onToast('Vous revoyez les commentaires de tout le monde.'); })} hitSlop={8}>
                   <Text style={styles.link}>Débloquer {blocked > 1 ? `les ${blocked} comptes bloqués` : 'le compte bloqué'}</Text>
                 </Pressable>
               ) : null}
-              <Pressable onPress={() => { signOut(); feel('light'); onToast('Vous êtes déconnecté.'); leave(onClose); }} hitSlop={8}>
+              <Pressable accessibilityRole="button" onPress={() => { signOut(); feel('light'); onToast('Vous êtes déconnecté.'); leave(onClose); }} hitSlop={8}>
                 <Text style={[styles.link, { color: C.coral }]}>Se déconnecter</Text>
               </Pressable>
             </>
