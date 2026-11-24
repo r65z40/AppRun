@@ -167,6 +167,18 @@ export async function restore() {
 /** Appel d'une fonction de la base (rpc), au nom du lecteur connecté s'il y en a un. */
 export const rpc = <T = unknown>(fn: string, body: unknown) => api<T>(`rpc/${fn}`, { method: 'POST', body });
 
+/** Suppression du compte par le lecteur (exigée par Apple) : tout part avec lui, puis il est déconnecté. */
+export async function deleteAccount() {
+  await rpc('delete_my_account', {});
+  await signOut();
+}
+
+/** Page légale réglée dans le back office (null sans base ou si elle n'est pas remplie). */
+export async function legalText(k: 'privacy' | 'terms' | 'notice'): Promise<string | null> {
+  if (!accountsOn) return null;
+  return rpc<string | null>('legal_text', { k: `LEGAL_${k.toUpperCase()}` });
+}
+
 /** Identifiant de l'appareil, tiré au hasard une fois pour toutes (rien de personnel). */
 export async function deviceId() {
   let d = await store.get('titre.device');

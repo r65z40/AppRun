@@ -121,7 +121,7 @@ reset role;
 \else
 \echo ÉCHEC  réglages
 \endif
-select count(*) = 1 and bool_and(value = 'sk-ant-test-1234') as ok from public.app_settings \gset
+select count(*) = 1 and bool_and(value = 'sk-ant-test-1234') as ok from public.app_settings where key not like 'LEGAL_%' \gset
 \if :ok
 \echo OK  réglages : la clé du lecteur n’a pas été enregistrée
 \else

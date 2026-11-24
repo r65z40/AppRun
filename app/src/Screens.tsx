@@ -7,7 +7,7 @@ import { C, F, GRAD, GRAD3, DRAWER_MS, alpha } from './theme';
 import { BRAND, NOTIF, RECAP, RECOG, RULES, TEXTS } from './brand';
 import { setNotif } from './notify';
 import { RUBRIC_LIST } from './content';
-import { accountsOn } from './account';
+import { accountsOn, legalText } from './account';
 import { SavedTime } from './Badges';
 import { AppIcon, Chip, GradButton, SoftButton, Toggle, st } from './ui';
 import { feel } from './feel';
@@ -52,6 +52,7 @@ export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) =>
   const [time, setTime] = useState(NOTIF.default_time);
   const [adsP, setAdsP] = useState(false);
   const [notif, setNotifP] = useState<Promise<boolean> | undefined>(undefined);
+  const [privacy, setPrivacy] = useState(false);
   // Dernière étape (avec la vraie base) : proposer un compte pour une édition plus pertinente.
   const N = (accountsOn ? 6 : 5) - (NOTIF.enabled ? 0 : 1);
   const x = useSharedValue(0);
@@ -113,6 +114,7 @@ export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) =>
                 <Toggle label="Pubs selon mes centres d'intérêt" on={adsP} onPress={() => setAdsP(!adsP)} />
               </Row>
             </View>
+            <Pressable onPress={() => setPrivacy(true)} hitSlop={8} accessibilityRole="link"><Text style={styles.how}>Vos données et vos choix</Text></Pressable>
             <GradButton label="Continuer" onPress={() => (accountsOn ? next() : finish(adsP))} />
             <SoftButton label="Premium sans pub" onPress={() => { feel('light'); finish(adsP, { premium: true }); }} />
           </>)}
@@ -125,6 +127,7 @@ export function Onboarding({ W, onDone }: { W: number; onDone: (r: OnbResult) =>
           </>) : null}
         </Animated.View>
       </View>
+      {privacy ? <Legal page="privacy" onClose={() => setPrivacy(false)} /> : null}
     </Animated.View>
   );
 }
@@ -133,6 +136,29 @@ function Dot({ on }: { on: boolean }) {
   useEffect(() => { w.value = withTiming(on ? 22 : 6, { duration: 350, easing: OUT }); }, [on]);
   const a = useAnimatedStyle(() => ({ width: w.value }));
   return <Animated.View style={[{ height: 6, borderRadius: 3, backgroundColor: on ? '#fff' : 'rgba(255,255,255,0.25)' }, a]} />;
+}
+
+/* ---------- Pages légales (back office > Personnalisation > Pages légales) ---------- */
+export type LegalPage = 'privacy' | 'terms' | 'notice';
+export const LEGAL_PAGES: [LegalPage, string][] = [['privacy', 'Confidentialité'], ['terms', "Conditions d'utilisation"], ['notice', 'Mentions légales']];
+/** Aussi affichée seule sur le site (adresse publique demandée par les stores) : ?legal=privacy, terms ou notice. */
+export function Legal({ page, onClose }: { page: LegalPage; onClose?: () => void }) {
+  const insets = useSafeAreaInsets();
+  const [txt, setTxt] = useState<string | null | undefined>(undefined);
+  useEffect(() => { legalText(page).then(setTxt, () => setTxt(null)); }, [page]);
+  const title = LEGAL_PAGES.find(([k]) => k === page)![1];
+  const body = txt === undefined ? '' : txt ? txt.replaceAll('{nom}', BRAND.name) : 'Ce texte n’est pas disponible pour le moment. Réessayez avec une connexion.';
+  return (
+    <Animated.View entering={FadeIn.duration(200)} style={[StyleSheet.absoluteFill, { backgroundColor: C.night }]}>
+      <View style={[styles.setHead, { paddingTop: insets.top + 18 }]}>
+        <Text style={styles.setH}>{title}</Text>
+        {onClose ? <Pressable onPress={onClose} hitSlop={12}><Text style={styles.close}>Fermer</Text></Pressable> : null}
+      </View>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 26, paddingBottom: insets.bottom + 30, maxWidth: 720, width: '100%', alignSelf: 'center' }}>
+        <Text selectable style={[styles.p, { fontSize: 15, lineHeight: 23 }]}>{body}</Text>
+      </ScrollView>
+    </Animated.View>
+  );
 }
 
 /* ---------- Réglages (§4.9) ---------- */
@@ -190,6 +216,7 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
   const leave = (cb: () => void) => { x.value = withTiming(W, { duration: 380, easing: DRAWER }); setTimeout(cb, 360); };
   const set = (k: keyof Prefs, v: Prefs[keyof Prefs]) => setD((p) => ({ ...p, [k]: v }));
   const go = (day: string | null) => leave(() => { onClose(); onPast(day); });
+  const [legal, setLegal] = useState<LegalPage | null>(null);
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: C.night }, a]}>
       <View style={[styles.setHead, { paddingTop: insets.top + 18 }]}>
@@ -223,7 +250,7 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
         <View style={{ gap: 12 }}>
           <Text style={st.label}>Mes goûts</Text>
           <View style={styles.rows}>
-            <Row label="Édition selon mes goûts" hint="Sinon, la même édition pour tous, dans l'ordre de la rédaction">
+            <Row label="Édition selon mes goûts" hint="Sinon, la même édition pour tous, et l'app ne note plus ce que vous lisez">
               <Toggle label="Édition selon mes goûts" on={d.perso !== false} onPress={() => set('perso', d.perso === false)} />
             </Row>
             {onTopics ? (
@@ -279,10 +306,21 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
             <SoftButton label={premium ? 'Gérer' : 'Découvrir'} onPress={() => { feel('light'); onPremium(); }} style={{ height: 38, borderRadius: 12 }} />
           </LinearGradient>
         </View>
+        <View style={{ gap: 12 }}>
+          <Text style={st.label}>Informations</Text>
+          <View style={styles.rows}>
+            {LEGAL_PAGES.map(([k, l], i) => (
+              <Pressable key={k} onPress={() => { feel('select'); setLegal(k); }} accessibilityRole="button">
+                <Row label={l} last={i === LEGAL_PAGES.length - 1}><Text style={styles.v}>›</Text></Row>
+              </Pressable>
+            ))}
+          </View>
+        </View>
       </ScrollView>
       <View style={{ paddingHorizontal: 26, paddingTop: 10, paddingBottom: Math.max(20, insets.bottom + 8) }}>
         <GradButton label="Enregistrer" onPress={() => leave(() => onSave(d))} />
       </View>
+      {legal ? <Legal page={legal} onClose={() => setLegal(null)} /> : null}
     </Animated.View>
   );
 }

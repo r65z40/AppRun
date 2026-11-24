@@ -164,6 +164,7 @@ psql "$VIDE" -v ON_ERROR_STOP=1 -qtA -f test/follow.sql | grep -v '^$'
 psql "$VIDE" -v ON_ERROR_STOP=1 -qtA -f test/badges.sql | grep -v '^$'
 psql "$VIDE" -v ON_ERROR_STOP=1 -qtA -f test/parrainage.sql | grep -v '^$'
 psql "$VIDE" -v ON_ERROR_STOP=1 -qtA -f test/regie.sql | grep -v '^$'
+psql "$VIDE" -v ON_ERROR_STOP=1 -qtA -f test/legal.sql | grep -v '^$'
 
 echo "--- Personnalisation : identité, textes, notification transmis à l'app"
 psql "$VIDE" -tAc "select case when public.app_config() ? 'brand' and public.app_config()->'brand' = 'null'::jsonb then 'OK  sans réglage, l''app garde son identité d''origine' else 'ÉCHEC  identité par défaut' end"

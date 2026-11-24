@@ -9,7 +9,7 @@ import { BadgeList, SavedTime } from './Badges';
 import { Invite } from './Invite';
 import type { ReaderCard } from './types';
 import { feel } from './feel';
-import { blockedCount, pendingReferral, readerCard, setShowBadges, resendConfirm, resetPassword, setPseudo, signIn, signOut, signUp, unblockAll, updatePassword, useMe, UserError } from './account';
+import { blockedCount, deleteAccount, pendingReferral, readerCard, setShowBadges, resendConfirm, resetPassword, setPseudo, signIn, signOut, signUp, unblockAll, updatePassword, useMe, UserError } from './account';
 
 const DRAWER = Easing.bezier(0.32, 0.72, 0, 1);
 type Mode = 'in' | 'up' | 'confirm' | 'pseudo' | 'me' | 'newpass' | 'sent';
@@ -31,6 +31,7 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(0);
+  const [sure, setSure] = useState(false); // suppression du compte : un second toucher confirme
   const [card, setCard] = useState<ReaderCard | null>(null);
   useEffect(() => { if (mode === 'me') { blockedCount().then(setBlocked); readerCard().then(setCard); } }, [mode]);
   const x = useSharedValue(W);
@@ -182,6 +183,11 @@ export function Account({ W, reason, start, onClose, onReady, onToast }: {
               <Pressable accessibilityRole="button" onPress={() => { signOut(); feel('light'); onToast('Vous êtes déconnecté.'); leave(onClose); }} hitSlop={8}>
                 <Text style={[styles.link, { color: C.coral }]}>Se déconnecter</Text>
               </Pressable>
+              <Pressable onPress={() => (sure ? run(async () => { await deleteAccount(); onToast('Votre compte est supprimé.'); leave(onClose); }) : setSure(true))} hitSlop={8}>
+                <Text style={[styles.link, { color: sure ? C.coral : C.text3 }]}>{sure ? 'Toucher encore pour tout supprimer, sans retour' : 'Supprimer mon compte'}</Text>
+              </Pressable>
+              {sure ? <Text style={[styles.p, { fontSize: 13, textAlign: 'center' }]}>Pseudo, likes, commentaires et badges seront effacés. Un abonnement Premium se résilie à part, dans votre store.</Text> : null}
+              {err ? <Text style={styles.err}>{err}</Text> : null}
             </>
           ) : null}
         </ScrollView>
