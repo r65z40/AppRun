@@ -18,7 +18,7 @@
 import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
 import { collect } from './collect.js';
-import { startJournal, type Journal } from './journal.js';
+import { nothingNew, startJournal, type Journal } from './journal.js';
 import { findPhoto, pexelsOn } from './pexels.js';
 import { AiStopped, budget, model, cardText, checkCard, minorIssue, reviewText, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
 import { dedupe, type Raw } from './dedupe.js';
@@ -101,6 +101,9 @@ async function edition() {
 
   log('1/4 Récupération des sources');
   const fetched = await collect(FIXTURES, log);
+  // Mise à jour de la journée sans aucune dépêche nouvelle depuis la précédente : pas d'appel à l'IA.
+  if (UPDATE && await nothingNew('edition', J.id)) return J.finish('ok', `Mise à jour : ${fetched} titres lus, aucune dépêche nouvelle depuis le dernier passage, IA non appelée (économie).`, { fetched });
+  J.details.seen = new Date().toISOString();
 
   // Fenêtre : les WINDOW_H dernières heures, jusqu'à maintenant (ou jusqu'au lendemain 6 h pour une date passée).
   const until = new Date(new Date(`${DATE}T06:00:00+01:00`).getTime() + 86400e3);

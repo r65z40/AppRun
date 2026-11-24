@@ -44,3 +44,17 @@ export async function startJournal(kind: 'edition' | 'flash'): Promise<Journal> 
     },
   };
 }
+
+/**
+ * Économie : aucune dépêche arrivée depuis le dernier passage qui a appelé l'IA (details.seen = fin de sa lecture
+ * des sources). Le rappeler coûterait le même prix pour la même réponse.
+ */
+export async function nothingNew(kind: 'edition' | 'flash', self: string | null): Promise<boolean> {
+  const r = await q<{ n: boolean }>(
+    `select exists (select 1 from engine_runs where kind = $1 and id is distinct from $2 and status = 'ok' and details ? 'seen' and coalesce((stats->'ai'->>'calls')::int, 0) > 0)
+        and not exists (select 1 from raw_items where fetched_at > (select max((details->>'seen')::timestamptz) from engine_runs
+              where kind = $1 and id is distinct from $2 and status = 'ok' and details ? 'seen' and coalesce((stats->'ai'->>'calls')::int, 0) > 0)) as n`,
+    [kind, self],
+  ).catch(() => [{ n: false }]);
+  return r[0]?.n ?? false;
+}

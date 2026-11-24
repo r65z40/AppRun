@@ -10,7 +10,7 @@
 import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
 import { collect } from './collect.js';
-import { startJournal, type Journal } from './journal.js';
+import { nothingNew, startJournal, type Journal } from './journal.js';
 import { AiStopped, budget, model, checkFlash, guardText, reviewText, selectFlashes, setRubricHints, usage, type Item } from './ai.js';
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
@@ -61,6 +61,7 @@ async function flash() {
   const todayCount = (await q<{ n: number }>("select count(*)::int as n from flashes where published_at > date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris'"))[0].n;
   if (todayCount >= cfg.flashMaxPerDay() && !TEST) return J.finish('ok', `Plafond atteint : ${todayCount} infos aujourd'hui (réglage : ${cfg.flashMaxPerDay()}).`);
   const fetched = await collect(FIXTURES, log);
+  const seen = new Date().toISOString();
   const used = new Set((await q<{ id: string }>("select unnest(raw_item_ids)::text as id from flashes where created_at > now() - interval '24 hours'")).map((r) => r.id));
   const H = cfg.flashWindowHours();
   const raws = dedupe((await q<Raw>(
@@ -86,6 +87,8 @@ async function flash() {
   const catchUp = behind > 0 && relaxed < normal;
   if (catchUp) log(`Rythme : ${todayCount} info(s) aujourd'hui pour ${due} attendue(s) à cette heure (minimum ${minDay} par jour) : importance ${relaxed} acceptée pour ${behind} info(s).`);
   J.details.rythme = { aujourdhui: todayCount, attendues: due, minimum: minDay, seuil: catchUp ? relaxed : normal };
+  if (!TEST && !catchUp && await nothingNew('flash', J.id)) return J.finish('ok', `${fetched} titres lus, aucune dépêche nouvelle depuis le dernier passage : IA non appelée (économie).`, { fetched, items: items.length, published: 0 });
+  J.details.seen = seen;
 
   const found = (await selectFlashes(items, today, catchUp ? relaxed : normal, catchUp)).sort((a, b) => b.importance - a.importance);
   log(`L'IA propose ${found.length} info(s)${catchUp ? '' : ' majeure(s)'}.`);

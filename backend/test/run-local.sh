@@ -97,6 +97,15 @@ psql "$VIDE" -tAc "select case when not has_function_privilege('anon', 'public.a
 psql "$VIDE" -qc "select public.dispatch_workflow('flash.yml')"
 psql "$VIDE" -tAc "select case when not exists (select 1 from dispatch_log) and not has_function_privilege('anon', 'public.dispatch_workflow(text, jsonb)', 'execute') and not has_function_privilege('authenticated', 'public.dispatch_workflow(text, jsonb)', 'execute') then 'OK  relance automatique : rien sans jeton, réservée à la base' else 'ÉCHEC  relance automatique' end"
 
+echo "--- Économie : pas d'appel à l'IA sans dépêche nouvelle"
+psql "$VIDE" -qc "insert into engine_runs (kind, status, stats, details) values ('flash', 'ok', '{\"ai\": {\"calls\": 1, \"input\": 0, \"output\": 0}}', jsonb_build_object('seen', now() + interval '1 minute'))"
+DATABASE_URL="$VIDE" MOCK_AI=1 FLASH_MIN_PER_DAY=0 npx tsx src/flash.ts --fixtures test/feeds >/dev/null
+psql "$VIDE" -tAc "select case when summary like '%IA non appelée (économie)%' then 'OK  Dernière minute : rien de neuf depuis le dernier passage, IA non appelée' else 'ÉCHEC  économie Dernière minute : ' || coalesce(summary, '?') end from engine_runs where kind = 'flash' order by started_at desc limit 1"
+psql "$VIDE" -qc "insert into raw_items (source_id, guid, title, link, fetched_at) select id, 'neuf', 'Neuf', 'https://x.test/n', now() + interval '2 minutes' from sources limit 1"
+DATABASE_URL="$VIDE" MOCK_AI=1 FLASH_MIN_PER_DAY=0 npx tsx src/flash.ts --fixtures test/feeds >/dev/null
+psql "$VIDE" -tAc "select case when summary not like '%IA non appelée%' then 'OK  Dernière minute : une dépêche nouvelle relance l''IA' else 'ÉCHEC  économie trop stricte' end from engine_runs where kind = 'flash' order by started_at desc limit 1"
+psql "$VIDE" -qc "delete from raw_items where guid = 'neuf'" -c "delete from engine_runs where details ? 'seen' and kind = 'flash' and (stats->'ai'->>'calls') = '1'"
+
 echo "--- Rattrapages automatiques : une seule édition par jour"
 psql "$VIDE" -qc "delete from app_settings where key = 'ENGINE_PAUSED'"
 DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/run.ts --fixtures test/feeds --once >/dev/null
