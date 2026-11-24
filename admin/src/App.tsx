@@ -79,26 +79,33 @@ export default function App() {
 
   return (
     <div className="shell">
-      <aside className="side">
+      <header className="top">
         <div className="logo"><Glyph /> {appName} <span>back office</span></div>
+        {/* Sous-menus ouverts au survol ou au clic (focus), refermés en quittant : pas d'état à gérer. */}
         <nav>
           {GROUPS.map((g) => {
             const items = PAGES.filter(([p, , pg]) => pg === g && allowed(me.role, p));
-            return items.length ? (
-              <Fragment key={g}>
-                {g ? <div className="nav-group">{g}</div> : null}
-                {items.map(([p, l]) => <button key={p} className={page === p ? 'on' : ''} onClick={() => setPage(p)}>{l}</button>)}
-              </Fragment>
-            ) : null;
+            const go = (p: Page) => { setPage(p); (document.activeElement as HTMLElement | null)?.blur(); };
+            if (!items.length) return null;
+            if (!g) return items.map(([p, l]) => <button key={p} className={page === p ? 'on' : ''} onClick={() => go(p)}>{l}</button>);
+            return (
+              <div key={g} className="menu">
+                <button className={items.some(([p]) => p === page) ? 'on' : ''}>{g} ▾</button>
+                <div className="sub">{items.map(([p, l]) => <button key={p} className={page === p ? 'on' : ''} onClick={() => go(p)}>{l}</button>)}</div>
+              </div>
+            );
           })}
         </nav>
-        <div className="who">
-          {api.demo ? <div className="demo">Mode démo : données fictives</div> : null}
-          <div className="muted small">{me.email}</div>
-          <button className="link" onClick={() => setNewPass(true)}>Changer mon mot de passe</button>
-          <button className="link" onClick={() => api.signOut().then(() => setMe(null))}>Se déconnecter</button>
+        <div className="menu who">
+          <button>{api.demo ? 'Démo · ' : ''}Mon compte ▾</button>
+          <div className="sub">
+            {api.demo ? <div className="demo">Mode démo : données fictives</div> : null}
+            <div className="muted small">{me.email}</div>
+            <button onClick={() => setNewPass(true)}>Changer mon mot de passe</button>
+            <button onClick={() => api.signOut().then(() => setMe(null))}>Se déconnecter</button>
+          </div>
         </div>
-      </aside>
+      </header>
       <main className="main">
         <EngineBanner page={page} go={setPage} say={say} admin={me.role === 'admin'} />
         {!allowed(me.role, page) ? <ModerationPage say={say} /> : null}
