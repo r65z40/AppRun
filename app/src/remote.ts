@@ -3,7 +3,8 @@
 import { FLASHES, PHOTOS, RUBRICS, RUBRIC_LIST } from './content';
 import { C } from './theme';
 import type { Article, Flash, Rubric } from './types';
-import { dayLabel } from './dates';
+import { dayLabel, isoDay } from './dates';
+import { RECAP } from './brand';
 
 const URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -21,6 +22,7 @@ type Row = {
   key_sentence: string;
   facts: { text: string; source: string; url: string }[];
   summary: string[];
+  angles?: { source: string; text: string }[] | null;
   photo_tag: string | null;
   photo_url: string | null;
   photo_credit?: string | null;
@@ -46,7 +48,12 @@ const hour = (iso: string) => {
   return `${Number(h)} h ${m}`;
 };
 
-/** Charge l'édition du jour donné (sinon la dernière publiée) et remplace le contenu de démo. Renvoie la date ou null. */
+/** Jour spécial de loadEdition : le récap de la semaine. */
+export const WEEK = 'semaine';
+/** Note d'une info pour le récap, sans IA : son importance, puis ce que les lecteurs en ont fait (réactions rapportées aux vues). */
+export const weekScore = (importance: number, s?: { likes?: number; dislikes?: number; comments?: number; views?: number }) => importance + (3 * ((s?.likes ?? 0) + 2 * (s?.comments ?? 0) - (s?.dislikes ?? 0))) / Math.max(10, s?.views ?? 0);
+
+/** Charge l'édition du jour donné (sinon la dernière publiée, ou WEEK = récap des 7 derniers jours) et remplace le contenu de démo. Renvoie la date ou null. */
 export async function loadEdition(day: string | null = null, timeoutMs = 4000): Promise<string | null> {
   if (!remoteConfigured) return null;
   const ctl = new AbortController();
@@ -54,17 +61,19 @@ export async function loadEdition(day: string | null = null, timeoutMs = 4000): 
   try {
     // Dernier jour qui a au moins une info en ligne : l'édition du jour s'affiche dès ses premières cartes,
     // sans attendre la fin du passage (avant, l'app gardait celle de la veille, datée d'aujourd'hui).
+    const week = day === WEEK;
     const eds = day ? [{ edition_date: day }] : await get<{ edition_date: string }[]>('articles?select=edition_date&status=eq.published&order=edition_date.desc&limit=1', ctl.signal);
     if (!eds.length) return null;
     const date = eds[0].edition_date;
-    const [rows, rubs] = await Promise.all([
-      get<Row[]>(`articles?select=*&edition_date=eq.${date}&status=eq.published&order=rank.asc`, ctl.signal),
+    const [found, rubs] = await Promise.all([
+      get<Row[]>(week ? `articles?select=*&edition_date=gte.${isoDay(-6)}&status=eq.published&order=importance.desc&limit=80` : `articles?select=*&edition_date=eq.${date}&status=eq.published&order=rank.asc`, ctl.signal),
       get<{ id: string; name: string }[]>('rubrics?select=id,name&active=eq.true&order=position.asc', ctl.signal),
     ]);
+    let rows = found;
     if (!rows.length) return null;
     // Toujours les infos les plus importantes en tête, puis les plus récentes (l'édition se complète dans la journée).
     const at = (a: Row) => a.published_at ?? a.created_at;
-    rows.sort((a, b) => b.importance - a.importance || at(b).localeCompare(at(a)));
+    if (!week) rows.sort((a, b) => b.importance - a.importance || at(b).localeCompare(at(a)));
     // Compteurs des seules infos du jour : sans filtre, la base recalculait toutes les infos depuis le début (et coupait à 1 000).
     const ids = `article_id=in.(${rows.map((r) => r.id).join(',')})`;
     const [stats, emo] = await Promise.all([
@@ -78,6 +87,7 @@ export async function loadEdition(day: string | null = null, timeoutMs = 4000): 
     emo.forEach((e) => emojis.set(e.article_id, { ...emojis.get(e.article_id), [e.emoji]: e.n }));
     RUBRIC_LIST.splice(0, RUBRIC_LIST.length, ...rubs);
     const st = new Map(stats.map((s) => [s.article_id, s]));
+    if (week) rows = rows.sort((a, b) => weekScore(b.importance, st.get(b.id)) - weekScore(a.importance, st.get(a.id))).slice(0, RECAP.count);
     const next: Rubric[] = rubs.map((r) => ({
       id: r.id,
       name: r.name,
@@ -97,6 +107,7 @@ export async function loadEdition(day: string | null = null, timeoutMs = 4000): 
           views: st.get(a.id)?.views ?? 0,
           comments: st.get(a.id)?.comments ?? 0,
           summary: a.summary,
+          angles: a.angles ?? undefined,
           essential: a.essential,
           sensitive: !!a.sensitive,
           importance: a.importance,
