@@ -78,7 +78,7 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
   emojiMode?: boolean;
   /** Résumé lu jusqu'en bas, lien vers l'article complet : pour l'algorithme « Mon édition ». */
   onSignal: (k: 'summary_end' | 'click') => void;
-  /** Sous les sources : « Suivre ce sujet ». */
+  /** Au-dessus des sources : « Suivre ce sujet ». */
   extra?: React.ReactNode;
 }) {
   const insets = useSafeAreaInsets();
@@ -134,7 +134,7 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
               <View style={styles.heroText}>
                 {rubricOf(a)?.name ? <Text style={styles.kick}>{rubricOf(a).name.toUpperCase()}</Text> : null}
                 <Text style={styles.h2}>{a.title.toUpperCase()}</Text>
-                <Text style={styles.date}>{todayLabel()} {yearLabel()} · {a.hour} · lecture 1 min</Text>
+                <Text style={styles.date}>{a.day ?? `${todayLabel()} ${yearLabel()}`} · {a.hour} · lecture 1 min</Text>
               </View>
             </View>
             <View style={{ paddingHorizontal: 30, paddingTop: 22, backgroundColor: C.night }}>
@@ -144,6 +144,7 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
                 <Text style={styles.blkP}>{t}</Text>
               </View>
             ))}
+            {extra}
             <View style={styles.srcList}>
               <Text style={styles.lbl}>SOURCES CONSULTÉES</Text>
               {[...new Map(a.facts.map((f) => [f.source, f.doc])).entries()].map(([m, url]) => (
@@ -151,7 +152,6 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
               ))}
               {a.credit ? <Text style={[styles.srcLink, { color: C.text3, fontSize: 12, marginTop: 8 }]}>Photo : {a.credit}</Text> : null}
             </View>
-            {extra}
             </View>
           </Animated.ScrollView>
           <View style={[styles.foot, { paddingBottom: Math.max(18, insets.bottom + 6) }]}>

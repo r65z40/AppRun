@@ -5,6 +5,8 @@ export type Article = {
   id: string;
   title: string;
   hour: string;
+  /** « Lundi 23 novembre 2026 » : jour de publication (sinon aujourd'hui). */
+  day?: string;
   key: string;
   facts: Fact[];
   photo: number | { uri: string } | null;

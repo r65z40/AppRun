@@ -4,6 +4,8 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export const todayLabel = () => cap(fmt(new Date(), { weekday: 'long', day: 'numeric', month: 'long' }));
 /** « dimanche 22 novembre » */
 export const tomorrowLabel = () => fmt(new Date(Date.now() + 86400e3), { weekday: 'long', day: 'numeric', month: 'long' });
+/** « Lundi 23 novembre 2026 » pour une date donnée. */
+export const dayLabel = (iso: string) => cap(fmt(new Date(iso), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
 export const yearLabel = () => fmt(new Date(), { year: 'numeric' });
 /** « 14 h 32 », ou « il y a 5 min » si c'est tout récent. */
 export const flashTime = (iso: string) => {
