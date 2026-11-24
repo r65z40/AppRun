@@ -33,7 +33,7 @@ const PAGES: [Page, string, string][] = [
 const GROUPS = ['', 'Contenu', 'Lecteurs', 'Revenus', 'Administration'];
 // Anciennes adresses (#engine, #sources) : tout est maintenant dans la page IA.
 const toPage = (h: string): Page => (h.includes('=') ? 'dashboard' : h === 'engine' || h === 'sources' ? 'ai' : (h as Page)) || 'dashboard';
-const LIMITS = { title: 60, key: 140, fact: 90, summary: 280 };
+const LIMITS = { title: 60, key: 140, fact: 90, summary: 280, matters: 120 };
 const SUMMARY_HEADS = ['Contexte', 'Ce qui change', 'Et après'];
 
 const dateLabel = (d: string) => new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(d + 'T12:00:00'));
@@ -599,9 +599,9 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
   const [uploading, setUploading] = useState(false);
   const set = <K extends keyof Article>(k: K, v: Article[K]) => setD((x) => ({ ...x, [k]: v }));
   const setFact = (i: number, k: keyof Fact, v: string) => setD((x) => ({ ...x, facts: x.facts.map((f, j) => (j === i ? { ...f, [k]: v } : f)) }));
-  const over = plain(d.title).length > LIMITS.title || d.key_sentence.length > LIMITS.key || d.facts.some((f) => plain(f.text).length > LIMITS.fact) || d.summary.some((s) => s.length > LIMITS.summary);
+  const over = plain(d.title).length > LIMITS.title || d.key_sentence.length > LIMITS.key || d.facts.some((f) => plain(f.text).length > LIMITS.fact) || d.summary.some((s) => s.length > LIMITS.summary) || (d.matters ?? '').length > LIMITS.matters;
   const angles = (d.angles ?? []).filter((g) => g.text.trim());
-  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, angles: angles.length >= 2 ? angles : null, rubric_id: d.rubric_id, essential: d.essential, sensitive: d.sensitive, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
+  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, matters: d.matters?.trim() || null, angles: angles.length >= 2 ? angles : null, rubric_id: d.rubric_id, essential: d.essential, sensitive: d.sensitive, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     addEventListener('keydown', k);
@@ -633,6 +633,7 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
           {d.summary.map((s, i) => (
             <label key={i}>{SUMMARY_HEADS[i]} <Count v={s} max={LIMITS.summary} /><textarea rows={3} value={s} onChange={(e) => setD((x) => ({ ...x, summary: x.summary.map((y, j) => (j === i ? e.target.value : y)) }))} /></label>
           ))}
+          <label>Pourquoi c'est important <span className="muted small">une phrase, dans la lecture plein écran</span> <Count v={d.matters ?? ''} max={LIMITS.matters} /><textarea rows={2} value={d.matters ?? ''} onChange={(e) => set('matters', e.target.value)} /></label>
           {a.angles?.length ? (
             <>
               <div className="lbl">Angles des médias <span className="muted small">lien discret « Voir les angles » dans l'app ; videz un texte pour le retirer (moins de 2 = lien masqué)</span></div>

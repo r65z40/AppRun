@@ -179,6 +179,7 @@ const CardSchema = z.object({
     change: z.string().describe('Ce qui change concrètement, 280 caractères maximum'),
     next: z.string().describe('Et après : prochaines étapes ou dates, 280 caractères maximum'),
   }),
+  matters: z.string().describe('Pourquoi c’est important : une seule phrase, 120 caractères maximum, ce que ça change concrètement pour le lecteur, sans opinion'),
   angles: z
     .array(z.object({
       item_number: z.number().int().describe('Numéro de la dépêche du média'),
@@ -199,6 +200,7 @@ Style :
 - N'invente rien. Chaque fait doit venir des dépêches fournies ; indique le numéro de la dépêche.
 - Si les médias se contredisent, dis-le simplement (« selon X… »).
 - Dans chaque fait, mets entre <b> et </b> l'élément clé : un chiffre, une date, un nom. Une seule balise par fait.
+- « Pourquoi c'est important » : une phrase factuelle sur l'effet concret pour le lecteur (argent, quotidien, droits, sécurité…). Jamais de jugement ni de conseil.
 - Respecte les longueurs maximales.
 - « angles » : laisse la liste vide, sauf si les médias choisissent vraiment des angles différents sur un sujet qui divise. Alors, pour chaque média, dis en une phrase neutre ce sur quoi il insiste (« insiste sur le coût pour les communes »), sans juger ni classer les médias, sans recopier leurs mots.
 
@@ -235,6 +237,7 @@ export function checkCard(c: CardOut, items: Item[]): string[] {
   if ([c.summary.context, c.summary.change, c.summary.next].some((x) => x.length > 340)) issues.push('résumé trop long');
   if (new Set(c.facts.map((f) => norm(f.text))).size < c.facts.length) issues.push('deux faits identiques');
   if (c.key_sentence.length > 170) issues.push('phrase clé trop longue');
+  if (c.matters.length > 150) issues.push('« pourquoi c’est important » trop long');
   if (c.facts.length !== 3) issues.push(`${c.facts.length} faits au lieu de 3`);
   const nums = new Set(items.map((i) => i.n));
   c.facts.forEach((f, k) => {
@@ -244,7 +247,7 @@ export function checkCard(c: CardOut, items: Item[]): string[] {
   });
   // Reprise mot pour mot : 8 mots consécutifs identiques à un chapô = trop proche du texte du média.
   const src = items.map((i) => norm(i.title + ' ' + i.description)).join(' | ');
-  for (const t of [c.key_sentence, ...c.facts.map((f) => f.text), c.summary.context, c.summary.change, c.summary.next, ...c.angles.map((a) => a.text)]) {
+  for (const t of [c.key_sentence, ...c.facts.map((f) => f.text), c.summary.context, c.summary.change, c.summary.next, c.matters, ...c.angles.map((a) => a.text)]) {
     const w = norm(t).split(' ');
     for (let k = 0; k + 8 <= w.length; k++) {
       if (src.includes(w.slice(k, k + 8).join(' '))) {
@@ -253,7 +256,7 @@ export function checkCard(c: CardOut, items: Item[]): string[] {
       }
     }
   }
-  issues.push(...guardText([c.title, c.key_sentence, ...c.facts.map((f) => f.text), c.summary.context, c.summary.change, c.summary.next, ...c.angles.map((a) => a.text)], items));
+  issues.push(...guardText([c.title, c.key_sentence, ...c.facts.map((f) => f.text), c.summary.context, c.summary.change, c.summary.next, c.matters, ...c.angles.map((a) => a.text)], items));
   return [...new Set(issues)];
 }
 
@@ -345,7 +348,7 @@ export const doubtIssue = (i: string) => /^(ton :|chiffre absent|relecture IA)/.
 
 /** La carte en texte simple, pour la relecture. */
 export const cardText = (c: CardOut) =>
-  [`Titre : ${c.title}`, `Phrase clé : ${c.key_sentence}`, ...c.facts.map((f) => `Fait : ${f.text.replace(/<\/?b>/g, '')}`), `Contexte : ${c.summary.context}`, `Ce qui change : ${c.summary.change}`, `Et après : ${c.summary.next}`, ...c.angles.map((a) => `Angle d'un média : ${a.text}`)].join('\n');
+  [`Titre : ${c.title}`, `Phrase clé : ${c.key_sentence}`, ...c.facts.map((f) => `Fait : ${f.text.replace(/<\/?b>/g, '')}`), `Contexte : ${c.summary.context}`, `Ce qui change : ${c.summary.change}`, `Et après : ${c.summary.next}`, `Pourquoi c'est important : ${c.matters}`, ...c.angles.map((a) => `Angle d'un média : ${a.text}`)].join('\n');
 
 const norm = (s: string) => s.toLowerCase().replace(/<\/?b>/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, Math.round(v)));
@@ -384,6 +387,7 @@ function mockCard(story: Story, items: Item[]): CardOut {
     key_sentence: `En bref : ${words.slice(0, 6).join(' ')}.`,
     facts: [0, 1, 2].map((k) => ({ text: `Fait <b>${k + 1}</b> selon ${i.source}`, item_number: (items[k] ?? i).n })),
     summary: { context: 'Contexte (mode test).', change: 'Ce qui change (mode test).', next: 'Et après (mode test).' },
+    matters: 'Pourquoi c’est important (mode test).',
     angles: items.map((x) => ({ item_number: x.n, text: `Angle de ${x.source} (mode test)` })),
     photo_tag: PHOTO_TAG_LIST[(story.label.length + i.n) % PHOTO_TAG_LIST.length],
     photo_query: 'city street',

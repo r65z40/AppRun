@@ -22,6 +22,7 @@ type Row = {
   key_sentence: string;
   facts: { text: string; source: string; url: string }[];
   summary: string[];
+  matters?: string | null;
   angles?: { source: string; text: string }[] | null;
   photo_tag: string | null;
   photo_url: string | null;
@@ -107,6 +108,7 @@ export async function loadEdition(day: string | null = null, timeoutMs = 4000): 
           views: st.get(a.id)?.views ?? 0,
           comments: st.get(a.id)?.comments ?? 0,
           summary: a.summary,
+          matters: a.matters ?? undefined,
           angles: a.angles ?? undefined,
           essential: a.essential,
           sensitive: !!a.sensitive,

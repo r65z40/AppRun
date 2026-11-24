@@ -17,6 +17,8 @@ export type Article = {
   views?: number;
   comments: number;
   summary?: string[];
+  /** « Pourquoi c'est important » : une phrase, montrée dans la lecture plein écran. */
+  matters?: string;
   /** Sujet qui divise : ce sur quoi chaque média insiste (2 au moins), derrière « Voir les angles ». */
   angles?: { source: string; text: string }[];
   /** Sujet majeur du jour (choisi par la rédaction). */
