@@ -73,7 +73,10 @@ export type EngineStatus = {
   paused: boolean; paused_until: string | null; paused_at: string | null; paused_by: string | null; ai_off: boolean;
   articles_today: number; flashes_today: number; last_published: string | null;
   failing_sources: { name: string; error: string | null; fails: number }[];
+  /** Part des plafonds de dépense déjà utilisée, en % (absent sans plafond), et seuil d'alerte. */
+  budget_day_pct?: number | null; budget_month_pct?: number | null; budget_alert?: number;
 };
+export type SpendDay = { day: string; edition: number; flash: number; runs: number };
 export type Dashboard = {
   active_today: number; active_7: number; active_30: number; accounts: number; accounts_7: number; premium: number;
   comments_7: number; likes_7: number; reports_open: number; banned: number; ai_today: number; ai_7: number; ai_30: number;
@@ -119,6 +122,10 @@ export interface Api {
   rubrics(): Promise<RubricHint[]>;
   /** Dépense estimée de l'IA en dollars, aujourd'hui et ce mois-ci. */
   aiSpend(): Promise<{ today: number; month: number }>;
+  /** Dépense estimée jour par jour, la plus récente en haut. */
+  aiSpendHistory(): Promise<SpendDay[]>;
+  /** Arrêt d'urgence : retire de l'app tout ce qu'un passage du moteur a publié. */
+  unpublishRun(id: string): Promise<{ articles: number; flashes: number }>;
   /** Relance automatique depuis Supabase : pg_cron présent, jeton GitHub saisi, dernière relance. */
   dispatchStatus(): Promise<{ cron: boolean; token: boolean; last: string | null } | null>;
   saveRubricHint(id: string, ai_hint: string): Promise<void>;
@@ -270,6 +277,8 @@ function supabaseApi(sb: SupabaseClient): Api {
     },
     async deleteSource(id) { ok(await sb.from('sources').delete().eq('id', id)); },
     async aiSpend() { const s = ok(await sb.rpc('ai_spend')) as { today: number; month: number }; return { today: Number(s.today), month: Number(s.month) }; },
+    aiSpendHistory: async () => (ok(await sb.rpc('ai_spend_history', { days: 30 })) as SpendDay[]).map((d) => ({ ...d, edition: Number(d.edition), flash: Number(d.flash), runs: Number(d.runs) })),
+    unpublishRun: async (id) => ok(await sb.rpc('unpublish_run', { run: id })) as { articles: number; flashes: number },
     async dispatchStatus() { const { data } = await sb.rpc('dispatch_status'); return (data as { cron: boolean; token: boolean; last: string | null } | null) ?? null; },
     rubrics: async () => sb.from('rubrics').select('id, name, ai_hint').order('position').then(ok<RubricHint[]>),
     async saveRubricHint(id, ai_hint) { ok(await sb.from('rubrics').update({ ai_hint: ai_hint.trim() || null }).eq('id', id)); },

@@ -7,7 +7,7 @@ import { FollowPage } from './Follow';
 import { BadgesPage } from './Badges';
 import { ReferralPage } from './Referral';
 import { BrandPage } from './Brand';
-import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type EngineStatus, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type LaunchWhat, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type Status } from './data';
+import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type EngineStatus, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type LaunchWhat, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type SpendDay, type Status } from './data';
 
 type Page = 'dashboard' | 'readers' | 'algo' | 'follow' | 'badges' | 'referral' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings' | 'brand';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
@@ -154,6 +154,17 @@ function EngineBanner({ page, go, say, admin }: { page: Page; go: (p: Page) => v
       <div className="engine-banner off" role="alert">
         <div><b>IA coupée : aucune nouvelle info n'est publiée</b><span className="small">Ce qui est en ligne reste visible. Interrupteur « Couper l'IA » dans IA &gt; Pilotage.</span></div>
         {admin ? <button className="btn primary" onClick={() => fix('AI_OFF', 'IA rallumée')}>Rallumer l'IA</button> : null}
+      </div>
+    );
+  const pct = Math.max(s.budget_day_pct ?? 0, s.budget_month_pct ?? 0);
+  if (pct >= (s.budget_alert ?? 80))
+    return (
+      <div className={`engine-banner ${pct >= 100 ? 'off' : 'warn-bar'}`} role="alert">
+        <div>
+          <b>{pct >= 100 ? 'Budget de l’IA atteint : l’IA est arrêtée' : `Budget de l’IA à ${pct} %`}</b>
+          <span className="small">{[s.budget_day_pct != null ? `${s.budget_day_pct} % du plafond du jour` : '', s.budget_month_pct != null ? `${s.budget_month_pct} % du plafond du mois` : ''].filter(Boolean).join(' · ')}. {pct >= 100 ? 'Elle reprend au changement de jour ou de mois, ou si vous montez le plafond.' : 'Au plafond, l’IA s’arrête toute seule.'}</span>
+        </div>
+        {page !== 'ai' ? <button className="btn" onClick={() => go('ai')}>Voir le budget</button> : null}
       </div>
     );
   if (parisHour >= 10 && s.articles_today + s.flashes_today === 0)
@@ -766,7 +777,8 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
   const noKey = admin && st.list && !get('ANTHROPIC_API_KEY');
   const aiOff = get('AI_OFF') === '1';
   const [spend, setSpend] = useState<{ today: number; month: number } | null>(null);
-  useEffect(() => { if (admin) api.aiSpend().then(setSpend).catch(() => {}); }, []);
+  const [history, setHistory] = useState<SpendDay[] | null>(null);
+  useEffect(() => { if (admin) { api.aiSpend().then(setSpend).catch(() => {}); api.aiSpendHistory().then(setHistory).catch(() => {}); } }, []);
   const capDay = Number(get('AI_BUDGET_DAY') || 0), capMonth = Number(get('AI_BUDGET_MONTH') || 0);
   const overBudget = !!spend && ((capDay > 0 && spend.today >= capDay) || (capMonth > 0 && spend.month >= capMonth));
   return (
@@ -806,6 +818,25 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
             {st.Toggle({ k: 'AI_OFF', label: 'Couper l’IA', help: "Arrêt total : plus aucun appel à Claude, donc plus aucune dépense. Le moteur ne publie plus rien de nouveau, ce qui est en ligne reste visible.", def: false })}
             {st.Pick({ k: 'AI_BUDGET_DAY', label: 'Plafond par jour', help: "Au-delà, l'IA s'arrête jusqu'au lendemain. Les cartes déjà écrites restent ; les sujets suivants attendent.", def: '0', options: [['0', 'Sans limite'], ...[1, 2, 3, 5, 10, 20, 50, 100].map((n) => [String(n), `${n} $`] as [string, string])] })}
             {st.Pick({ k: 'AI_BUDGET_MONTH', label: 'Plafond par mois', help: "Au-delà, l'IA s'arrête jusqu'au 1er du mois suivant.", def: '0', options: [['0', 'Sans limite'], ...[10, 25, 50, 100, 200, 300, 500, 1000, 2000].map((n) => [String(n), `${n} $`] as [string, string])] })}
+            {st.Pick({ k: 'AI_BUDGET_ALERT', label: 'Alerte avant le plafond', help: "Un bandeau orange s'affiche en haut de toutes les pages du back office quand la dépense du jour ou du mois atteint cette part du plafond, et le journal du moteur le note.", def: '80', options: st.nums([50, 70, 80, 90], ' %') })}
+            {st.Pick({ k: 'AI_BUDGET_RUN', label: 'Plafond par passage', help: "Un seul passage (édition, mise à jour ou Dernière minute) ne peut pas dépenser plus. Au-delà, il s'arrête ; le suivant repart à zéro.", def: '0', options: [['0', 'Sans limite'], ...[0.5, 1, 2, 3, 5, 10].map((n) => [String(n), usd(n)] as [string, string])] })}
+            {st.Pick({ k: 'AI_MAX_CALLS', label: 'Appels à l’IA par passage, au plus', help: "Protection contre une boucle ou des réessais sans fin : au-delà, le passage s'arrête. Une édition de 40 cartes en fait environ 120.", def: '200', options: st.nums([50, 100, 200, 300, 500]) })}
+            {history?.length ? (
+              <details>
+                <summary className="muted small">Historique des dépenses (30 jours)</summary>
+                <table className="table small"><thead><tr><th>Jour</th><th>Édition</th><th>Dernière minute</th><th>Total</th><th>Passages</th></tr></thead>
+                  <tbody>{history.map((d) => <tr key={d.day}><td>{new Date(d.day + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>{usd(d.edition)}</td><td>{usd(d.flash)}</td><td><b>{usd(d.edition + d.flash)}</b>{capDay && d.edition + d.flash >= capDay ? ' ⚠' : ''}</td><td>{d.runs}</td></tr>)}</tbody>
+                </table>
+              </details>
+            ) : null}
+          </section>
+          <section className="panel settings">
+            <h2>Garde-fous de publication</h2>
+            <p className="muted small">Avant de publier seule, l'IA est contrôlée. Au moindre doute, la carte attend dans Articles « À relire » (et l'info Dernière minute reste masquée) au lieu de partir en ligne. La raison est notée sur la carte et dans Historique.</p>
+            {st.Toggle({ k: 'GUARD_RULES', label: 'Ton neutre et chiffres vérifiés', help: "Gratuit, sans IA : repère les mots d'opinion, sensationnels ou partisans (scandale, incroyable, heureusement…), les points d'exclamation, et tout nombre qui n'apparaît pas dans les dépêches des médias.", def: true })}
+            {st.Toggle({ k: 'GUARD_AI_CHECK', label: 'Seconde lecture par l’IA', help: "Une deuxième IA relit chaque carte avant publication automatique : rien d'inventé par rapport aux sources, pas d'opinion, pas de parti pris, rien d'extrême. Coût : un petit appel par carte publiée (environ +15 % sur la facture).", def: true })}
+            {st.Pick({ k: 'PUBLISH_MAX_PER_DAY', label: 'Cartes publiées par jour, au plus', help: "Au-delà, les cartes suivantes attendent en brouillon jusqu'à ce que vous les publiiez. Protège contre une IA qui publierait en rafale.", def: '80', options: [['0', 'Sans limite'], ...st.nums([20, 40, 60, 80, 120, 200])] })}
+            {st.Text({ k: 'GUARD_WORDS', label: 'Mots à surveiller en plus', help: "Une carte qui contient un de ces mots part en relecture. Séparez-les par des virgules ou des retours à la ligne.", placeholder: 'mot1, mot2, une expression' })}
           </section>
           <section className="panel settings">
             <h2>Pilotage</h2>
@@ -904,7 +935,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
         </>
       ) : null}
       {tab === 'sources' ? <SourcesPage say={say} /> : null}
-      {tab === 'history' ? <EnginePage /> : null}
+      {tab === 'history' ? <EnginePage admin={admin} say={say} /> : null}
     </>
   );
 }
@@ -977,7 +1008,7 @@ function MessagesPage({ say }: { say: (m: string) => void }) {
 }
 
 /* ---------------- Moteur ---------------- */
-function EnginePage() {
+function EnginePage({ admin, say }: { admin: boolean; say: (m: string) => void }) {
   const [runs, setRuns] = useState<EngineRun[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const load = () => api.runs().then((r) => { setRuns(r); setOpen((o) => o ?? r[0]?.id ?? null); }).catch(() => setRuns([]));
@@ -998,6 +1029,12 @@ function EnginePage() {
               <span className="muted">{open === r.id ? '▾' : '▸'}</span>
             </button>
             {open === r.id ? <RunDetails r={r} /> : null}
+            {open === r.id && admin && !r.details?.test && r.status !== 'running' ? (
+              <div className="run-body"><button className="btn sm" onClick={async () => {
+                if (!window.confirm("Retirer de l'app tout ce que ce passage a publié ? Les cartes repassent « À relire » dans Articles, les infos Dernière minute sont masquées. Vous pourrez les republier une par une.")) return;
+                try { const n = await api.unpublishRun(r.id); say(`Retiré de l'app : ${n.articles} carte(s), ${n.flashes} info(s) Dernière minute`); } catch (e) { say(e instanceof Error ? e.message : 'Impossible'); }
+              }}>Dépublier tout ce passage</button></div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -1013,6 +1050,7 @@ const CONFIG_LABEL: Record<string, string> = {
   publication_auto: 'Publication sans relecture', max_par_jour: 'Infos par jour', mises_a_jour: 'Mises à jour', importance_min_mise_a_jour: 'Importance min. mise à jour',
   fenetre_mise_a_jour_h: 'Période mise à jour (h)', cartes_max_mise_a_jour: 'Cartes par mise à jour', cartes_min_mise_a_jour: 'Cartes au moins par mise à jour',
   min_par_jour: 'Infos par jour, au moins', importance_si_retard: 'Importance si en retard', depeches_max: 'Dépêches lues', ia_en_parallele: 'Cartes en parallèle',
+  publications_max_jour: 'Publications par jour', regles_ton: 'Ton et chiffres vérifiés', relecture_ia: 'Seconde lecture IA',
 };
 function RunDetails({ r }: { r: EngineRun }) {
   const d = r.details ?? {};

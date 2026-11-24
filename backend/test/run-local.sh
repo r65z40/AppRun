@@ -53,6 +53,17 @@ psql "$VIDE" -qc "delete from sources where name = 'Morte'" -c "update sources s
 psql "$VIDE" -qc "insert into raw_items (source_id, guid, title, link, fetched_at) select id, 'vieux', 'Vieux', 'https://x.test/v', now() - interval '40 days' from sources limit 1"
 psql "$VIDE" -tAc "select case when public.purge_raw_items(14) = 1 and (select count(*) from public.source_stats()) = 0 then 'OK  ménage des vieilles dépêches ; statistiques des sources réservées à l''équipe' else 'ÉCHEC  ménage ou statistiques' end"
 
+echo "--- Garde-fous de publication"
+DATABASE_URL="$VIDE" npx tsx test/guard.ts
+psql "$VIDE" -tAc "select case when count(*) filter (where status = 'published') > 0 and bool_and(run_id is not null) then 'OK  chaque carte garde son passage' else 'ÉCHEC  run_id manquant' end from articles"
+psql "$VIDE" -tA -c "select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000ad', false)" -c "insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000ad', 'chef@exemple.fr') on conflict do nothing" -c "update profiles set role = 'admin' where id = '00000000-0000-0000-0000-0000000000ad'" \
+  -c "select public.unpublish_run((select run_id from articles where status = 'published' limit 1))" \
+  -c "select case when not exists (select 1 from articles where status = 'published') and exists (select 1 from articles where 'dépubliée en urgence (tout le passage retiré)' = any (review_notes)) and exists (select 1 from audit_log where action = 'Passage dépublié') then 'OK  dépublier tout un passage : cartes retirées, À relire, tracé au journal' else 'ÉCHEC  unpublish_run' end" | grep -E '^(OK|ÉCHEC)'
+psql "$VIDE" -tAc "select case when not has_function_privilege('anon', 'public.unpublish_run(uuid)', 'execute') and not has_function_privilege('anon', 'public.ai_spend_history(int)', 'execute') then 'OK  dépublication et historique des dépenses fermés au public' else 'ÉCHEC  droits garde-fous' end"
+psql "$VIDE" -qc "delete from articles; delete from editions"
+DATABASE_URL="$VIDE" MOCK_AI=1 PUBLISH_MAX_PER_DAY=2 npx tsx src/run.ts --fixtures test/feeds >/dev/null
+psql "$VIDE" -tAc "select case when count(*) filter (where status = 'published') = 2 and exists (select 1 from articles where 'limite de 2 publications par jour atteinte' = any (review_notes)) then 'OK  limite de 2 publications par jour : les suivantes attendent en brouillon' else 'ÉCHEC  limite par jour (' || count(*) filter (where status = 'published') || ' publiées)' end from articles"
+
 echo "--- Réglages de la rédaction appliqués par le moteur"
 psql "$VIDE" -qc "insert into app_settings (key, value) values ('MAX_CARDS', '3'), ('AUTO_PUBLISH', '0'), ('AI_GUIDELINES', 'Ton sobre')" 
 psql "$VIDE" -qc "delete from articles; delete from editions; delete from engine_runs"
@@ -79,6 +90,7 @@ psql "$VIDE" -qc "delete from app_settings where key = 'AI_OFF'" -c "insert into
   -c "insert into engine_runs (kind, status, stats) values ('flash', 'ok', '{\"model\": \"claude-opus-5-5\", \"ai\": {\"input\": 200000, \"output\": 20000}}')"
 DATABASE_URL="$VIDE" MOCK_AI=1 npx tsx src/flash.ts --fixtures test/feeds >/dev/null
 psql "$VIDE" -tAc "select case when summary like 'Budget du jour atteint : 1.20 \$ sur 1 \$%' and status = 'ok' then 'OK  budget du jour atteint : arrêt propre, sans ticket de panne' else 'ÉCHEC  budget : ' || coalesce(summary, '?') end from engine_runs where kind = 'flash' order by started_at desc limit 1"
+psql "$VIDE" -tA -c "select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000ad', false)" -c "select case when (engine_status() ->> 'budget_day_pct')::int >= 120 and (engine_status() ->> 'budget_alert')::int = 80 and (select edition + flash from ai_spend_history(7) limit 1) >= 1.2 then 'OK  alerte budget : part du plafond visible dans le bandeau, historique jour par jour' else 'ÉCHEC  alerte ou historique du budget' end" | grep -E '^(OK|ÉCHEC)'
 psql "$VIDE" -qc "delete from app_settings where key = 'AI_BUDGET_DAY'" -c "delete from engine_runs where stats->'ai'->>'input' = '200000'"
 psql "$VIDE" -tAc "select case when not has_function_privilege('anon', 'public.ai_spend()', 'execute') then 'OK  dépense de l''IA fermée au public' else 'ÉCHEC  ai_spend public' end"
 

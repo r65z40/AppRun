@@ -11,7 +11,7 @@ import './settings.js'; // en premier : base à jour + réglages du back office
 import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
-import { AiStopped, budget, model, checkFlash, selectFlashes, setRubricHints, usage, type Item } from './ai.js';
+import { AiStopped, budget, model, checkFlash, guardText, reviewText, selectFlashes, setRubricHints, usage, type Item } from './ai.js';
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 import { moderate } from './moderate.js';
@@ -29,6 +29,7 @@ const log = (...a: unknown[]) => J.log(...a);
 
 async function main() {
   J = await startJournal('flash');
+  budget.log = log;
   try {
     await flash();
     if (!TEST) await alerts();
@@ -102,19 +103,24 @@ async function flash() {
       continue;
     }
     const its = f.item_numbers.map((k) => raws[k - 1]).filter(Boolean);
+    // Garde-fous : ton neutre et rien d'inventé ; au moindre doute, l'info attend une relecture (masquée) au lieu d'être publiée.
+    const src = f.item_numbers.map((k) => items[k - 1]).filter(Boolean);
+    const doubts = guardText([f.title, f.sentence], src);
+    if (!doubts.length && (AUTO || TEST)) doubts.push(...await reviewText(`Titre : ${f.title}\nPhrase : ${f.sentence}`, src).catch((e) => [`relecture IA impossible (${e instanceof Error ? e.message : e})`]));
+    if (doubts.length) log(`  à relire : ${f.title} (${doubts.join(', ')})`);
     if (TEST) { n++; log(`  ⚡ (test) ${f.title} — ${f.sentence}`); kept.push({ title: `${f.title} — ${f.sentence}`, sources: [...new Set(its.map((r) => r.source))] }); continue; }
     const sources = [...new Map(its.map((r) => [r.source, { source: r.source, url: r.link }])).values()];
     await q(
-      `insert into flashes (status, rubric_id, importance, title, sentence, sources, raw_item_ids, model, sensitive)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [AUTO ? 'published' : 'hidden', f.rubric, Math.min(10, Math.max(1, f.importance)), f.title.slice(0, 90), f.sentence.slice(0, 220), JSON.stringify(sources), its.flatMap((r) => [r.id, ...(r.dups ?? [])]), model(),
+      `insert into flashes (status, rubric_id, importance, title, sentence, sources, raw_item_ids, model, sensitive, run_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [AUTO && !doubts.length ? 'published' : 'hidden', f.rubric, Math.min(10, Math.max(1, f.importance)), f.title.slice(0, 90), f.sentence.slice(0, 220), JSON.stringify(sources), its.flatMap((r) => [r.id, ...(r.dups ?? [])]), model(),
        // Sujet sensible : jamais d'alerte aux lecteurs qui suivent ce sujet (IA, et mots qui ne trompent pas en filet).
-       !!f.sensitive || /\bmorts?\b|attentat|tué|décès/i.test(f.title + ' ' + f.sentence)],
+       !!f.sensitive || /\bmorts?\b|attentat|tué|décès/i.test(f.title + ' ' + f.sentence), J.id],
     );
     n++;
     if (isExtra) extra++;
-    log(`  ⚡ ${f.title}${isExtra ? ` (importance ${f.importance}, pour tenir le minimum du jour)` : ''}`);
-    kept.push({ title: f.title, sources: sources.map((x) => x.source) });
+    if (!doubts.length) log(`  ⚡ ${f.title}${isExtra ? ` (importance ${f.importance}, pour tenir le minimum du jour)` : ''}`);
+    kept.push({ title: f.title, sources: sources.map((x) => x.source), ...(doubts.length ? { rejected: `masquée, à relire : ${doubts.join(', ')}` } : {}) });
   }
   const summary = TEST ? `Test (rien publié) : ${items.length} dépêches récentes, ${n} info(s) que l'IA aurait publiée(s).` : `${fetched} titres lus, ${items.length} dépêches récentes, ${n} info(s) publiée(s).`;
   log(`Dernière minute : ${summary}`);

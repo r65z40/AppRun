@@ -166,6 +166,8 @@ export function demoApi(): Api {
     sources: () => wait(sources),
     async deleteSource(id) { sources = sources.filter((x) => x.id !== id); },
     aiSpend: () => wait({ today: 1.84, month: 37.5 }),
+    aiSpendHistory: () => wait(Array.from({ length: 14 }, (_, k) => ({ day: new Date(Date.now() - k * 86400e3).toISOString().slice(0, 10), edition: k ? 1.1 + (k % 3) * 0.3 : 1.2, flash: k ? 0.6 + (k % 2) * 0.2 : 0.64, runs: k ? 120 : 64 }))),
+    unpublishRun: () => wait({ articles: 12, flashes: 1 }),
     dispatchStatus: () => wait({ cron: true, token: false, last: null }),
     rubrics: () => wait((rubricHints ??= Object.entries(RUBRICS).map(([id, name]) => ({ id, name, ai_hint: null })))),
     async saveRubricHint(id, ai_hint) { rubricHints = (rubricHints ?? []).map((r) => (r.id === id ? { ...r, ai_hint: ai_hint.trim() || null } : r)); },
@@ -199,6 +201,7 @@ export function demoApi(): Api {
         paused, paused_until: paused && v!.value !== '1' ? v!.value : null, paused_at: paused ? v!.updated_at : null, paused_by: paused ? 'vous@exemple.fr' : null,
         ai_off: settings.some((x) => x.key === 'AI_OFF' && x.value === '1'), articles_today: 24, flashes_today: 2, last_published: at(12),
         failing_sources: [{ name: '20 Minutes', error: 'HTTP 403 (le média bloque les robots)', fails: 3 }],
+        budget_day_pct: 92, budget_month_pct: 38, budget_alert: 80,
       });
     },
     uploadPhoto: async (file) => URL.createObjectURL(file),

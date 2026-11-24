@@ -20,7 +20,7 @@ import { pool, q } from './db.js';
 import { collect } from './collect.js';
 import { startJournal, type Journal } from './journal.js';
 import { findPhoto, pexelsOn } from './pexels.js';
-import { AiStopped, budget, model, checkCard, minorIssue, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
+import { AiStopped, budget, model, cardText, checkCard, minorIssue, reviewText, selectStories, setRubricHints, writeCard, usage, type Item, type Story } from './ai.js';
 import { dedupe, type Raw } from './dedupe.js';
 import { cfg, snapshot } from './config.js';
 import { sendTopicAlerts } from './alerts.js';
@@ -46,6 +46,7 @@ const log = (...a: unknown[]) => J.log(...a);
 
 async function main() {
   J = await startJournal('edition');
+  budget.log = log;
   try {
     await edition();
     // Alertes des sujets suivis (les infos publiées la nuit n'en déclenchent pas : voir le back office).
@@ -181,6 +182,8 @@ async function edition() {
   existing.forEach((e) => (ranks[e.rubric_id] = e.n));
   const sorted = [...stories].sort((a, b) => Number(b.essential) - Number(a.essential) || b.importance - a.importance);
   let written = 0, flagged = 0, failed = 0, fixed = 0;
+  // Limite de publications automatiques par jour (heure de Paris), toutes éditions et mises à jour comprises.
+  let pubToday = (await q<{ n: number }>(`select count(*)::int as n from articles where status = 'published' and published_at >= date_trunc('day', now() at time zone 'Europe/Paris') at time zone 'Europe/Paris'`))[0].n;
   let stopped = '';
 
   const work = async (s: Story) => {
@@ -195,6 +198,10 @@ async function edition() {
         const left = again ? checkCard(again, its) : issues;
         if (again && left.length < issues.length) { card = again; issues = left; fixed++; }
       }
+      // Seconde lecture par l'IA, seulement pour une carte qui partirait en ligne sans relecture humaine.
+      if ((AUTO_PUBLISH || TEST) && issues.every(minorIssue)) {
+        issues.push(...await reviewText(cardText(card), its).catch((e) => [`relecture IA impossible (${e instanceof Error ? e.message : e})`]));
+      }
       const facts = card.facts.map((f) => {
         const r = fresh[f.item_number - 1] ?? fresh[its[0].n - 1];
         return { text: f.text, source: r.source, url: r.link };
@@ -208,17 +215,19 @@ async function edition() {
         return;
       }
       const photo = pexelsOn() ? await findPhoto(card.photo_query).catch((e) => { log(`   photo introuvable (${e instanceof Error ? e.message : e})`); return null; }) : null;
-      const publish = AUTO_PUBLISH && (issues.every(minorIssue) || cfg.publishFlagged()) && s.importance >= cfg.publishMinImportance();
+      let publish = AUTO_PUBLISH && (issues.every(minorIssue) || cfg.publishFlagged()) && s.importance >= cfg.publishMinImportance();
+      if (publish && cfg.publishMaxPerDay() && pubToday >= cfg.publishMaxPerDay()) { publish = false; issues.push(`limite de ${cfg.publishMaxPerDay()} publications par jour atteinte`); }
+      if (publish) pubToday++;
       await q(
         `insert into articles (edition_date, rubric_id, status, rank, importance, essential, title, key_sentence, facts, summary,
-                               photo_tag, raw_item_ids, review_notes, model, published_at, photo_url, photo_credit, sensitive)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+                               photo_tag, raw_item_ids, review_notes, model, published_at, photo_url, photo_credit, sensitive, run_id)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
         [
           DATE, s.rubric, publish ? 'published' : 'draft', (ranks[s.rubric] = (ranks[s.rubric] ?? 0) + 1) - 1,
           s.importance, s.essential, card.title.slice(0, 90), card.key_sentence, JSON.stringify(facts),
           JSON.stringify([card.summary.context, card.summary.change, card.summary.next]), card.photo_tag,
           its.flatMap((i) => [fresh[i.n - 1].id, ...(fresh[i.n - 1].dups ?? [])]), issues, model(), publish ? new Date() : null, photo?.url ?? null, photo?.credit ?? null,
-          !!s.sensitive,
+          !!s.sensitive, J.id,
         ],
       );
       written++;
