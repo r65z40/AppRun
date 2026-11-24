@@ -8,7 +8,7 @@ import { DeviceMotion } from 'expo-sensors';
 import { useFonts, Archivo_400Regular, Archivo_600SemiBold, Archivo_900Black } from '@expo-google-fonts/archivo';
 import { C } from './src/theme';
 import { NOTIF, NUDGES, RULES } from './src/brand';
-import { notifWanted, setNotif, syncNotif } from './src/notify';
+import { notifWanted, onRecapTap, setNotif, syncNotif } from './src/notify';
 import { RUBRICS } from './src/content';
 import { buildColumns, demoCard, rubricOf, seedComments } from './src/edition';
 import { adHit, loadAds } from './src/ads';
@@ -18,7 +18,7 @@ import { Bravo, End, Onboarding, PastDays, Settings, Splash, Toast, Welcome, typ
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
 import { syncWidget } from './src/headline';
 import { dayLabel, isoDay, shortDay } from './src/dates';
-import { loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, type AppMessage } from './src/remote';
+import { WEEK, loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, weekScore, type AppMessage } from './src/remote';
 import { Account } from './src/Account';
 import { Premium } from './src/Premium';
 import { ShareCardHost } from './src/ShareCard';
@@ -156,7 +156,9 @@ function Main() {
   }, [phase, p.active.join(','), p.quota, p.perso, me?.uid, edVer, tasteVer]);
   const cols = useMemo(() => {
     const c = buildColumns(p.active, p.quota, premium, p.taste, p.adsPersonalized, picks);
-    if (pastDay) c[0].name = `Édition · ${shortDay(pastDay)}`;
+    // Récap : toutes les infos de la semaine retenues, de la plus marquante à la moins marquante, sans pub.
+    if (pastDay === WEEK) c[0] = { ...c[0], name: 'La semaine', tags: {}, cards: RUBRICS.flatMap((r) => r.items).sort((a, b) => weekScore(b.importance ?? 5, b) - weekScore(a.importance ?? 5, a)) };
+    else if (pastDay) c[0].name = `Édition · ${shortDay(pastDay)}`;
     return c;
   }, [p.active, p.quota, premium, p.taste, p.adsPersonalized, flashVer, edVer, picks, pastDay]);
   const [ri, setRi] = useState(0);
@@ -204,6 +206,7 @@ function Main() {
   }, [phase, me?.uid]);
   // Appui sur une alerte « sujet suivi » : la frise du sujet s'ouvre.
   useEffect(() => (phase === 'feed' ? onAlertTap((t) => { setSummary(null); setTopicView(t); }) : undefined), [phase]);
+  useEffect(() => (phase === 'feed' ? onRecapTap(() => { setSummary(null); setOverlay(null); onPast(WEEK); }) : undefined), [phase]);
   const openFromTimeline = (id: string) => {
     const a = RUBRICS.flatMap((r) => r.items).find((x) => x.id === id);
     if (!a) return false;
@@ -594,7 +597,7 @@ function Main() {
       setRi(0);
       setIdx({});
       setEdVer((v) => v + 1);
-      showToast(day ? `Édition du ${dayLabel(`${day}T12:00:00Z`)}` : 'Édition du jour');
+      showToast(day === WEEK ? 'Les infos de la semaine à ne pas rater' : day ? `Édition du ${dayLabel(`${day}T12:00:00Z`)}` : 'Édition du jour');
     });
 
   const onResetTaste = () =>
