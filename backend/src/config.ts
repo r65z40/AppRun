@@ -75,6 +75,8 @@ export const cfg = {
   guardWords: () => text('GUARD_WORDS'),
   /** Garder en relecture humaine une carte encore douteuse après correction. Coupé (défaut) : tout se publie seul, le doute est noté. */
   guardHold: () => on('GUARD_HOLD', false),
+  /** « Voir les angles » : l'IA note, dans le même appel, comment chaque média aborde un sujet qui divise. */
+  mediaAngles: () => on('MEDIA_ANGLES', true),
 
   // Mises à jour de l'édition au fil de la journée
   liveUpdates: () => on('LIVE_UPDATES', true),

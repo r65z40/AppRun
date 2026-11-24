@@ -145,6 +145,7 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
               </View>
             ))}
             {extra}
+            <Angles a={a} />
             <View style={styles.srcList}>
               <Text style={styles.lbl}>SOURCES CONSULTÉES</Text>
               {[...new Map(a.facts.map((f) => [f.source, f.doc])).entries()].map(([m, url]) => (
@@ -170,6 +171,25 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
         </>
       ) : null}
     </Sheet>
+  );
+}
+
+/** « Voir les angles » : un lien discret, déplié seulement à la demande, et seulement quand 2 médias ou plus divergent. */
+function Angles({ a }: { a: Article }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [a.id]);
+  if ((a.angles?.length ?? 0) < 2) return null;
+  return (
+    <View style={{ marginBottom: 22 }}>
+      <Text style={styles.srcLink} onPress={() => { feel('light'); setOpen(!open); }} accessibilityRole="button">
+        {open ? 'Masquer les angles ‹' : 'Voir les angles des médias ›'}
+      </Text>
+      {open ? a.angles!.map((g) => (
+        <Text key={g.source} style={[styles.blkP, { fontSize: 15, lineHeight: 22, marginTop: 12 }]}>
+          <Text style={{ fontFamily: F.semi }}>{g.source}</Text> · {g.text}
+        </Text>
+      )) : null}
+    </View>
   );
 }
 

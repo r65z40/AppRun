@@ -17,6 +17,8 @@ export type Article = {
   views?: number;
   comments: number;
   summary?: string[];
+  /** Sujet qui divise : ce sur quoi chaque média insiste (2 au moins), derrière « Voir les angles ». */
+  angles?: { source: string; text: string }[];
   /** Sujet majeur du jour (choisi par la rédaction). */
   essential?: boolean;
   /** Sujet triste ou choquant : aucune pub juste après. */
