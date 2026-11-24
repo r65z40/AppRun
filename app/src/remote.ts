@@ -46,15 +46,15 @@ const hour = (iso: string) => {
   return `${Number(h)} h ${m}`;
 };
 
-/** Charge la dernière édition publiée et remplace le contenu de démo. Renvoie la date ou null. */
-export async function loadEdition(timeoutMs = 4000): Promise<string | null> {
+/** Charge l'édition du jour donné (sinon la dernière publiée) et remplace le contenu de démo. Renvoie la date ou null. */
+export async function loadEdition(day: string | null = null, timeoutMs = 4000): Promise<string | null> {
   if (!remoteConfigured) return null;
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), timeoutMs);
   try {
     // Dernier jour qui a au moins une info en ligne : l'édition du jour s'affiche dès ses premières cartes,
     // sans attendre la fin du passage (avant, l'app gardait celle de la veille, datée d'aujourd'hui).
-    const eds = await get<{ edition_date: string }[]>('articles?select=edition_date&status=eq.published&order=edition_date.desc&limit=1', ctl.signal);
+    const eds = day ? [{ edition_date: day }] : await get<{ edition_date: string }[]>('articles?select=edition_date&status=eq.published&order=edition_date.desc&limit=1', ctl.signal);
     if (!eds.length) return null;
     const date = eds[0].edition_date;
     const [rows, rubs] = await Promise.all([
@@ -113,6 +113,21 @@ export async function loadEdition(timeoutMs = 4000): Promise<string | null> {
     return date;
   } catch {
     return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** Jours des éditions passées terminées, de la plus récente à la plus ancienne (« 2026-11-23 »). */
+export async function loadEditionDates(): Promise<string[]> {
+  if (!remoteConfigured) return [];
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 4000);
+  try {
+    const rows = await get<{ date: string }[]>('editions?select=date&status=eq.published&order=date.desc&limit=365', ctl.signal);
+    return rows.map((r) => r.date);
+  } catch {
+    return [];
   } finally {
     clearTimeout(t);
   }

@@ -16,3 +16,7 @@ export const flashTime = (iso: string) => {
   const p = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', minute: '2-digit' }).formatToParts(d);
   return `${Number(p.find((x) => x.type === 'hour')?.value)} h ${p.find((x) => x.type === 'minute')?.value}`;
 };
+/** Date du jour à Paris, décalée de n jours : « 2026-11-23 ». */
+export const isoDay = (n = 0) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date(Date.now() + n * 86400e3));
+/** « Hier », « Avant-hier » ou « Ven. 20 nov. » pour une date « 2026-11-20 ». */
+export const shortDay = (d: string) => (d === isoDay(-1) ? 'Hier' : d === isoDay(-2) ? 'Avant-hier' : cap(fmt(new Date(`${d}T12:00:00Z`), { weekday: 'short', day: 'numeric', month: 'short' })));
