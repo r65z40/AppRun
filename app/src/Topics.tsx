@@ -72,7 +72,7 @@ export function TopicsScreen({ W, start, onClose, onToast, onOpenArticle }: {
           <Text style={styles.h1} numberOfLines={2}>{topic ?? 'Mes sujets'}</Text>
           <Text style={styles.sub}>{topic ? "L'histoire du sujet, la plus récente en haut" : 'Une alerte quand ils bougent'}</Text>
         </View>
-        <Pressable onPress={back} hitSlop={12}><Text style={styles.close}>{topic && start === null ? 'Retour' : 'Fermer'}</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={back} hitSlop={12}><Text style={styles.close}>{topic && start === null ? 'Retour' : 'Fermer'}</Text></Pressable>
       </View>
       {topic ? <TimelineView key={topic} topic={topic} onToast={onToast} onOpenArticle={onOpenArticle} onUnfollow={() => (start === null ? setTopic(null) : leave())} />
         : <TopicList t={t} onOpen={setTopic} onToast={onToast} bottom={insets.bottom} />}

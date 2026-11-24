@@ -58,10 +58,10 @@ export function AppIcon({ size = 64, glass = false }: { size?: number; glass?: b
 }
 
 /* ---------- Texte avec <b>gras</b> ---------- */
-export function Rich({ text, style, boldStyle }: { text: string; style?: StyleProp<TextStyle>; boldStyle?: StyleProp<TextStyle> }) {
+export function Rich({ text, style, boldStyle, maxScale }: { text: string; style?: StyleProp<TextStyle>; boldStyle?: StyleProp<TextStyle>; maxScale?: number }) {
   const parts = text.split(/(<b>.*?<\/b>)/g).filter(Boolean);
   return (
-    <Text style={style}>
+    <Text style={style} maxFontSizeMultiplier={maxScale}>
       {parts.map((p, i) =>
         p.startsWith('<b>') ? (
           <Text key={i} style={[{ fontFamily: F.black }, boldStyle]}>
@@ -81,6 +81,7 @@ export function Press({ style, children, scaleTo = 0.97, ...rest }: PressablePro
   const a = useAnimatedStyle(() => ({ transform: [{ scale: s.value }] }));
   return (
     <Pressable
+      accessibilityRole="button"
       {...rest}
       onPressIn={(e) => {
         s.value = withTiming(scaleTo, { duration: 100, easing: Easing.bezier(0.23, 1, 0.32, 1) });

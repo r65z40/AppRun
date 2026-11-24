@@ -224,7 +224,7 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
           <Text style={styles.setH}>Mes infos,{'\n'}mes réglages</Text>
           <Text style={[styles.p, { fontSize: 13, marginTop: 8 }]}>Modifiables à tout moment</Text>
         </View>
-        <Pressable onPress={() => leave(onClose)} hitSlop={12}><Text style={styles.close}>Fermer</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={() => leave(onClose)} hitSlop={12}><Text style={styles.close}>Fermer</Text></Pressable>
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 26, paddingBottom: 30, gap: 30 }}>
         <View style={{ gap: 12 }}>
@@ -374,7 +374,7 @@ export function QuotaWheel({ value, onChange }: { value: number; onChange: (q: n
               onAccessibilityAction={(e) => go(cur + (e.nativeEvent.actionName === 'increment' ? 1 : -1))}
             >
               {QUOTAS.map((q, k) => (
-                <Pressable key={q} onPress={() => go(k)} style={styles.wItem}>
+                <Pressable accessibilityRole="button" key={q} onPress={() => go(k)} style={styles.wItem}>
                   <Text style={[styles.wN, q === value ? styles.wOn : { opacity: Math.max(0.2, 0.6 - Math.abs(k - cur) * 0.15) }]}>{q}</Text>
                 </Pressable>
               ))}
@@ -407,9 +407,9 @@ export function TimeChoice({ value, onChange }: { value: string; onChange: (t: s
         <Animated.View entering={FadeIn.duration(200)} style={styles.tPick}>
           {[['heure', 60], ['minutes', 15]].map(([l, d]) => (
             <View key={l as string} style={styles.tCol}>
-              <Pressable onPress={() => step(-(d as number))} hitSlop={8} accessibilityLabel={`Moins ${l}`} style={styles.wArrow}><Text style={styles.wArrowTxt}>−</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => step(-(d as number))} hitSlop={8} accessibilityLabel={`Moins ${l}`} style={styles.wArrow}><Text style={styles.wArrowTxt}>−</Text></Pressable>
               <Text style={styles.tVal}>{l === 'heure' ? value.split(' h ')[0] + ' h' : value.split(' h ')[1]}</Text>
-              <Pressable onPress={() => step(d as number)} hitSlop={8} accessibilityLabel={`Plus ${l}`} style={styles.wArrow}><Text style={styles.wArrowTxt}>+</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => step(d as number)} hitSlop={8} accessibilityLabel={`Plus ${l}`} style={styles.wArrow}><Text style={styles.wArrowTxt}>+</Text></Pressable>
             </View>
           ))}
         </Animated.View>
@@ -489,7 +489,7 @@ export function Bravo({ n, realMs, canMore, moreCount, onMore, onTomorrow, visit
           </View>
         </Stag>
         <Stag d={260}>
-          <Pressable onPress={() => setHow(!how)}><Text style={styles.how}>Comment on calcule ?</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => setHow(!how)}><Text style={styles.how}>Comment on calcule ?</Text></Pressable>
           {how ? <Text style={[styles.p, { fontSize: 13, marginTop: 10 }]}>Temps réel : la somme du temps passé sur chaque carte et chaque résumé. Temps classique : 4 minutes par article de presse moyen. Temps gagné : la différence entre les deux.</Text> : null}
         </Stag>
         <Stag d={300}>

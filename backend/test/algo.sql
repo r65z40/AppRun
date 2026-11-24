@@ -112,6 +112,9 @@ set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
 select case when algo_stats() ? 'events_7' and jsonb_array_length(algo_stats()->'topics') > 0
         and jsonb_array_length(admin_reader_algo('00000000-0000-0000-0000-0000000000a1')->'edition') > 0
   then 'OK  back office : statistiques et aperçu de l''édition d''un lecteur' else 'ÉCHEC  statistiques' end;
+select case when jsonb_array_length(reading_stats()->'articles') > 0 and (reading_stats()->'articles'->0->>'readers')::int > 0
+        and (reading_stats()->'reach'->0->>'days')::int = (reading_stats()->>'days')::int and (reading_stats()->>'days')::int > 0
+  then 'OK  statistiques de lecture : infos les plus vues et décrochage dans le fil' else 'ÉCHEC  statistiques de lecture' end;
 reset request.jwt.claim.sub;
 -- Nettoyage : l'édition de test ne doit pas gêner la suite.
 delete from editions where date = current_date + 1;

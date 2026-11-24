@@ -59,7 +59,7 @@ export function ReaderCardView({ who, card, onClose }: { who: string; card: Read
       <View style={s.card}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Text style={[s.who, { color: pseudoColor(card?.badges) }]}>{card?.pseudo ?? who}</Text>
-          <Pressable onPress={onClose} hitSlop={12} style={{ marginLeft: 'auto' }}><Text style={s.close}>Fermer</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={onClose} hitSlop={12} style={{ marginLeft: 'auto' }}><Text style={s.close}>Fermer</Text></Pressable>
         </View>
         {card === undefined ? <ActivityIndicator color="#fff" style={{ marginVertical: 20 }} />
           : !card ? <Text style={s.desc}>Fiche indisponible pour le moment.</Text>

@@ -7,7 +7,7 @@ import { FollowPage } from './Follow';
 import { BadgesPage } from './Badges';
 import { ReferralPage } from './Referral';
 import { BrandPage } from './Brand';
-import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type EngineStatus, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type LaunchWhat, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type SpendDay, type Status } from './data';
+import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type EngineStatus, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, type ReadingStats, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type LaunchWhat, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type SpendDay, type Status } from './data';
 
 type Page = 'dashboard' | 'readers' | 'algo' | 'follow' | 'badges' | 'referral' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings' | 'brand';
 // Menu : une page par ligne, avec son groupe. Un groupe sans page visible n'est pas affiché.
@@ -294,6 +294,7 @@ type Filter = 'all' | 'review' | 'draft' | 'published' | 'rejected';
 /* ---------------- Tableau de bord ---------------- */
 const usd = (n: number) => `${n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
 const int = (n: number) => n.toLocaleString('fr-FR');
+const pct = (part: number, all: number) => (all ? `${Math.round((part / all) * 100)} %` : '—');
 const eur = (c: number) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(c / 100);
 // Un passage en panne, bloqué, ou trop ancien (édition : 1 par jour ; Dernière minute : toutes les 10 min de 6 h à 23 h).
 function engineAlert(r: Dashboard['last_runs'][number] | undefined, kind: 'edition' | 'flash'): string | null {
@@ -310,12 +311,13 @@ function engineAlert(r: Dashboard['last_runs'][number] | undefined, kind: 'editi
 function DashboardPage({ go }: { go: (p: Page) => void }) {
   const [d, setD] = useState<Dashboard | null>(null);
   const [top, setTop] = useState<TopArticle[]>([]);
+  const [rd, setRd] = useState<ReadingStats | null>(null);
   const [mod, setMod] = useState<ModerationCost | null>(null);
   const [prem, setPrem] = useState<PremiumStats | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [eng, setEng] = useState<EngineStatus | null>(null);
   useEffect(() => {
-    const load = () => Promise.all([api.engineStatus().then(setEng).catch(() => null), api.dashboard().then(setD), api.topArticles().then(setTop), api.moderationCost().then(setMod), premiumApi.stats().then(setPrem).catch(() => null)]).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    const load = () => Promise.all([api.engineStatus().then(setEng).catch(() => null), api.dashboard().then(setD), api.topArticles().then(setTop), api.readingStats().then(setRd).catch(() => null), api.moderationCost().then(setMod), premiumApi.stats().then(setPrem).catch(() => null)]).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
     load();
     const t = setInterval(load, 60000);
     return () => clearInterval(t);
@@ -360,6 +362,23 @@ function DashboardPage({ go }: { go: (p: Page) => void }) {
           <tbody>{top.map((a, i) => <tr key={i}><td><span className="muted small">{RUBRICS[a.rubric_id]}</span> {a.title}</td><td>{int(a.likes)}</td><td>{int(a.comments)}</td></tr>)}</tbody>
         </table>
       ) : <p className="muted">Pas encore de réactions cette semaine.</p>}
+      <h2>Lecture, 7 jours</h2>
+      <p className="muted small">Seuls les lecteurs qui ont laissé « Édition selon mes goûts » allumé sont comptés.</p>
+      {rd?.articles.length ? (
+        <table className="table">
+          <thead><tr><th>Info la plus vue</th><th>Vue par</th><th>Temps sur la carte</th><th>Ouverte en entier</th><th>Lue jusqu'au bout</th></tr></thead>
+          <tbody>{rd.articles.map((a, i) => <tr key={i}><td><span className="muted small">{RUBRICS[a.rubric_id]}</span> {a.title}</td><td>{int(a.readers)}</td><td>{a.median_s == null ? '—' : `${a.median_s.toLocaleString('fr-FR')} s`}</td><td>{pct(a.opened, a.readers)}</td><td>{pct(a.finished, a.opened)}</td></tr>)}</tbody>
+        </table>
+      ) : <p className="muted">Pas encore de lecture notée cette semaine.</p>}
+      {rd?.days ? (
+        <>
+          <h3>Où les lecteurs décrochent dans le fil</h3>
+          <p className="muted small">Sur {int(rd.days)} journées de lecture : part de celles où le lecteur a vu au moins tant d'infos.</p>
+          <div className="reach">{rd.reach.map((r) => (
+            <div key={r.n} className="reach-row"><span>{r.n} info{r.n > 1 ? 's' : ''}</span><div><i style={{ width: `${(r.days / rd.days) * 100}%` }} /></div><b>{pct(r.days, rd.days)}</b></div>
+          ))}</div>
+        </>
+      ) : null}
       <h2>Argent</h2>
       <div className="tiles">
         <Tile label="Coût de l'IA aujourd'hui" value={usd(d.ai_today)} />
@@ -581,7 +600,8 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
   const set = <K extends keyof Article>(k: K, v: Article[K]) => setD((x) => ({ ...x, [k]: v }));
   const setFact = (i: number, k: keyof Fact, v: string) => setD((x) => ({ ...x, facts: x.facts.map((f, j) => (j === i ? { ...f, [k]: v } : f)) }));
   const over = plain(d.title).length > LIMITS.title || d.key_sentence.length > LIMITS.key || d.facts.some((f) => plain(f.text).length > LIMITS.fact) || d.summary.some((s) => s.length > LIMITS.summary);
-  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, rubric_id: d.rubric_id, essential: d.essential, sensitive: d.sensitive, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
+  const angles = (d.angles ?? []).filter((g) => g.text.trim());
+  const patch = (): Partial<Article> => ({ title: d.title, key_sentence: d.key_sentence, facts: d.facts, summary: d.summary, angles: angles.length >= 2 ? angles : null, rubric_id: d.rubric_id, essential: d.essential, sensitive: d.sensitive, importance: d.importance, photo_tag: d.photo_tag, photo_url: d.photo_url || null, photo_credit: d.photo_url ? d.photo_credit || null : null });
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     addEventListener('keydown', k);
@@ -613,6 +633,14 @@ function Editor({ a, onClose, onSave }: { a: Article; onClose: () => void; onSav
           {d.summary.map((s, i) => (
             <label key={i}>{SUMMARY_HEADS[i]} <Count v={s} max={LIMITS.summary} /><textarea rows={3} value={s} onChange={(e) => setD((x) => ({ ...x, summary: x.summary.map((y, j) => (j === i ? e.target.value : y)) }))} /></label>
           ))}
+          {a.angles?.length ? (
+            <>
+              <div className="lbl">Angles des médias <span className="muted small">lien discret « Voir les angles » dans l'app ; videz un texte pour le retirer (moins de 2 = lien masqué)</span></div>
+              {d.angles!.map((g, i) => (
+                <label key={i}>{g.source}<input value={g.text} onChange={(e) => setD((x) => ({ ...x, angles: x.angles!.map((y, j) => (j === i ? { ...y, text: e.target.value } : y)) }))} /></label>
+              ))}
+            </>
+          ) : null}
           <div className="row2">
             <label>Photo d'ambiance<select value={d.photo_tag ?? ''} onChange={(e) => set('photo_tag', e.target.value || null)}><option value="">Dégradé</option>{PHOTO_TAGS.map((t) => <option key={t}>{t}</option>)}</select></label>
             <label>Ou adresse d'une photo libre de droits<input placeholder="https://…" value={d.photo_url ?? ''} onChange={(e) => setD((x) => ({ ...x, photo_url: e.target.value, photo_credit: null }))} /></label>
@@ -894,6 +922,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
             <h2>Édition : écriture et publication</h2>
             {st.Toggle({ k: 'AUTO_FIX', label: 'Autocorrection', help: "Une carte qui échoue aux contrôles (trop longue, source manquante, phrase reprise d'un média) est réécrite une fois par l'IA.", def: true })}
             {st.Toggle({ k: 'PUBLISH_FLAGGED', label: 'Publier aussi les cartes avec alerte', help: "Déconseillé. Les alertes simples (texte un peu long, ponctuation, gras manquant) ne bloquent jamais la publication. Coupé, une carte avec une alerte grave (source manquante, reprise mot pour mot…) attend dans « À relire ».", def: false })}
+            {st.Toggle({ k: 'MEDIA_ANGLES', label: 'Angles des médias', help: "Sur un sujet qui divise, l'IA note en une phrase neutre ce sur quoi chaque média insiste, dans le même appel que la carte (pas de coût en plus). L'app affiche alors un petit lien « Voir les angles des médias » en bas de l'article, seulement si 2 médias ou plus ont un angle différent.", def: true })}
             {st.Pick({ k: 'PUBLISH_MIN_IMPORTANCE', label: 'Publication automatique à partir de', help: 'Avec le pilote automatique, seules les cartes au moins aussi importantes sont publiées ; les autres attendent en brouillon.', def: '1', options: [['1', 'Toutes les cartes'], ...st.nums(range(3, 9)).map(([v, l]) => [v, `Importance ${l} et plus`] as [string, string])] })}
           </section>
           <section className="panel settings">
