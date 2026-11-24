@@ -2,9 +2,10 @@
 // Textes, heure proposée et activation se règlent dans le back office (Personnalisation > Notification).
 // Notification locale, programmée sur le téléphone : son texte ne cite jamais une info précise
 // (donc jamais un sujet sensible), seulement le nombre d'infos du lecteur.
+// Le lecteur qui l'accepte reçoit aussi le récap de la semaine (jour, heure et textes réglés au même endroit).
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import { NOTIF, notifBody } from './brand';
+import { NOTIF, RECAP, notifBody } from './brand';
 import { getLocal, setLocal } from './account';
 
 const KEY = 'titre.notif';
@@ -16,10 +17,24 @@ if (on) Notifications.setNotificationHandler({ handleNotification: async () => (
 async function schedule(time: string, quota: number) {
   await Notifications.cancelAllScheduledNotificationsAsync();
   if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('edition', { name: 'Édition du matin', importance: Notifications.AndroidImportance.DEFAULT });
-  await Notifications.scheduleNotificationAsync({
+  if (NOTIF.enabled) await Notifications.scheduleNotificationAsync({
     content: { title: NOTIF.title, body: notifBody(quota) },
     trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, ...parse(time), channelId: 'edition' },
   });
+  // weekday d'Expo : 1 = dimanche … 7 = samedi
+  if (RECAP.enabled) await Notifications.scheduleNotificationAsync({
+    content: { title: notifBody(RECAP.count, RECAP.title), body: notifBody(RECAP.count, RECAP.body), data: { recap: true } },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.WEEKLY, weekday: RECAP.day + 1, ...parse(RECAP.time), channelId: 'edition' },
+  });
+}
+
+/** Appui sur la notification du récap : ouvre la semaine. Renvoie de quoi arrêter l'écoute. */
+export function onRecapTap(open: () => void): () => void {
+  if (!on) return () => {};
+  const go = (r: Notifications.NotificationResponse | null) => { if (r?.notification.request.content.data?.recap) open(); };
+  Notifications.getLastNotificationResponseAsync().then(go).catch(() => {});
+  const sub = Notifications.addNotificationResponseReceivedListener(go);
+  return () => sub.remove();
 }
 
 /** Le lecteur a demandé la notification sur cet appareil. */
@@ -31,7 +46,7 @@ export async function notifWanted(): Promise<boolean> {
 export async function setNotif(want: boolean, time: string, quota: number): Promise<boolean> {
   if (!on) return false;
   try {
-    if (!want || !NOTIF.enabled) {
+    if (!want || !(NOTIF.enabled || RECAP.enabled)) {
       await setLocal(KEY, want ? '1' : '0');
       await Notifications.cancelAllScheduledNotificationsAsync();
       return false;
@@ -50,7 +65,7 @@ export async function setNotif(want: boolean, time: string, quota: number): Prom
 export async function syncNotif(time: string, quota: number) {
   if (!on) return;
   try {
-    if (!NOTIF.enabled) return void (await Notifications.cancelAllScheduledNotificationsAsync());
+    if (!NOTIF.enabled && !RECAP.enabled) return void (await Notifications.cancelAllScheduledNotificationsAsync());
     if (!(await notifWanted())) return;
     if ((await Notifications.getPermissionsAsync()).granted) await schedule(time, quota);
   } catch {}
