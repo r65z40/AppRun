@@ -18,3 +18,7 @@ reset request.jwt.claim.sub;
 select case when not exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000d1') and not exists (select 1 from profiles where id = '00000000-0000-0000-0000-0000000000d1')
   and exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000d2')
   then 'OK  le lecteur supprime son compte, un compte de l''équipe ne le peut pas' else 'ÉCHEC  suppression du compte' end;
+insert into visits (device, day) values ('vieux-tel', current_date - 400), ('neuf-tel', current_date - 10);
+select purge_reading_events();
+select case when not exists (select 1 from visits where device = 'vieux-tel') and exists (select 1 from visits where device = 'neuf-tel')
+  then 'OK  jours d''ouverture effacés après 12 mois' else 'ÉCHEC  conservation des visites' end;

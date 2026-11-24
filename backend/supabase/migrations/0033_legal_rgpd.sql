@@ -3,7 +3,7 @@
 -- une adresse publique (site web ?legal=privacy). Suppression du compte par le lecteur (exigée par Apple).
 -- Les textes de départ sont des MODÈLES à compléter et à faire relire : ce n'est pas un avis juridique.
 
-insert into public.setting_keys (key) values ('LEGAL_PRIVACY'), ('LEGAL_TERMS'), ('LEGAL_NOTICE')
+insert into public.setting_keys (key) values ('LEGAL_PRIVACY'), ('LEGAL_TERMS'), ('LEGAL_NOTICE'), ('VISITS_KEEP_MONTHS')
 on conflict do nothing;
 
 -- (bloc commun) set_setting : les pages légales peuvent aller jusqu'à 20 000 caractères.
@@ -48,6 +48,16 @@ end $$;
 revoke all on function public.delete_my_account() from public, anon;
 grant execute on function public.delete_my_account() to authenticated;
 
+-- Jours d'ouverture de l'app (table visits) : effacés après VISITS_KEEP_MONTHS mois (12 par défaut, back office >
+-- Personnalisation > Pages légales). Ajouté au ménage que le moteur lance à chaque édition.
+create or replace function public.purge_reading_events() returns int
+language sql security definer set search_path = public as $$
+  with d as (delete from public.reading_events where at < now() - make_interval(days => (public.algo_conf()->>'keep_days')::int) returning 1),
+  v as (delete from public.visits where day < current_date - make_interval(months => public.setting_int('VISITS_KEEP_MONTHS', 12, 1, 120)) returning 1)
+  select ((select count(*) from d) + (select count(*) from v))::int;
+$$;
+revoke all on function public.purge_reading_events() from public, anon, authenticated;
+
 -- Modèles de départ ({nom} = nom de l'app ; les [crochets] sont à compléter). Une page vidée dans le back office
 -- n'est plus affichée : il faut toujours un texte en ligne pour les stores.
 insert into public.app_settings (key, value) values
@@ -76,6 +86,7 @@ Pourquoi (base légale)
 Combien de temps
 • Lectures : 90 jours au plus (réglable dans le back office, Lecteurs > Algorithme).
 • Compte : tant qu'il existe. Supprimé, il disparaît aussitôt avec ses likes, commentaires et badges.
+• Jours d'ouverture de l'app (série de jours, statistiques) : 12 mois, puis effacés automatiquement.
 • Journaux techniques : [12] mois au plus.
 
 Qui y a accès

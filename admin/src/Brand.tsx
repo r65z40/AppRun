@@ -406,13 +406,24 @@ const LEGAL: [string, string, string][] = [['LEGAL_PRIVACY', 'Politique de confi
 
 function Legal({ get, save }: { get: (k: string) => string; save: Save }) {
   const [d, setD] = useState<Record<string, string>>(() => Object.fromEntries(LEGAL.map(([k]) => [k, get(k)])));
+  const [keep, setKeep] = useState(get('VISITS_KEEP_MONTHS') || '12');
   const dirty = LEGAL.filter(([k]) => (d[k] ?? '').trim() !== get(k));
+  const keepDirty = keep !== (get('VISITS_KEEP_MONTHS') || '12');
   const site = new URL('..', location.href).href; // le back office est dans /admin/, l'app juste au-dessus
-  const saveAll = async () => { for (const [k] of dirty) if (!(await save(k, d[k] ?? '', 'Pages légales enregistrées'))) return; };
+  const saveAll = async () => {
+    for (const [k] of dirty) if (!(await save(k, d[k] ?? '', 'Pages légales enregistrées'))) return;
+    if (keepDirty) await save('VISITS_KEEP_MONTHS', keep === '12' ? '' : keep, 'Durée de conservation enregistrée');
+  };
   return (
     <>
       <p className="warn small">Ces textes sont des modèles de départ : remplacez chaque [crochet] par vos informations et faites-les relire par un juriste avant la publication sur les stores.</p>
       <section className="panel settings">
+        <div className="setting">
+          <div><b>Conservation des jours d’ouverture</b><p className="muted small">Les jours où chaque téléphone ouvre l’app (séries, statistiques) sont effacés au-delà. Si vous changez la durée, changez-la aussi dans la politique de confidentialité.</p></div>
+          <select value={keep} onChange={(e) => setKeep(e.target.value)} aria-label="Conservation des jours d’ouverture">
+            {[3, 6, 12, 24, 36].map((n) => <option key={n} value={String(n)}>{n} mois</option>)}
+          </select>
+        </div>
         {LEGAL.map(([k, label, page]) => (
           <div className="setting column" key={k}>
             <div><b>{label}</b><p className="muted small">Adresse publique : <a href={`${site}?legal=${page}`} target="_blank" rel="noreferrer">{`${site}?legal=${page}`}</a>. {'{nom}'} devient le nom de l’app. Texte simple : une ligne vide sépare les paragraphes.</p></div>
@@ -422,7 +433,7 @@ function Legal({ get, save }: { get: (k: string) => string; save: Save }) {
       </section>
       <div className="setting-actions">
         <span className="muted small">Visible dans l’app et sur le site dès l’enregistrement.</span>
-        <button className="btn primary" disabled={!dirty.length} onClick={saveAll}>Enregistrer</button>
+        <button className="btn primary" disabled={!dirty.length && !keepDirty} onClick={saveAll}>Enregistrer</button>
       </div>
     </>
   );
