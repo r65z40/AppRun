@@ -7,6 +7,7 @@ import { FollowPage } from './Follow';
 import { BadgesPage } from './Badges';
 import { ReferralPage } from './Referral';
 import { BrandPage } from './Brand';
+import { CostEstimate } from './Cost';
 import { api, AUDIENCES, LINK, type AppMessage, type Audience, ENGINE_URL, type AuditEntry, type Dashboard, type EngineStatus, type ModerationCost, type Reader, type ReaderDetail, type ReaderFilter, type TopArticle, type ReadingStats, FLASH_URL, SOURCES_URL, PHOTO_TAGS, RUBRICS, type RubricHint, type Article, type Comment, type Edition, type Fact, type EngineRun, type LaunchWhat, type Flash, type Setting, type Me, type Profile, type Report, type Role, type Source, type SpendDay, type Status } from './data';
 
 type Page = 'dashboard' | 'readers' | 'algo' | 'follow' | 'badges' | 'referral' | 'audit' | 'edition' | 'flash' | 'messages' | 'ai' | 'moderation' | 'ads' | 'premium' | 'team' | 'settings' | 'brand';
@@ -846,6 +847,7 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
         {AI_TABS.filter(([, , adm]) => admin || !adm).map(([t, l]) => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{l}</button>)}
       </div>
       {admin && !st.list && ['pilotage', 'edition', 'flash', 'keys'].includes(tab) ? <p className="muted">Chargement…</p> : null}
+      {admin && st.list && ['pilotage', 'edition', 'flash'].includes(tab) ? <CostEstimate get={get} history={history} /> : null}
       {admin && st.list && tab === 'pilotage' ? (
         <>
           <section className="panel settings">
