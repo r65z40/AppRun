@@ -26,7 +26,10 @@ const TEXTS: [string, string, string, number][] = [
   ['end_bye', 'Fin de journée : au revoir', 'À demain.', 30],
   ['premium_pitch', 'Premium : phrase d’accroche', 'L’actu qui compte, sans aucune interruption.', 120],
 ];
-const NOTIF_DEF = { enabled: true, default_time: '7 h 30', title: 'Votre édition est prête', body: '{n} infos pour être à jour, en quelques minutes.' };
+const RECAP_DEF = { enabled: true, day: 0, time: '18 h 00', count: 10, title: 'Votre semaine en {n} infos', body: 'Les {n} infos de la semaine à ne pas rater.' };
+const NOTIF_DEF = { enabled: true, default_time: '7 h 30', title: 'Votre édition est prête', body: '{n} infos pour être à jour, en quelques minutes.', recap: RECAP_DEF };
+const DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+const RECAP_HOURS = Array.from({ length: 17 }, (_, i) => `${i + 6} h 00`);
 const MAIL_DEF = {
   MAIL_CONFIRM_SUBJECT: 'Bienvenue sur {nom} : activez votre compte',
   MAIL_CONFIRM_BODY: 'Bonjour,\n\nMerci de rejoindre {nom}. Touchez le bouton ci-dessous pour activer votre compte.\n\n{lien}\n\nSi vous n’êtes pas à l’origine de cette inscription, ignorez ce message.',
@@ -298,6 +301,9 @@ function NotifTab({ raw, brand, save }: { raw: string; brand: string; save: Save
   const [n, setN] = useState<Notif>(init);
   const changed = JSON.stringify(n) !== JSON.stringify(init);
   const body = (n.body || NOTIF_DEF.body).replaceAll('{n}', '8').replaceAll('{nom}', brand);
+  const r = { ...RECAP_DEF, ...n.recap };
+  const setR = (x: Partial<typeof RECAP_DEF>) => setN({ ...n, recap: { ...r, ...x } });
+  const fill = (t: string) => t.replaceAll('{n}', String(r.count)).replaceAll('{nom}', brand);
   return (
     <div className="brand-grid">
       <section className="panel settings">
@@ -320,6 +326,34 @@ function NotifTab({ raw, brand, save }: { raw: string; brand: string; save: Save
           <div><b>Texte</b><p className="muted small">{'{n}'} = nombre d’infos choisi par le lecteur, {'{nom}'} = nom de l’app. Le texte ne cite jamais une info précise : la notification est programmée sur le téléphone à l’avance, et ne peut donc pas afficher un sujet sensible.</p></div>
           <input maxLength={200} placeholder={NOTIF_DEF.body} value={n.body === NOTIF_DEF.body ? '' : n.body} onChange={(e) => setN({ ...n, body: e.target.value || NOTIF_DEF.body })} aria-label="Texte de la notification" />
         </div>
+        <h2>Récap de la semaine</h2>
+        <label className="setting toggle">
+          <div><b>Proposer le récap</b><p className="muted small">Un jour par semaine, les infos les plus marquantes des 7 derniers jours, choisies sans IA : leur importance, puis les réactions des lecteurs. Il apparaît ce jour-là dans « Éditions précédentes » (pour tous, gratuit compris), et en notification pour les lecteurs qui ont accepté celle du matin.</p></div>
+          <input type="checkbox" checked={r.enabled} onChange={(e) => setR({ enabled: e.target.checked })} />
+        </label>
+        <div className="setting">
+          <div><b>Jour et heure</b></div>
+          <span style={{ display: 'flex', gap: 8 }}>
+            <select value={r.day} onChange={(e) => setR({ day: Number(e.target.value) })} aria-label="Jour du récap">
+              {DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+            </select>
+            <select value={r.time} onChange={(e) => setR({ time: e.target.value })} aria-label="Heure du récap">
+              {RECAP_HOURS.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </span>
+        </div>
+        <div className="setting">
+          <div><b>Nombre d’infos</b></div>
+          <input type="number" min={3} max={30} value={r.count} onChange={(e) => setR({ count: Math.max(3, Math.min(30, Number(e.target.value) || 10)) })} aria-label="Nombre d’infos du récap" />
+        </div>
+        <div className="setting column">
+          <div><b>Titre</b></div>
+          <input maxLength={80} placeholder={RECAP_DEF.title} value={r.title === RECAP_DEF.title ? '' : r.title} onChange={(e) => setR({ title: e.target.value || RECAP_DEF.title })} aria-label="Titre du récap" />
+        </div>
+        <div className="setting column">
+          <div><b>Texte</b><p className="muted small">{'{n}'} = nombre d’infos. Comme le matin, jamais une info précise, donc jamais un sujet sensible.</p></div>
+          <input maxLength={200} placeholder={RECAP_DEF.body} value={r.body === RECAP_DEF.body ? '' : r.body} onChange={(e) => setR({ body: e.target.value || RECAP_DEF.body })} aria-label="Texte du récap" />
+        </div>
         <div className="setting-actions">
           <button className="btn ghost" disabled={!raw} onClick={() => save('NOTIFICATIONS', '', 'Notification d’origine rétablie')}>Revenir aux réglages d’origine</button>
           <button className="btn primary" disabled={!changed} onClick={() => save('NOTIFICATIONS', JSON.stringify(n))}>Enregistrer</button>
@@ -333,6 +367,13 @@ function NotifTab({ raw, brand, save }: { raw: string; brand: string; save: Save
           <span>{body}</span>
         </div>
         {!n.enabled ? <p className="muted small">Notification coupée.</p> : null}
+        {r.enabled ? (
+          <div className="notif-prev">
+            <div className="notif-app"><span className="mini-icon sm" /> {brand.toUpperCase()} <span className="muted">· {DAYS[r.day].toLowerCase()} {r.time}</span></div>
+            <b>{fill(r.title)}</b>
+            <span>{fill(r.body)}</span>
+          </div>
+        ) : null}
       </div>
     </div>
   );
