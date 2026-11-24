@@ -71,6 +71,7 @@ export type ReaderDetail = { likes: number; reports_made: number; blocked_by: nu
 export type AuditEntry = { at: string; who: string; action: string; target: string | null; detail: string | null };
 export type ModerationCost = { judged: number; input: number; output: number; cost: number };
 export type TopArticle = { title: string; rubric_id: string; likes: number; comments: number };
+export type ReadingStats = { articles: { title: string; rubric_id: string; readers: number; median_s: number | null; opened: number; finished: number }[]; days: number; reach: { n: number; days: number }[] };
 export type EngineStatus = {
   paused: boolean; paused_until: string | null; paused_at: string | null; paused_by: string | null; ai_off: boolean;
   articles_today: number; flashes_today: number; last_published: string | null;
@@ -143,6 +144,7 @@ export interface Api {
   dashboard(): Promise<Dashboard>;
   engineStatus(): Promise<EngineStatus>;
   topArticles(): Promise<TopArticle[]>;
+  readingStats(): Promise<ReadingStats>;
   moderationCost(): Promise<ModerationCost>;
   readers(search: string, filter?: ReaderFilter, page?: number): Promise<Reader[]>;
   readerDetail(id: string): Promise<ReaderDetail>;
@@ -313,6 +315,7 @@ function supabaseApi(sb: SupabaseClient): Api {
     engineStatus: async () => ok(await sb.rpc('engine_status')) as EngineStatus,
     launchEngine: async (what) => ok(await sb.rpc('launch_engine', { what })) as { ok: boolean; reason?: 'token' | 'recent' },
     topArticles: async () => ok(await sb.rpc('top_articles')) as TopArticle[],
+    readingStats: async () => ok(await sb.rpc('reading_stats')) as ReadingStats,
     moderationCost: async () => ok(await sb.rpc('moderation_cost')) as ModerationCost,
     readers: async (search, filter = 'all', page = 0) => ok(await sb.rpc('admin_users', { search, filter, page })) as Reader[],
     readerDetail: async (id) => ok(await sb.rpc('admin_user_detail', { uid: id })) as ReaderDetail,

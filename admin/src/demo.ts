@@ -206,6 +206,11 @@ export function demoApi(): Api {
     },
     uploadPhoto: async (file) => URL.createObjectURL(file),
     moderationCost: () => wait({ judged: 64, input: 182_400, output: 21_300, cost: 1.16 }),
+    readingStats: () => wait({
+      articles: articles.slice(0, 6).map((a, i) => ({ title: a.title, rubric_id: a.rubric_id, readers: 1840 - i * 210, median_s: [6.2, 4.8, 9.1, 3.4, 5.5, 2.7][i], opened: [610, 380, 720, 120, 290, 60][i], finished: [430, 190, 590, 40, 170, 18][i] })),
+      days: 4120,
+      reach: [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 32].map((n) => ({ n, days: Math.round(4120 * Math.exp(-(n - 1) / 9.5) * (n > 8 ? 0.82 : 1)) })),
+    }),
     topArticles: () => wait(articles.slice(0, 4).map((a, i) => ({ title: a.title, rubric_id: a.rubric_id, likes: 412 - i * 87, comments: 38 - i * 9 }))),
     readers: (search, filter = 'all') => wait([...team, ...readers, ...comments.map((c) => ({ id: c.user_id, pseudo: c.pseudo ?? null, role: 'reader' as const, premium: false, created_at: iso(40) } as Profile))]
       .filter((p, i, all) => all.findIndex((x) => x.id === p.id) === i && (!search || p.pseudo?.toLowerCase().includes(search.toLowerCase())))
