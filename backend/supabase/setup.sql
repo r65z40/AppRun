@@ -3709,6 +3709,13 @@ end $$;
 revoke all on function public.launch_engine(text) from public, anon;
 grant execute on function public.launch_engine(text) to authenticated;
 
+-- ===== supabase/migrations/0028_fouille_ia.sql
+-- Fouille de textes par l'IA : le moteur note chaque nuit si le média la refuse (robots.txt, tdmrep.json).
+-- Une source qui refuse est désactivée, sauf si l'équipe l'a réactivée en connaissance de cause (ai_accepted).
+alter table public.sources add column if not exists ai_refusal text;
+alter table public.sources add column if not exists ai_checked_at timestamptz;
+alter table public.sources add column if not exists ai_accepted boolean not null default false;
+
 -- ===== supabase/migrations/0029_garde_fous_ia.sql
 -- Garde-fous de l'IA : dépense (plafond par passage, anti-boucle, alerte à 80 %, historique)
 -- et publication (ton neutre, rien d'inventé, limite par jour, tout dépublier d'un passage).

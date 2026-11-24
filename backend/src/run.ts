@@ -215,7 +215,8 @@ async function edition() {
         return;
       }
       const photo = pexelsOn() ? await findPhoto(card.photo_query).catch((e) => { log(`   photo introuvable (${e instanceof Error ? e.message : e})`); return null; }) : null;
-      let publish = AUTO_PUBLISH && (issues.every(minorIssue) || cfg.publishFlagged()) && s.importance >= cfg.publishMinImportance();
+      // Une reprise mot pour mot d'un média ne part jamais seule, même avec « Publier aussi les cartes avec alerte ».
+      let publish = AUTO_PUBLISH && (issues.every(minorIssue) || (cfg.publishFlagged() && !issues.some((i) => i.startsWith('reprise')))) && s.importance >= cfg.publishMinImportance();
       if (publish && cfg.publishMaxPerDay() && pubToday >= cfg.publishMaxPerDay()) { publish = false; issues.push(`limite de ${cfg.publishMaxPerDay()} publications par jour atteinte`); }
       if (publish) pubToday++;
       await q(

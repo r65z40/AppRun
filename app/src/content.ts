@@ -12,7 +12,6 @@ export const PHOTOS = {
   sommet: require('../assets/photos/sommet.jpg'),
   route: require('../assets/photos/route.jpg'),
   livre: require('../assets/photos/livre.jpg'),
-  lampe: require('../assets/photos/lampe.jpg'),
 };
 
 /** Toutes les rubriques proposées (remplacée par la liste de la base quand elle est branchée). */
