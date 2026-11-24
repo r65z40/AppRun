@@ -161,6 +161,32 @@ export function Feed(p: FeedApi & { W: number; H: number }) {
     q.setPos(n, col.id, first >= 0 ? first : q.idx[col.id] ?? 0);
   }
 
+  // Ordinateur : la molette et les flèches du clavier font comme les gestes, seulement si rien n'est ouvert par-dessus le fil.
+  const root = useRef<unknown>(null);
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onTop = () => (root.current as unknown as HTMLElement)?.contains(document.elementFromPoint(innerWidth / 2, innerHeight / 2));
+    const stepY = (d: number) => { const q = latest.current; releaseY(Math.max(0, (q.idx[q.cols[q.ri].id] ?? 0) + d), 0); };
+    let until = 0;
+    const wheel = (e: WheelEvent) => {
+      if (!onTop()) return;
+      e.stopPropagation(); // sinon le geste du fil prend aussi la molette pour un petit glissé et revient en arrière
+      if (Math.abs(e.deltaY) < 15 || Date.now() < until) return;
+      until = Date.now() + 700; // un cran de molette = une info, même avec l'élan d'un pavé tactile
+      stepY(Math.sign(e.deltaY));
+    };
+    const key = (e: KeyboardEvent) => {
+      if (!onTop() || /INPUT|TEXTAREA/.test((e.target as HTMLElement)?.tagName ?? '')) return;
+      const d = { ArrowDown: [0, 1], ArrowUp: [0, -1], ArrowRight: [1, 0], ArrowLeft: [-1, 0] }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      if (d[1]) stepY(d[1]); else releaseX(latest.current.ri + d[0], 0);
+    };
+    addEventListener('wheel', wheel, true); // en capture, avant le geste du fil
+    addEventListener('keydown', key);
+    return () => { removeEventListener('wheel', wheel, true); removeEventListener('keydown', key); };
+  }, []);
+
   const pan = usePanGesture({
     minDistance: 10,
     onBegin: () => {
@@ -213,7 +239,7 @@ export function Feed(p: FeedApi & { W: number; H: number }) {
   const rowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: colX.value }] }));
 
   return (
-    <View style={StyleSheet.absoluteFill}>
+    <View ref={root as never} style={StyleSheet.absoluteFill}>
       {/* Le geste est posé sur un cadre fixe : la rangée qui glisse sort de l'écran et ne recevrait plus les doigts. */}
       <GestureDetector gesture={pan}>
         <View style={StyleSheet.absoluteFill}>
