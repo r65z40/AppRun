@@ -3948,6 +3948,12 @@ begin
 end $$;
 revoke all on function public.compose_edition(uuid, text, text[], int, boolean) from public, anon, authenticated;
 
+-- ===== supabase/migrations/0032_angles_medias.sql
+-- « Voir les angles » : sur un sujet qui divise, comment chaque média l'aborde, en une phrase neutre réécrite par l'IA
+-- (même appel que la carte, aucun coût en plus). Vide le plus souvent ; l'app n'affiche le lien qu'à partir de 2 angles.
+alter table public.articles add column if not exists angles jsonb;  -- [{source, text}] ou null
+insert into public.setting_keys (key) values ('MEDIA_ANGLES') on conflict do nothing;
+
 -- ===== supabase/migrations/0034_pourquoi_important.sql
 -- « Pourquoi c'est important » : une phrase écrite par l'IA dans le même appel que la carte,
 -- affichée dans la lecture plein écran (réglage APP_RULES.show_matters, 1 par défaut) et modifiable dans Articles.

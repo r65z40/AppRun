@@ -45,6 +45,18 @@ export const NOTIF = {
   body: '{n} infos pour être à jour, en quelques minutes.',
 };
 
+/** Récap de la semaine (Personnalisation > Notification) : les infos qui ont compté, un jour par semaine. */
+export const RECAP = {
+  enabled: true,
+  /** 0 = dimanche … 6 = samedi. */
+  day: 0,
+  time: '18 h 00',
+  count: 10,
+  title: 'Votre semaine en {n} infos',
+  /** {n} = nombre d'infos, {nom} = nom de l'app. Jamais un sujet précis (donc jamais un sujet sensible). */
+  body: 'Les {n} infos de la semaine à ne pas rater.',
+};
+
 /** Règles de l'app (Personnalisation > Règles de l'app). */
 export const RULES = {
   /** Rubriques cochées pour un nouveau lecteur. */
@@ -113,7 +125,7 @@ const CACHE = 'titre.config';
 const isHex = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 const str = (v: unknown, max = 400) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
 
-const DEF = { share: { ...SHARE }, recog: { ...RECOG }, brand: { ...BRAND }, texts: { ...TEXTS }, notif: { ...NOTIF }, rules: JSON.parse(JSON.stringify(RULES)) as typeof RULES, nudges: JSON.parse(JSON.stringify(NUDGES)) as typeof NUDGES };
+const DEF = { share: { ...SHARE }, recog: { ...RECOG }, brand: { ...BRAND }, texts: { ...TEXTS }, notif: { ...NOTIF }, recap: { ...RECAP }, rules: JSON.parse(JSON.stringify(RULES)) as typeof RULES, nudges: JSON.parse(JSON.stringify(NUDGES)) as typeof NUDGES };
 const int = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : null);
 const strs = (v: unknown, max: number, len = 120) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim().slice(0, len)).slice(0, max) : []);
 
@@ -138,6 +150,14 @@ function apply(c: Config) {
   if (typeof n.default_time === 'string' && /^([01]?\d|2[0-3]) h [0-5]\d$/.test(n.default_time)) NOTIF.default_time = n.default_time;
   const nt = str(n.title, 80); if (nt) NOTIF.title = nt;
   const nb = str(n.body, 200); if (nb) NOTIF.body = nb;
+  Object.assign(RECAP, DEF.recap);
+  const r = (n.recap ?? {}) as Record<string, unknown>;
+  if (typeof r.enabled === 'boolean') RECAP.enabled = r.enabled;
+  const rd = int(r.day, 0, 6); if (rd !== null) RECAP.day = rd;
+  if (typeof r.time === 'string' && /^([01]?\d|2[0-3]) h [0-5]\d$/.test(r.time)) RECAP.time = r.time;
+  const rc = int(r.count, 3, 30); if (rc) RECAP.count = rc;
+  const rt = str(r.title, 80); if (rt) RECAP.title = rt;
+  const rb = str(r.body, 200); if (rb) RECAP.body = rb;
   applyRules(c.rules ?? {}, c.nudges ?? {});
   Object.assign(RECOG, DEF.recog);
   const g = c.recognition ?? {};
@@ -232,4 +252,4 @@ export function savedLabel(min: number) {
 }
 
 /** Texte de la notification pour ce lecteur. */
-export const notifBody = (quota: number) => NOTIF.body.replaceAll('{n}', String(quota)).replaceAll('{nom}', BRAND.name);
+export const notifBody = (quota: number, body = NOTIF.body) => body.replaceAll('{n}', String(quota)).replaceAll('{nom}', BRAND.name);

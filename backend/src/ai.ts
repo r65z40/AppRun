@@ -180,6 +180,12 @@ const CardSchema = z.object({
     next: z.string().describe('Et après : prochaines étapes ou dates, 280 caractères maximum'),
   }),
   matters: z.string().describe('Pourquoi c’est important : une seule phrase, 120 caractères maximum, ce que ça change concrètement pour le lecteur, sans opinion'),
+  angles: z
+    .array(z.object({
+      item_number: z.number().int().describe('Numéro de la dépêche du média'),
+      text: z.string().describe('Ce sur quoi ce média insiste, avec tes mots, ton neutre, 100 caractères maximum'),
+    }))
+    .describe('Angles des médias : vide le plus souvent. Rempli seulement si au moins 2 médias différents traitent le sujet sous des angles vraiment différents (sujet clivant, débat) ; un angle par média'),
   photo_tag: z.enum(PHOTO_TAG_LIST).describe('La photo d’ambiance la plus proche du sujet'),
   photo_query: z.string().describe('2 à 4 mots-clés EN ANGLAIS pour chercher une photo d’illustration sur une banque d’images : un lieu, un objet ou un paysage lié au sujet. Jamais le nom d’une personne, d’une marque ou d’un logo, rien de violent'),
 });
@@ -196,6 +202,7 @@ Style :
 - Dans chaque fait, mets entre <b> et </b> l'élément clé : un chiffre, une date, un nom. Une seule balise par fait.
 - « Pourquoi c'est important » : une phrase factuelle sur l'effet concret pour le lecteur (argent, quotidien, droits, sécurité…). Jamais de jugement ni de conseil.
 - Respecte les longueurs maximales.
+- « angles » : laisse la liste vide, sauf si les médias choisissent vraiment des angles différents sur un sujet qui divise. Alors, pour chaque média, dis en une phrase neutre ce sur quoi il insiste (« insiste sur le coût pour les communes »), sans juger ni classer les médias, sans recopier leurs mots.
 
 Photos d'ambiance disponibles :
 ${Object.entries(PHOTO_TAGS).map(([k, v]) => `- ${k} : ${v}`).join('\n')}`;
@@ -208,7 +215,7 @@ export async function writeCard(story: Story, items: Item[], fix?: string[]): Pr
     max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    system: WRITE_SYSTEM + editorialNotes(false),
+    system: WRITE_SYSTEM + (cfg.mediaAngles() ? '' : '\n\nRenvoie toujours « angles » vide.') + editorialNotes(false),
     output_config: { effort: EFFORT(), format: betaZodOutputFormat(CardSchema) },
     messages: [{ role: 'user', content: `Rubrique : ${story.rubric}\n\n${docs}${fix?.length ? `\n\nUne première version a été refusée par les contrôles automatiques : ${fix.join(' ; ')}. Réécris la carte en corrigeant ces points, sans reprendre les formulations des médias.` : ''}` }],
   }));
@@ -240,7 +247,7 @@ export function checkCard(c: CardOut, items: Item[]): string[] {
   });
   // Reprise mot pour mot : 8 mots consécutifs identiques à un chapô = trop proche du texte du média.
   const src = items.map((i) => norm(i.title + ' ' + i.description)).join(' | ');
-  for (const t of [c.key_sentence, ...c.facts.map((f) => f.text), c.summary.context, c.summary.change, c.summary.next, c.matters]) {
+  for (const t of [c.key_sentence, ...c.facts.map((f) => f.text), c.summary.context, c.summary.change, c.summary.next, c.matters, ...c.angles.map((a) => a.text)]) {
     const w = norm(t).split(' ');
     for (let k = 0; k + 8 <= w.length; k++) {
       if (src.includes(w.slice(k, k + 8).join(' '))) {
@@ -249,8 +256,22 @@ export function checkCard(c: CardOut, items: Item[]): string[] {
       }
     }
   }
-  issues.push(...guardText([c.title, c.key_sentence, ...c.facts.map((f) => f.text), c.summary.context, c.summary.change, c.summary.next, c.matters], items));
+  issues.push(...guardText([c.title, c.key_sentence, ...c.facts.map((f) => f.text), c.summary.context, c.summary.change, c.summary.next, c.matters, ...c.angles.map((a) => a.text)], items));
   return [...new Set(issues)];
+}
+
+/** Angles gardés pour l'app : un par média, source valable, texte court ; rien s'il en reste moins de 2. */
+export function cleanAngles(c: CardOut, items: Item[]): { source: string; text: string }[] | null {
+  if (!cfg.mediaAngles()) return null;
+  const seen = new Set<string>();
+  const out = c.angles.flatMap((a) => {
+    const src = items.find((i) => i.n === a.item_number)?.source;
+    const text = a.text.trim();
+    if (!src || !text || text.length > 140 || seen.has(src)) return [];
+    seen.add(src);
+    return [{ source: src, text }];
+  });
+  return out.length >= 2 ? out : null;
 }
 
 /** Alerte simple (longueur, ponctuation, gras) : la carte reste publiable, ce n'est qu'un avertissement. */
@@ -327,7 +348,7 @@ export const doubtIssue = (i: string) => /^(ton :|chiffre absent|relecture IA)/.
 
 /** La carte en texte simple, pour la relecture. */
 export const cardText = (c: CardOut) =>
-  [`Titre : ${c.title}`, `Phrase clé : ${c.key_sentence}`, ...c.facts.map((f) => `Fait : ${f.text.replace(/<\/?b>/g, '')}`), `Contexte : ${c.summary.context}`, `Ce qui change : ${c.summary.change}`, `Et après : ${c.summary.next}`, `Pourquoi c'est important : ${c.matters}`].join('\n');
+  [`Titre : ${c.title}`, `Phrase clé : ${c.key_sentence}`, ...c.facts.map((f) => `Fait : ${f.text.replace(/<\/?b>/g, '')}`), `Contexte : ${c.summary.context}`, `Ce qui change : ${c.summary.change}`, `Et après : ${c.summary.next}`, `Pourquoi c'est important : ${c.matters}`, ...c.angles.map((a) => `Angle d'un média : ${a.text}`)].join('\n');
 
 const norm = (s: string) => s.toLowerCase().replace(/<\/?b>/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, Math.round(v)));
@@ -367,6 +388,7 @@ function mockCard(story: Story, items: Item[]): CardOut {
     facts: [0, 1, 2].map((k) => ({ text: `Fait <b>${k + 1}</b> selon ${i.source}`, item_number: (items[k] ?? i).n })),
     summary: { context: 'Contexte (mode test).', change: 'Ce qui change (mode test).', next: 'Et après (mode test).' },
     matters: 'Pourquoi c’est important (mode test).',
+    angles: items.map((x) => ({ item_number: x.n, text: `Angle de ${x.source} (mode test)` })),
     photo_tag: PHOTO_TAG_LIST[(story.label.length + i.n) % PHOTO_TAG_LIST.length],
     photo_query: 'city street',
   };

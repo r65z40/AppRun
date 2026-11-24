@@ -19,6 +19,8 @@ export type Article = {
   summary: string[];
   /** « Pourquoi c'est important » : une phrase, affichée dans la lecture plein écran. */
   matters?: string | null;
+  /** Sujet qui divise : ce sur quoi chaque média insiste (« Voir les angles » dans l'app). */
+  angles?: { source: string; text: string }[] | null;
   photo_tag: string | null;
   photo_url: string | null;
   photo_credit?: string | null;
