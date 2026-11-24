@@ -17,6 +17,7 @@ import { SummarySheet, CommentsSheet } from './src/Sheets';
 import { Bravo, End, Onboarding, Settings, Splash, Toast, Welcome, type OnbResult, type Prefs } from './src/Screens';
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
 import { syncWidget } from './src/headline';
+import { dayLabel, shortDay } from './src/dates';
 import { loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, type AppMessage } from './src/remote';
 import { Account } from './src/Account';
 import { Premium } from './src/Premium';
@@ -93,11 +94,14 @@ function Main() {
   }, [loaded, splashDone, localPrefs]);
   // L'édition se complète au fil de la journée : rechargée toutes les 10 minutes et au retour dans l'app.
   const [edVer, setEdVer] = useState(0);
+  // Édition d'un jour passé choisie dans les réglages (null = la plus récente), gardée aux rechargements.
+  const [pastDay, setPastDay] = useState<string | null>(null);
+  const pastRef = useRef<string | null>(null);
   useEffect(() => {
     if (!remoteConfigured) return;
     const refresh = () => {
       const before = editionSig();
-      loadEdition().then((d) => d && editionSig() !== before && setEdVer((v) => v + 1));
+      loadEdition(pastRef.current).then((d) => d && editionSig() !== before && setEdVer((v) => v + 1));
       loadConfig().then((c) => c && setCommentsMode(c.commentsMode));
     };
     const t = setInterval(refresh, RULES.edition_refresh_min * 60000);
@@ -105,7 +109,7 @@ function Main() {
     return () => { clearInterval(t); sub.remove(); };
   }, []);
   // Widget de l'écran d'accueil : l'info principale du jour, remise à jour à chaque édition chargée.
-  useEffect(() => { if (loaded) syncWidget(); }, [loaded, edVer]);
+  useEffect(() => { if (loaded && !pastDay) syncWidget(); }, [loaded, edVer]);
   const ALL_IDS = useMemo(() => new Set(RUBRICS.flatMap((r) => r.items.map((a) => a.id))), [loaded, edVer]);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [p, setP] = useState<Prefs>({ active: [...RULES.default_rubrics], quota: RULES.default_quota, sound: true, haptic: true, parallax: true, premium: false, time: NOTIF.default_time, adsPersonalized: false });
@@ -148,7 +152,11 @@ function Main() {
     fetchPicks(p.active, p.quota, p.perso !== false).then((r) => live && r && setPicks(r));
     return () => { live = false; };
   }, [phase, p.active.join(','), p.quota, p.perso, me?.uid, edVer, tasteVer]);
-  const cols = useMemo(() => buildColumns(p.active, p.quota, premium, p.taste, p.adsPersonalized, picks), [p.active, p.quota, premium, p.taste, p.adsPersonalized, flashVer, edVer, picks]);
+  const cols = useMemo(() => {
+    const c = buildColumns(p.active, p.quota, premium, p.taste, p.adsPersonalized, picks);
+    if (pastDay) c[0].name = `Édition · ${shortDay(pastDay)}`;
+    return c;
+  }, [p.active, p.quota, premium, p.taste, p.adsPersonalized, flashVer, edVer, picks, pastDay]);
   const [ri, setRi] = useState(0);
   const [idx, setIdx] = useState<Record<string, number>>({});
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
@@ -551,6 +559,19 @@ function Main() {
     showToast('Réglages enregistrés');
   };
 
+  const onPast = (day: string | null) =>
+    loadEdition(day).then((d) => {
+      if (!d) return showToast('Pas de connexion. Réessayez.');
+      pastRef.current = day;
+      setPastDay(day);
+      setSeen(new Set());
+      bravoShown.current = false;
+      setRi(0);
+      setIdx({});
+      setEdVer((v) => v + 1);
+      showToast(day ? `Édition du ${dayLabel(`${day}T12:00:00Z`)}` : 'Édition du jour');
+    });
+
   const onResetTaste = () =>
     resetTaste()
       .then(() => { setP((x) => ({ ...x, taste: {} })); setTasteVer((v) => v + 1); showToast('Vos goûts sont remis à zéro. Votre édition repart des sujets majeurs.'); })
@@ -662,6 +683,8 @@ function Main() {
           onAccount={() => (acc.accountsOn ? setAccount({ reason: null }) : showToast('Les comptes arrivent avec la vraie base (mode démo).'))}
           onResetTaste={onResetTaste}
           onTopics={() => setTopicView(null)}
+          pastDay={pastDay}
+          onPast={onPast}
           premium={premium}
           onPremium={() => setShowPremium(true)}
         />

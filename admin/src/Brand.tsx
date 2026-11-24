@@ -405,7 +405,7 @@ function Mail({ get, save }: { get: (k: string) => string; save: Save }) {
 const RULES_DEF = {
   default_rubrics: ['france', 'monde', 'eco', 'tech'], default_quota: 24, quota_max: 60, next_edition: '6 h 00',
   emojis: ['❤️', '😂', '😮', '😢', '😡', '👏'], premium_benefits: ['Zéro pub dans votre fil', 'Le badge Premium à côté de votre pseudo', 'Vous soutenez {nom} directement'],
-  edition_refresh_min: 10, live_refresh_min: 3,
+  edition_refresh_min: 10, live_refresh_min: 3, past_days_free: 2,
 };
 type Rules = typeof RULES_DEF;
 const HOURS = Array.from({ length: 24 }, (_, i) => { const m = 240 + i * 15; return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; });
@@ -458,6 +458,7 @@ function Rules({ raw, save }: { raw: string; save: Save }) {
       </section>
       <section className="panel settings">
         <h2>Premium</h2>
+        {pick('past_days_free', 'Éditions passées en gratuit', 'Jours précédents que tout lecteur peut relire (Réglages > Éditions précédentes). Premium : toutes les dates.', [['0', 'Aucune'], ['1', 'Hier'], ['2', 'Hier et avant-hier'], ...opts([3, 5, 7, 14, 30], ' jours')])}
         <div className="setting column">
           <div><b>Avantages affichés</b><p className="muted small">Un par ligne, 6 au plus. {'{nom}'} = nom de l’app. Les prix se règlent dans App Store, Google Play et RevenueCat.</p></div>
           <textarea rows={4} value={ben} onChange={(e) => setBen(e.target.value)} aria-label="Avantages Premium" />

@@ -11,7 +11,8 @@ import { accountsOn } from './account';
 import { SavedTime } from './Badges';
 import { AppIcon, Chip, GradButton, SoftButton, Toggle, st } from './ui';
 import { feel } from './feel';
-import { todayLabel, tomorrowLabel } from './dates';
+import { isoDay, shortDay, todayLabel, tomorrowLabel } from './dates';
+import { loadEditionDates } from './remote';
 
 const DRAWER = Easing.bezier(0.32, 0.72, 0, 1);
 const OUT = Easing.bezier(0.23, 1, 0.32, 1);
@@ -144,8 +145,10 @@ export type Prefs = {
   /** Notification du matin demandée sur cet appareil. */
   notif?: boolean;
 };
-export function Settings({ W, prefs, onSave, onClose, account, onAccount, premium, onPremium, onResetTaste, onTopics }: {
+export function Settings({ W, prefs, onSave, onClose, account, onAccount, premium, onPremium, onResetTaste, onTopics, pastDay, onPast }: {
   W: number; prefs: Prefs; onSave: (p: Prefs) => void; onClose: () => void;
+  /** Édition passée affichée (null = la plus récente) ; onPast en ouvre une autre. */
+  pastDay: string | null; onPast: (day: string | null) => void;
   /** Premium en cours (abonnement, code, cadeau, ou démo) ; onPremium ouvre le volet Premium. */
   premium: boolean; onPremium: () => void;
   /** Pseudo du lecteur connecté, '' sans pseudo, null s'il n'est pas connecté. */
@@ -161,6 +164,11 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
   const a = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
   const leave = (cb: () => void) => { x.value = withTiming(W, { duration: 380, easing: DRAWER }); setTimeout(cb, 360); };
   const set = (k: keyof Prefs, v: Prefs[keyof Prefs]) => setD((p) => ({ ...p, [k]: v }));
+  // Éditions passées : les N derniers jours en gratuit (back office > Règles de l'app), toutes en Premium.
+  const [days, setDays] = useState<string[]>([]);
+  useEffect(() => { loadEditionDates().then((l) => setDays(l.filter((x) => x < isoDay()))); }, []);
+  const open = premium ? days : days.filter((x) => x >= isoDay(-RULES.past_days_free));
+  const go = (day: string | null) => { feel('select', 'tick'); leave(() => { onClose(); onPast(day); }); };
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: C.night }, a]}>
       <View style={[styles.setHead, { paddingTop: insets.top + 18 }]}>
@@ -190,6 +198,16 @@ export function Settings({ W, prefs, onSave, onClose, account, onAccount, premiu
           {/* Temps gagné chaque jour avec ce nombre d'infos (minutes par info : back office > Reconnaissance). */}
           <SavedTime reads={d.quota} minutes={d.quota * RECOG.minutes_per_article} />
         </View>
+        {open.length || (days.length && !premium) ? (
+          <View style={{ gap: 12 }}>
+            <Text style={st.label}>Éditions précédentes</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              <Chip label="Aujourd'hui" on={!pastDay} onPress={() => go(null)} />
+              {open.map((x) => <Chip key={x} label={shortDay(x)} on={pastDay === x} onPress={() => go(x)} />)}
+              {!premium && days.length > open.length ? <Chip label="Toutes les dates avec Premium 💎" on={false} onPress={() => { feel('light'); onPremium(); }} /> : null}
+            </ScrollView>
+          </View>
+        ) : null}
         <View style={{ gap: 12 }}>
           <Text style={st.label}>Mes goûts</Text>
           <View style={styles.rows}>
