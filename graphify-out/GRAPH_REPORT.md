@@ -1,17 +1,17 @@
-# Graph Report - AppRun  (2026-11-24)
+# Graph Report - AppRun  (2026-11-25)
 
 ## Corpus Check
-- 128 files · ~151,888 words
+- 129 files · ~152,188 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 13 file(s) not represented in the graph (top: (none) 4, .xml 4, .example 3)
 
 ## Summary
-- 1406 nodes · 3409 edges · 82 communities (61 shown, 21 thin omitted)
+- 1407 nodes · 3409 edges · 83 communities (61 shown, 22 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 5 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c8f45fbc`
+- Built from commit: `d090d5cf`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -112,7 +112,7 @@
 ## Import Cycles
 - 2-file cycle: `admin/src/data.ts -> admin/src/demo.ts -> admin/src/data.ts`
 
-## Communities (82 total, 21 thin omitted)
+## Communities (83 total, 22 thin omitted)
 
 ### Community 0 - "0024_sujets_suivis.sql"
 Cohesion: 0.17
@@ -359,7 +359,7 @@ Cohesion: 0.38
 Nodes (6): flashes_published, flashes_touch, public.flashes, algo_keywords_retag_flashes, public.retag_flashes(), flashes_run
 
 ## Knowledge Gaps
-- **21 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **22 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
@@ -368,12 +368,12 @@ _Questions this graph is uniquely positioned to answer:_
   _High betweenness centrality (0.044) - this node is a cross-community bridge._
 - **Should `src/App.tsx` be split into smaller, more focused modules?**
   _Cohesion score 0.06861239119303636 - nodes in this community are weakly interconnected._
-- **Why does `auth.users` connect `auth.users` to `0024_sujets_suivis.sql`, `public.app_settings`, `anon`, `public.articles`, `0022_reconnaissance.sql`, `0009_moderation_gestion.sql`, `0025_regie_objectifs.sql`, `0023_parrainage.sql`, `public.flashes`, `0015_algorithme.sql`, `0002_roles.sql`, `public.profiles`?**
-  _High betweenness centrality (0.010) - this node is a cross-community bridge._
-- **Should `data.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.04519774011299435 - nodes in this community are weakly interconnected._
 - **Why does `Main()` connect `Main` to `account.ts`, `ShareCard.tsx`, `algo.ts`, `app/App.tsx`, `brand.ts`, `notify.ts`, `Feed.tsx`, `Premium`, `Screens.tsx`, `purchases.ts`, `app/src/Premium.tsx`, `Account.tsx`, `ads.ts`, `Topics.tsx`, `Sheets.tsx`, `headline.ts`?**
   _High betweenness centrality (0.008) - this node is a cross-community bridge._
+- **Should `data.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.04519774011299435 - nodes in this community are weakly interconnected._
+- **Why does `auth.users` connect `auth.users` to `0024_sujets_suivis.sql`, `public.app_settings`, `anon`, `public.articles`, `0022_reconnaissance.sql`, `0009_moderation_gestion.sql`, `0025_regie_objectifs.sql`, `0023_parrainage.sql`, `public.flashes`, `0015_algorithme.sql`, `0002_roles.sql`, `public.profiles`?**
+  _High betweenness centrality (0.007) - this node is a cross-community bridge._
 - **Should `Api` be split into smaller, more focused modules?**
   _Cohesion score 0.03636363636363636 - nodes in this community are weakly interconnected._
 - **Should `admin/src/Premium.tsx` be split into smaller, more focused modules?**
