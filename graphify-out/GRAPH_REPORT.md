@@ -1,17 +1,17 @@
 # Graph Report - AppRun  (2026-11-25)
 
 ## Corpus Check
-- 129 files · ~152,315 words
+- 130 files · ~152,570 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 13 file(s) not represented in the graph (top: (none) 4, .xml 4, .example 3)
 
 ## Summary
-- 1409 nodes · 3414 edges · 72 communities (49 shown, 23 thin omitted)
+- 1410 nodes · 3414 edges · 73 communities (49 shown, 24 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 5 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `3a49c637`
+- Built from commit: `6e2a259a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -100,7 +100,7 @@
 ## Import Cycles
 - 2-file cycle: `admin/src/data.ts -> admin/src/demo.ts -> admin/src/data.ts`
 
-## Communities (72 total, 23 thin omitted)
+## Communities (73 total, 24 thin omitted)
 
 ### Community 0 - "0024_sujets_suivis.sql"
 Cohesion: 0.11
@@ -299,7 +299,7 @@ Cohesion: 0.67
 Nodes (3): public.editions, _cand, public.compose_edition()
 
 ## Knowledge Gaps
-- **23 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **24 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
@@ -313,7 +313,7 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `src/App.tsx` be split into smaller, more focused modules?**
   _Cohesion score 0.07344632768361582 - nodes in this community are weakly interconnected._
 - **Why does `auth.users` connect `auth.users` to `0024_sujets_suivis.sql`, `public.app_settings`, `anon`, `public.article_emojis`, `0009_moderation_gestion.sql`, `public.articles`, `0025_regie_objectifs.sql`, `0022_reconnaissance.sql`, `0015_algorithme.sql`, `0002_roles.sql`, `public.profiles`?**
-  _High betweenness centrality (0.009) - this node is a cross-community bridge._
+  _High betweenness centrality (0.008) - this node is a cross-community bridge._
 - **Should `data.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.04519774011299435 - nodes in this community are weakly interconnected._
 - **Should `Api` be split into smaller, more focused modules?**
