@@ -65,3 +65,16 @@ Il faut un **Mac** et un câble. Pas de widget ni d'alertes push dans cette vers
 7. Si l'iPhone refuse d'ouvrir l'app : Réglages > Général > VPN et gestion de l'appareil > votre identifiant > « Faire confiance ».
 
 Au bout de 7 jours, l'app ne s'ouvre plus : rebranchez l'iPhone et relancez `npm run iphone-gratuit`.
+
+## La vraie app sur iPhone sans payer et sans Mac (7 jours)
+GitHub fabrique l'app, Sideloadly (gratuit, PC Windows ou Mac) l'installe par câble avec votre identifiant Apple.
+
+1. GitHub > Actions > « App native à essayer » > Run workflow > **iphone-gratuit**. Attendre la coche verte (20 à 40 minutes).
+2. Ouvrir ce passage, en bas « Artifacts » > **TITRE-iphone** : télécharger et décompresser, on obtient `TITRE.ipa`.
+3. PC Windows : installer **iTunes** et **iCloud** depuis le site d'Apple (pas la version Microsoft Store), puis **Sideloadly** (https://sideloadly.io).
+4. Brancher l'iPhone, « Se fier à cet ordinateur ». Glisser `TITRE.ipa` dans Sideloadly, taper son identifiant Apple, Start.
+   (Le mot de passe va à Apple via Sideloadly, jamais dans le chat.)
+5. Sur l'iPhone : Réglages > Général > VPN et gestion de l'appareil > votre identifiant > Faire confiance,
+   puis Réglages > Confidentialité et sécurité > Mode développeur > activer.
+
+Au bout de 7 jours : relancer Sideloadly avec le même fichier.
