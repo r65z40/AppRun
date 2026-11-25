@@ -15,7 +15,7 @@
       html, body { height: 100%; background: #0E0B1F; overscroll-behavior: none; }
       body { overflow: hidden; -webkit-tap-highlight-color: transparent; }
       /* iPhone : la page ne doit jamais glisser (sinon bande vide ou écran vide qui reste). */
-      body { position: fixed; inset: 0; margin: 0; }
+      body { position: fixed; inset: 0; margin: 0; touch-action: none; }
       #root { display: flex; height: 100%; flex: 1; }
     </style>
   </head>
@@ -23,6 +23,8 @@
     <noscript>Activez JavaScript pour lire TITRE.</noscript>
     <div id="root"></div>
     <!-- iPhone : la page reste parfois remontée après la fermeture du clavier. -->
+    <!-- iPhone, mode app : la page s'arrête 62 px avant le bas de l'écran (bande sombre). On lui donne la hauteur de l'écran. -->
+    <script>if (navigator.standalone && innerWidth < innerHeight) document.body.style.cssText = 'bottom:auto;height:' + screen.height + 'px';</script>
     <script>addEventListener('focusout', function () { setTimeout(function () { if (scrollY) scrollTo(0, 0); }, 100); });</script>
   </body>
 </html>

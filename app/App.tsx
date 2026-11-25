@@ -46,11 +46,13 @@ const framed = (w: number) => Platform.OS === 'web' && w > 560;
 // Web : la plus grande hauteur vue pour cette largeur. Le clavier de l'iPhone réduit la zone visible (le fil se décalait),
 // et en mode app (écran d'accueil) la hauteur de la page oublie la barre d'état (bande vide en bas).
 let tallest = { w: 0, h: 0 };
+// Mode app sur iPhone : toutes les hauteurs de la page oublient la barre d'état (62 px), seule celle de l'écran est juste.
+const appScreen = () => ((navigator as { standalone?: boolean }).standalone && innerWidth < innerHeight ? screen.height : 0);
 function useFrame() {
   const { width, height: visible } = useWindowDimensions();
   let height = visible;
   if (Platform.OS === 'web') {
-    height = Math.max(visible, document.documentElement.clientHeight, tallest.w === width ? tallest.h : 0);
+    height = Math.max(visible, document.documentElement.clientHeight, tallest.w === width ? tallest.h : 0, appScreen());
     tallest = { w: width, h: height };
   }
   return framed(width) ? { width: 400, height: Math.min(height - 48, 860) } : { width, height };
