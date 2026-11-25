@@ -196,7 +196,7 @@ On te donne les titres et chapôs de plusieurs médias sur un même sujet. Écri
 
 Style :
 - Français simple, phrases courtes, ton neutre. Pas d'adjectifs dramatiques, pas de point d'exclamation, pas de question en titre.
-- Écris avec tes propres mots. Ne recopie jamais une phrase d'un média : reprends seulement les faits.
+- Écris avec tes propres mots. Ne reprends jamais 8 mots à la suite d'un titre ou d'un chapô (seule exception : une citation entre guillemets ou un nom officiel) : reprends seulement les faits.
 - N'invente rien. Chaque fait doit venir des dépêches fournies ; indique le numéro de la dépêche.
 - Si les médias se contredisent, dis-le simplement (« selon X… »).
 - Faits : de 0 à 3. Chaque fait doit apprendre quelque chose de nouveau au lecteur : un chiffre, une date, une conséquence, un contexte qui ne sont ni dans le titre, ni dans la phrase clé, ni dans un autre fait. Ne reformule jamais le titre ou la phrase clé. S'il n'y a rien de plus à dire, ne mets aucun fait.
@@ -249,7 +249,7 @@ export function checkCard(c: CardOut, items: Item[]): string[] {
   // Reprise mot pour mot : 8 mots consécutifs identiques à un chapô = trop proche du texte du média.
   const src = items.map((i) => norm(i.title + ' ' + i.description)).join(' | ');
   for (const t of [c.key_sentence, ...c.facts.map((f) => f.text), c.summary.context, c.summary.change, c.summary.next, c.matters, ...c.angles.map((a) => a.text)]) {
-    const w = norm(t).split(' ');
+    const w = norm(unquote(t)).split(' ');
     for (let k = 0; k + 8 <= w.length; k++) {
       if (src.includes(w.slice(k, k + 8).join(' '))) {
         issues.push('reprise mot pour mot d’un média');
@@ -365,6 +365,8 @@ export const doubtIssue = (i: string) => /^(ton :|chiffre absent|relecture IA)/.
 export const cardText = (c: CardOut) =>
   [`Titre : ${c.title}`, `Phrase clé : ${c.key_sentence}`, ...c.facts.map((f) => `Fait : ${f.text.replace(/<\/?b>/g, '')}`), `Contexte : ${c.summary.context}`, `Ce qui change : ${c.summary.change}`, `Et après : ${c.summary.next}`, `Pourquoi c'est important : ${c.matters}`, ...c.angles.map((a) => `Angle d'un média : ${a.text}`)].join('\n');
 
+// Une citation entre guillemets est reprise exprès : elle ne compte pas comme une copie.
+const unquote = (s: string) => s.replace(/«[^»]*»|“[^”]*”|"[^"]*"/g, ' | ');
 const norm = (s: string) => s.toLowerCase().replace(/<\/?b>/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, Math.round(v)));
 
@@ -472,7 +474,7 @@ export function checkFlash(f: FlashOut, items: Item[], minImportance = cfg.flash
   if (f.importance < minImportance) issues.push('importance insuffisante');
   if (f.title.length > 70 || f.sentence.length > 200) issues.push('trop long');
   const src = its.map((i) => norm(i.title + ' ' + i.description)).join(' | ');
-  const w = norm(f.sentence).split(' ');
+  const w = norm(unquote(f.sentence)).split(' ');
   for (let k = 0; k + 8 <= w.length; k++) if (src.includes(w.slice(k, k + 8).join(' '))) { issues.push('reprise mot pour mot'); break; }
   return issues;
 }
