@@ -206,7 +206,9 @@ async function edition() {
         log(`   ↻ [${s.rubric}] réécriture : ${issues.join(', ')}`);
         const again = await writeCard(s, its, issues).catch(() => null);
         const left = again ? await check(again) : issues;
-        if (again && left.length < issues.length) { card = again; issues = left; fixed++; }
+        // On garde la réécriture si elle a moins de vrais problèmes : un simple doute ajouté par la relecture IA ne compte pas contre elle.
+        const hard = (l: string[]) => l.filter((i) => !minorIssue(i) && !doubtIssue(i)).length;
+        if (again && (hard(left) < hard(issues) || (hard(left) === hard(issues) && left.length < issues.length))) { card = again; issues = left; fixed++; }
       }
       const facts = cleanFacts(card).map((f) => {
         const r = fresh[f.item_number - 1] ?? fresh[its[0].n - 1];
@@ -221,8 +223,8 @@ async function edition() {
         return;
       }
       const photo = pexelsOn() ? await findPhoto(card.photo_query).catch((e) => { log(`   photo introuvable (${e instanceof Error ? e.message : e})`); return null; }) : null;
-      // Une reprise mot pour mot d'un média ne part jamais seule, même avec « Publier aussi les cartes avec alerte ».
-      let publish = AUTO_PUBLISH && (issues.every(minorIssue) || (!cfg.guardHold() && issues.every((i) => minorIssue(i) || doubtIssue(i))) || (cfg.publishFlagged() && !issues.some((i) => i.startsWith('reprise')))) && s.importance >= cfg.publishMinImportance();
+      // « Retenir les cartes encore douteuses » coupé : une reprise mot pour mot restée après la réécriture part aussi, doute noté.
+      let publish = AUTO_PUBLISH && (issues.every(minorIssue) || (!cfg.guardHold() && issues.every((i) => minorIssue(i) || doubtIssue(i) || i.startsWith('reprise'))) || (cfg.publishFlagged() && !issues.some((i) => i.startsWith('reprise')))) && s.importance >= cfg.publishMinImportance();
       if (publish && cfg.publishMaxPerDay() && pubToday >= cfg.publishMaxPerDay()) { publish = false; issues.push(`limite de ${cfg.publishMaxPerDay()} publications par jour atteinte`); }
       if (publish) pubToday++;
       await q(
