@@ -22,3 +22,6 @@ insert into visits (device, day) values ('vieux-tel', current_date - 400), ('neu
 select purge_reading_events();
 select case when not exists (select 1 from visits where device = 'vieux-tel') and exists (select 1 from visits where device = 'neuf-tel')
   then 'OK  jours d''ouverture effacés après 12 mois' else 'ÉCHEC  conservation des visites' end;
+select case when (select bool_and(value not like '%[date]%' and value not like '%contact]%' and value not like '%[Nom%') from app_settings where key like 'LEGAL_%')
+  and (select value from app_settings where key = 'LEGAL_NOTICE') like '%SIRET 987 664 893 00029%' and (select value from app_settings where key = 'LEGAL_TERMS') like '%titre@studio-23.fr%'
+  then 'OK  pages légales remplies avec Studio 23' else 'ÉCHEC  pages légales remplies' end;
