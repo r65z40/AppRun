@@ -47,3 +47,21 @@ Ce qu'il faut créer avant est écrit en haut de `.github/workflows/app-native.y
    - iPhone : il faut un compte Apple Developer (99 €/an) ; la commande demande vos identifiants
      Apple et enregistre l'iPhone.
 4. Ouvrez l'app une fois, puis appui long sur l'écran d'accueil > Widgets > TITRE.
+
+## La vraie app sur iPhone sans payer (7 jours)
+Il faut un **Mac** et un câble. Pas de widget ni d'alertes push dans cette version.
+
+1. Sur le Mac : installez **Xcode** (App Store du Mac, gratuit, long à télécharger) et **Node.js LTS** (https://nodejs.org).
+2. Ouvrez Xcode une fois. Dans Xcode > Réglages > Comptes : « + » > Apple ID, connectez-vous avec votre identifiant Apple habituel.
+   Puis « Manage Certificates… » > « + » > « Apple Development ».
+3. Téléchargez le code : sur GitHub, bouton vert « Code » > « Download ZIP », puis double-cliquez le fichier pour le décompresser.
+4. Pour le vrai contenu : dans le dossier `app`, créez un fichier texte nommé `.env` avec ces deux lignes
+   (valeurs dans GitHub > Settings > Secrets and variables > Actions > onglet Variables) :
+   `EXPO_PUBLIC_SUPABASE_URL=...` et `EXPO_PUBLIC_SUPABASE_ANON_KEY=...`
+5. Branchez l'iPhone au Mac, déverrouillez-le et touchez « Se fier à cet ordinateur ».
+   Sur l'iPhone : Réglages > Confidentialité et sécurité > Mode développeur > activer (l'iPhone redémarre).
+6. Ouvrez un terminal dans le dossier `app` (clic droit > Services > Nouveau terminal au dossier) et tapez :
+   `npm install` puis `npm run iphone-gratuit`. Choisissez votre iPhone et votre compte si on vous le demande (10 à 20 minutes la première fois).
+7. Si l'iPhone refuse d'ouvrir l'app : Réglages > Général > VPN et gestion de l'appareil > votre identifiant > « Faire confiance ».
+
+Au bout de 7 jours, l'app ne s'ouvre plus : rebranchez l'iPhone et relancez `npm run iphone-gratuit`.
