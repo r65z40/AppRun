@@ -33,6 +33,10 @@ Le widget affiche l'info principale du jour (jamais un sujet sensible) et se met
 chaque fois que l'app est ouverte. **Il ne marche pas dans Expo Go** : il faut une vraie
 version de l'app, fabriquée par Expo (service EAS, gratuit pour quelques versions par mois).
 
+Le plus simple : sur GitHub, Actions > « App native à essayer » > Run workflow (android ou iphone).
+Ce qu'il faut créer avant est écrit en haut de `.github/workflows/app-native.yml`.
+À la main sinon :
+
 1. Créez un compte gratuit sur https://expo.dev.
 2. Dans le dossier `app`, tapez `npx eas-cli login`, puis
    `npx eas-cli build --profile preview --platform android` (ou `--platform ios`).

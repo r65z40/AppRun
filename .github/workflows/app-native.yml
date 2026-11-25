@@ -1,0 +1,75 @@
+name: "App native à essayer"
+
+# Fabrique la vraie app (pas Expo Go) sur les serveurs d'Expo (EAS). Lancement à la main :
+# Actions > « App native à essayer » > Run workflow, puis choisir android ou iphone.
+# Il faut dans Settings > Secrets and variables > Actions :
+#   secret EXPO_TOKEN : expo.dev > Account settings > Access tokens > Create token   (android et iphone)
+#   iphone seulement (compte Apple Developer, puis App Store Connect > Users and Access > Integrations > App Store Connect API) :
+#     secret ASC_API_KEY      : contenu du fichier .p8 téléchargé (rôle « Admin »)
+#     secret ASC_KEY_ID       : « Key ID » de cette clé
+#     secret ASC_ISSUER_ID    : « Issuer ID » affiché en haut de la page
+#     secret APPLE_TEAM_ID    : developer.apple.com > Account > Membership > Team ID
+#     secret ASC_APP_ID       : App Store Connect > l'app TITRE > App Information > Apple ID (des chiffres)
+# Variables déjà là : SUPABASE_URL, SUPABASE_ANON_KEY (le vrai contenu).
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "android (APK à installer) ou iphone (TestFlight)"
+        type: choice
+        options: [android, iphone]
+        default: android
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: app
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EAS_NO_VCS: 1
+      EXPO_ASC_API_KEY_PATH: ./asc-key.p8
+      EXPO_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      EXPO_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      EXPO_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      EXPO_APPLE_TEAM_TYPE: INDIVIDUAL
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Réglages présents ?
+        env:
+          ASC_API_KEY: ${{ secrets.ASC_API_KEY }}
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
+        run: |
+          [ -n "$EXPO_TOKEN" ] || { echo "::error::Secret EXPO_TOKEN manquant (voir le haut de ce fichier)."; exit 1; }
+          if [ "${{ inputs.platform }}" = iphone ]; then
+            for v in ASC_API_KEY ASC_APP_ID EXPO_ASC_KEY_ID EXPO_ASC_ISSUER_ID EXPO_APPLE_TEAM_ID; do
+              [ -n "${!v}" ] || { echo "::error::Secret $v manquant pour l'iPhone (voir le haut de ce fichier)."; exit 1; }
+            done
+            printf '%s\n' "$ASC_API_KEY" > asc-key.p8
+            jq --arg id "$ASC_APP_ID" '.submit.testflight.ios.ascAppId = $id' eas.json > e && mv e eas.json
+          fi
+          # Le vrai contenu : adresse et clé publique de la base, données à la version fabriquée.
+          jq --arg u "${{ vars.SUPABASE_URL }}" --arg k "${{ vars.SUPABASE_ANON_KEY }}" \
+            --arg w "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" \
+            '.build.preview.env = {EXPO_PUBLIC_SUPABASE_URL:$u, EXPO_PUBLIC_SUPABASE_ANON_KEY:$k, EXPO_PUBLIC_WEB_URL:$w}
+             | .build.testflight.env = .build.preview.env' eas.json > e && mv e eas.json
+      - run: npm ci
+      - name: Relier au projet Expo
+        run: npx -y eas-cli@latest init --non-interactive --force
+      - name: Android (APK)
+        if: inputs.platform == 'android'
+        run: |
+          npx -y eas-cli@latest build --platform android --profile preview --non-interactive --wait
+          echo "::notice::APK prêt : ouvrez expo.dev > projet titre > Builds sur le téléphone Android pour l'installer."
+      - name: iPhone (TestFlight)
+        if: inputs.platform == 'iphone'
+        run: |
+          npx -y eas-cli@latest build --platform ios --profile testflight --non-interactive --wait --auto-submit-with-profile testflight
+          echo "::notice::Envoyé à TestFlight : l'app apparaît dans TestFlight sur l'iPhone d'ici 10 à 30 minutes."
