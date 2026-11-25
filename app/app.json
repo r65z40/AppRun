@@ -14,13 +14,13 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.titre.prototype",
+      "bundleIdentifier": "fr.studio23.titre",
       "infoPlist": {
         "NSMotionUsageDescription": "TITRE utilise l'inclinaison du téléphone pour donner de la profondeur aux photos."
       }
     },
     "android": {
-      "package": "app.titre.prototype",
+      "package": "fr.studio23.titre",
       "adaptiveIcon": {
         "backgroundColor": "#7B5CFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
