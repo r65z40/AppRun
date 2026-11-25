@@ -161,13 +161,17 @@ function Main() {
     fetchPicks(p.active, p.quota, p.perso !== false).then((r) => live && r && setPicks(r));
     return () => { live = false; };
   }, [phase, p.active.join(','), p.quota, p.perso, me?.uid, edVer, tasteVer]);
+  // Infos vues dans Mon édition (même sans les ouvrir) : plus reproposées dans les rubriques.
+  const [edSeen, setEdSeen] = useState<Set<string>>(() => new Set());
   const cols = useMemo(() => {
-    const c = buildColumns(p.active, p.quota, premium, p.taste, p.adsPersonalized, picks);
+    const c = buildColumns(p.active, p.quota, premium, p.taste, p.adsPersonalized, picks)
+      .map((col) => (col.id === 'edition' || col.id === 'flash' ? col : { ...col, cards: col.cards.filter((x) => !edSeen.has(x.id)) }))
+      .filter((col) => col.cards.some(isArticle) || col.id === 'edition' || col.id === 'flash');
     // Récap : toutes les infos de la semaine retenues, de la plus marquante à la moins marquante, sans pub.
     if (pastDay === WEEK) c[0] = { ...c[0], name: 'La semaine', tags: {}, cards: RUBRICS.flatMap((r) => r.items).sort((a, b) => weekScore(b.importance ?? 5, b) - weekScore(a.importance ?? 5, a)) };
     else if (pastDay) c[0].name = `Édition · ${shortDay(pastDay)}`;
     return c;
-  }, [p.active, p.quota, premium, p.taste, p.adsPersonalized, flashVer, edVer, picks, pastDay]);
+  }, [p.active, p.quota, premium, p.taste, p.adsPersonalized, flashVer, edVer, picks, pastDay, edSeen]);
   const [ri, setRi] = useState(0);
   const [idx, setIdx] = useState<Record<string, number>>({});
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
@@ -177,12 +181,12 @@ function Main() {
     return acc.getLocal(SEEN).then((v) => {
       try {
         const s = JSON.parse(v ?? '');
-        if (s.day === isoDay()) { setSeen(new Set(s.ids)); setLimit(Math.max(quota, s.limit)); }
+        if (s.day === isoDay()) { setSeen(new Set(s.ids)); setEdSeen(new Set(s.ed ?? [])); setLimit(Math.max(quota, s.limit)); }
       } catch { /* rien de gardé */ }
     });
   };
   const [limit, setLimit] = useState(RULES.default_quota);
-  useEffect(() => { if (!pastDay && seen.size) acc.setLocal(SEEN, JSON.stringify({ day: isoDay(), ids: [...seen], limit })); }, [seen, limit, pastDay]);
+  useEffect(() => { if (!pastDay && seen.size) acc.setLocal(SEEN, JSON.stringify({ day: isoDay(), ids: [...seen], ed: [...edSeen], limit })); }, [seen, edSeen, limit, pastDay]);
   // Jours où l'app a été ouverte (60 derniers), pour la série de l'écran Bravo.
   const [visits, setVisits] = useState<string[]>([]);
   useEffect(() => {
@@ -393,7 +397,8 @@ function Main() {
     if (phase !== 'feed' || overlay || !current || !isArticle(current)) return;
     shownAt.current = Date.now();
     const id = current.id;
-    const t = setTimeout(() => markSeen(id), DWELL_MS);
+    const inEd = ri === 0 && cols[0]?.id === 'edition';
+    const t = setTimeout(() => { markSeen(id); if (inEd) setEdSeen((s) => (s.has(id) ? s : new Set(s).add(id))); }, DWELL_MS);
     return () => {
       const ms = Date.now() - shownAt.current;
       readMs.current += Math.min(60000, ms);
@@ -599,6 +604,7 @@ function Main() {
       pastRef.current = day;
       setPastDay(day);
       setSeen(new Set());
+      setEdSeen(new Set());
       if (!day) restoreSeen(p.quota);
       bravoShown.current = false;
       setRi(0);
