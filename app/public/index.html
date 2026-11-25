@@ -22,9 +22,10 @@
   <body>
     <noscript>Activez JavaScript pour lire TITRE.</noscript>
     <div id="root"></div>
+    <!-- iPhone (iOS 26), mode app : tant que la page est plus courte que l'écran, l'iPhone arrête l'affichage 62 px avant le bas
+         (bande sombre, bug WebKit 301108). Une page au moins aussi haute que l'écran lui rend toute la hauteur. -->
+    <script>if (navigator.standalone) document.documentElement.style.minHeight = 'min(100lvh, calc(100% + env(safe-area-inset-top)))';</script>
     <!-- iPhone : la page reste parfois remontée après la fermeture du clavier. -->
-    <!-- iPhone, mode app : la page s'arrête 62 px avant le bas de l'écran (bande sombre). On lui donne la hauteur de l'écran. -->
-    <script>if (navigator.standalone && innerWidth < innerHeight) document.body.style.cssText = 'bottom:auto;height:' + screen.height + 'px';</script>
     <script>addEventListener('focusout', function () { setTimeout(function () { if (scrollY) scrollTo(0, 0); }, 100); });</script>
   </body>
 </html>
