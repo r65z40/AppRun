@@ -13,6 +13,11 @@ app.expo.plugins = app.expo.plugins.filter((p) => !['expo-widgets', 'expo-notifi
 app.expo.ios.bundleIdentifier += '.essai';
 
 fs.writeFileSync('app.json', JSON.stringify(app, null, 2));
+// « prepare » (GitHub, sans iPhone branché) : prépare seulement le projet iOS et garde ce app.json.
+if (process.argv[2] === 'prepare') {
+  execSync('npx expo prebuild --platform ios --clean', { stdio: 'inherit' });
+  process.exit(0);
+}
 try {
   execSync('npx expo prebuild --platform ios --clean', { stdio: 'inherit' });
   execSync('npx expo run:ios --device --configuration Release', { stdio: 'inherit' });
