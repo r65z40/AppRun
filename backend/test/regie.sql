@@ -50,6 +50,23 @@ reset role;
 select case when (select views || '/' || clicks from ad_stats where campaign_id = '00000000-0000-0000-0000-00000000ad01' and day = :'d'::date and placement = 'flash') = '1/1'
   then 'OK  affichage et clic rangés sous Dernière minute' else 'ÉCHEC  emplacement des statistiques' end;
 
+-- Impressions : une pub apparue un instant compte une impression ; restée 1 s, elle devient un affichage ; pas de clic avant.
+set role anon;
+select ad_hits('telephone-5', '[
+    {"i": "55555555-5555-4555-8555-555555555555", "c": "00000000-0000-0000-0000-00000000ad01", "p": "edition", "k": "imp"},
+    {"i": "55555555-5555-4555-8555-555555555555", "c": "00000000-0000-0000-0000-00000000ad01", "p": "edition", "k": "click"},
+    {"i": "66666666-6666-4666-8666-666666666666", "c": "00000000-0000-0000-0000-00000000ad01", "p": "edition", "k": "imp"},
+    {"i": "66666666-6666-4666-8666-666666666666", "c": "00000000-0000-0000-0000-00000000ad01", "p": "edition", "k": "imp"},
+    {"i": "66666666-6666-4666-8666-666666666666", "c": "00000000-0000-0000-0000-00000000ad01", "p": "edition", "k": "view"},
+    {"i": "66666666-6666-4666-8666-666666666666", "c": "00000000-0000-0000-0000-00000000ad01", "p": "edition", "k": "view"},
+    {"i": "66666666-6666-4666-8666-666666666666", "c": "00000000-0000-0000-0000-00000000ad01", "p": "edition", "k": "click"}
+  ]') \gset imp_
+reset role;
+select case when :imp_ad_hits = 4
+        and (select impressions || '/' || views || '/' || clicks from ad_stats where campaign_id = '00000000-0000-0000-0000-00000000ad01' and day = :'d'::date and placement = 'edition') = '2/1/1'
+        and (select impressions || '/' || views from ad_stats where campaign_id = '00000000-0000-0000-0000-00000000ad01' and day = :'d'::date and placement = 'flash') = '1/1'
+  then 'OK  impressions : pub vue un instant comptée, affichage à 1 s, clic seulement après un affichage' else 'ÉCHEC  impressions' end;
+
 -- Hors ligne : un affichage d'il y a 100 h arrive maintenant, ramené à 72 h ; la campagne maison avait commencé.
 set role anon;
 select ad_hits('telephone-1', jsonb_build_array(jsonb_build_object('i', '44444444-4444-4444-8444-444444444444', 'c', '00000000-0000-0000-0000-00000000ad03',

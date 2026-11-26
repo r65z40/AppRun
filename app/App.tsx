@@ -409,10 +409,11 @@ function Main() {
     };
   }, [current, phase, overlay]);
 
-  // Pub restée une seconde à l'écran : un affichage compté pour la campagne.
+  // Pub apparue : une impression tout de suite ; restée une seconde à l'écran : un affichage.
   useEffect(() => {
     if (phase !== 'feed' || overlay || !current || !isAd(current)) return;
     const ad = current;
+    adHit(ad, 'imp');
     const t = setTimeout(() => adHit(ad), 1000);
     return () => clearTimeout(t);
   }, [current, phase, overlay]);
