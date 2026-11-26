@@ -117,7 +117,8 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
         <>
           <Animated.ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={{ paddingBottom: 30 }}
+            // Le fond sombre va jusqu'à la barre du bas, même pour une info courte : plus de bande grise.
+            contentContainerStyle={{ flexGrow: 1 }}
             onScroll={onScroll}
             scrollEventThrottle={16}
             // Résumé lu jusqu'en bas (80 %) : un signal fort pour l'algorithme, envoyé une fois.
@@ -137,7 +138,7 @@ export function SummarySheet({ a, open, onClose, H, reaction, onReact, onComment
                 <Text style={styles.date}>{a.day ?? `${todayLabel()} ${yearLabel()}`} · {a.hour} · lecture 1 min</Text>
               </View>
             </View>
-            <View style={{ paddingHorizontal: 30, paddingTop: 22, backgroundColor: C.night }}>
+            <View style={{ paddingHorizontal: 30, paddingTop: 22, paddingBottom: 30, flexGrow: 1, backgroundColor: C.night }}>
             {summaryOf(a).map((t, i) => (
               <View key={i} style={{ marginBottom: 26 }}>
                 <Text style={styles.blkH}>{heads[i].toUpperCase()}</Text>
@@ -349,7 +350,7 @@ const styles = StyleSheet.create({
   srcList: { borderTopWidth: 1, borderColor: C.line, paddingTop: 14, gap: 12 },
   lbl: { color: C.text3, fontFamily: F.semi, fontSize: 11, letterSpacing: 1.6 },
   srcLink: { color: C.link, fontFamily: F.regular, fontSize: 14 },
-  foot: { flexDirection: 'row', alignItems: 'center', gap: 26, paddingHorizontal: 30, paddingTop: 12, borderTopWidth: 1, borderColor: C.line },
+  foot: { flexDirection: 'row', alignItems: 'center', gap: 26, paddingHorizontal: 30, paddingTop: 12, borderTopWidth: 1, borderColor: C.line, backgroundColor: C.night },
   footBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, height: 44 },
   footTxt: { color: C.text2, fontFamily: F.semi, fontSize: 14 },
   sort: { flexDirection: 'row', padding: 3, borderRadius: 12, backgroundColor: C.surface, gap: 2 },

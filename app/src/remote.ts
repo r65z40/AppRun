@@ -49,6 +49,34 @@ const hour = (iso: string) => {
   return `${Number(h)} h ${m}`;
 };
 
+/** Une ligne de la base en info de l'app. */
+function toArticle(a: Row, s?: Stat, emojis?: Record<string, number>): Article {
+  const media = [...new Set(a.facts.map((f) => f.source))];
+  return {
+    id: a.id,
+    title: a.title,
+    hour: hour(a.published_at ?? a.created_at),
+    day: dayLabel(a.published_at ?? a.created_at),
+    key: a.key_sentence,
+    facts: a.facts.map((f) => ({ text: f.text, source: f.source, doc: f.url })),
+    photo: a.photo_url ? { uri: a.photo_url } : (PHOTOS as Record<string, number>)[a.photo_tag ?? ''] ?? null,
+    grad: null,
+    likes: s?.likes ?? 0,
+    dislikes: s?.dislikes ?? 0,
+    views: s?.views ?? 0,
+    comments: s?.comments ?? 0,
+    summary: a.summary,
+    matters: a.matters ?? undefined,
+    angles: a.angles ?? undefined,
+    essential: a.essential,
+    sensitive: !!a.sensitive,
+    importance: a.importance,
+    emojis: emojis ?? {},
+    media: `D'après ${media.join(', ')}`,
+    credit: a.photo_url ? a.photo_credit ?? undefined : undefined,
+  };
+}
+
 /** Jour spécial de loadEdition : le récap de la semaine. */
 export const WEEK = 'semaine';
 /** Note d'une info pour le récap, sans IA : son importance, puis ce que les lecteurs en ont fait (réactions rapportées aux vues). */
@@ -92,38 +120,32 @@ export async function loadEdition(day: string | null = null, timeoutMs = 4000): 
     const next: Rubric[] = rubs.map((r) => ({
       id: r.id,
       name: r.name,
-      items: rows.filter((a) => a.rubric_id === r.id).map((a): Article => {
-        const media = [...new Set(a.facts.map((f) => f.source))];
-        return {
-          id: a.id,
-          title: a.title,
-          hour: hour(a.published_at ?? a.created_at),
-          day: dayLabel(a.published_at ?? a.created_at),
-          key: a.key_sentence,
-          facts: a.facts.map((f) => ({ text: f.text, source: f.source, doc: f.url })),
-          photo: a.photo_url ? { uri: a.photo_url } : (PHOTOS as Record<string, number>)[a.photo_tag ?? ''] ?? null,
-          grad: null,
-          likes: st.get(a.id)?.likes ?? 0,
-          dislikes: st.get(a.id)?.dislikes ?? 0,
-          views: st.get(a.id)?.views ?? 0,
-          comments: st.get(a.id)?.comments ?? 0,
-          summary: a.summary,
-          matters: a.matters ?? undefined,
-          angles: a.angles ?? undefined,
-          essential: a.essential,
-          sensitive: !!a.sensitive,
-          importance: a.importance,
-          emojis: emojis.get(a.id) ?? {},
-          media: `D'après ${media.join(', ')}`,
-          credit: a.photo_url ? a.photo_credit ?? undefined : undefined,
-        };
-      }),
+      items: rows.filter((a) => a.rubric_id === r.id).map((a) => toArticle(a, st.get(a.id), emojis.get(a.id))),
     })).filter((r) => r.items.length);
     // Les infos sans photo prennent un dégradé de la palette.
     const grads = [[C.violet, C.blue, C.pink, C.night2], [C.blue, C.violet, C.sky, C.night3]];
     next.forEach((r, i) => r.items.forEach((a) => { if (!a.photo) a.grad = grads[i % 2]; }));
     RUBRICS.splice(0, RUBRICS.length, ...next);
     return date;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** Une info d'une édition précédente (ouverte depuis la frise d'un sujet suivi). Null si introuvable ou hors ligne. */
+export async function loadArticle(id: string): Promise<Article | null> {
+  if (!remoteConfigured) return null;
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 4000);
+  try {
+    const [row] = await get<Row[]>(`articles?select=*&id=eq.${id}&status=eq.published`, ctl.signal);
+    if (!row) return null;
+    const [s] = await get<Stat[]>(`article_stats?select=article_id,likes,dislikes,views,comments&article_id=eq.${id}`, ctl.signal).catch(() => []);
+    const a = toArticle(row, s);
+    if (!a.photo) a.grad = [C.violet, C.blue, C.pink, C.night2];
+    return a;
   } catch {
     return null;
   } finally {
