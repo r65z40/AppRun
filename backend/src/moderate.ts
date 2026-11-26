@@ -3,7 +3,7 @@
 // En cas de doute, l'IA laisse le signalement à l'équipe.
 import { q } from './db.js';
 import { cfg } from './config.js';
-import { judgeComments, model, usage } from './ai.js';
+import { judgeComments, lightModel, usage } from './ai.js';
 
 type Row = { id: string; text: string; article: string; reports: number };
 
@@ -17,9 +17,9 @@ export async function moderate(log: (...a: unknown[]) => void) {
       group by c.id, a.title order by min(r.created_at) limit 40`,
   );
   if (!rows.length) return none;
-  const before = { ...usage };
+  const before = { calls: usage.calls, ...usage.light };
   const verdicts = await judgeComments(rows.map((r, k) => ({ n: k + 1, text: r.text, article: r.article, reports: r.reports })));
-  const ai = { calls: usage.calls - before.calls, input: usage.input - before.input, output: usage.output - before.output, model: model() };
+  const ai = { calls: usage.calls - before.calls, input: usage.light.input - before.input, output: usage.light.output - before.output, model: lightModel() };
   const done: { text: string; decision: string; reason: string }[] = [];
   for (const v of verdicts) {
     const c = rows[v.n - 1];

@@ -18,27 +18,29 @@ export type Parts = { morning: number; updates: number; flash: number; review: n
 export function estimate(get: (k: string) => string): Parts {
   const n = (k: string, d: number) => Number(get(k) || d);
   const on = (k: string, d: boolean) => (get(k) ? get(k) === '1' : d);
-  const m = get('TITRE_MODEL') || 'claude-opus-5-5';
-  const [pi, po] = PRICE[Object.keys(PRICE).find((p) => m.includes(p)) ?? 'opus'];
+  const price = (m: string) => PRICE[Object.keys(PRICE).find((p) => m.includes(p)) ?? 'opus'];
+  const [pi, po] = price(get('TITRE_MODEL') || 'claude-opus-5-5'); // écrit les cartes
+  const [li, lo] = price(get('TITRE_MODEL_LIGHT') || 'claude-haiku-5-5'); // tout le reste
   const eff = EFFORT[get('TITRE_EFFORT') || 'medium'] ?? 1;
   const call = (input: number, output: number) => (input * pi + output * po) / 1e6;
+  const light = (input: number, output: number) => (input * li + output * lo) / 1e6;
 
   const fix = on('AUTO_FIX', true) ? 1.15 : 1; // environ 15 % des cartes réécrites une fois
   const card = call(3000, 1500 * eff) * fix;
-  const check = on('GUARD_AI_CHECK', true) ? call(1500, 300) : 0;
+  const check = on('GUARD_AI_CHECK', true) ? light(1500, 300) : 0;
 
   const cards = Math.min(n('MAX_CARDS', 40), n('PER_RUBRIC', 8) * 10);
-  const morning = call(2000 + n('MAX_ITEMS', 400) * 90, (3000 + 60 * cards) * eff) + cards * card;
+  const morning = light(2000 + n('MAX_ITEMS', 400) * 90, (3000 + 60 * cards) * eff) + cards * card;
 
   const cap = n('LIVE_MAX_CARDS', 0) || Math.max(1, Math.ceil(n('MAX_CARDS', 40) / 4));
   const perUpdate = Math.min(cap, Math.max(n('LIVE_MIN_CARDS', 1), (10 - n('LIVE_MIN_IMPORTANCE', 6)) / 2));
   const live = on('LIVE_UPDATES', true) ? UPDATES_PER_DAY : 0;
-  const updates = live * (call(2000 + n('UPDATE_WINDOW_HOURS', 4) * 15 * 90, 2000 * eff) + perUpdate * card);
+  const updates = live * (light(2000 + n('UPDATE_WINDOW_HOURS', 4) * 15 * 90, 2000 * eff) + perUpdate * card);
 
   const flashOn = on('FLASH_ENABLED', true);
   const items = Math.min(250, n('FLASH_WINDOW_HOURS', 2) * 60);
   const flashes = Math.min(n('FLASH_MAX_PER_DAY', 12), Math.max(n('FLASH_MIN_PER_DAY', 3), 3));
-  const flash = flashOn ? FLASH_RUNS_PER_DAY * call(1500 + items * 80, 800) : 0;
+  const flash = flashOn ? FLASH_RUNS_PER_DAY * light(1500 + items * 80, 800) : 0;
 
   const review = check * (cards + live * perUpdate + (flashOn ? flashes : 0));
   return { morning, updates, flash, review };
