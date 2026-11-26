@@ -64,18 +64,20 @@ export function pickAds(n: number, place: Placement, column: string, active: str
 /* ---------- Comptage ---------- */
 // Chaque affichage reçoit un identifiant tiré au hasard : renvoyé deux fois (réseau capricieux), il ne compte qu'une fois.
 // Envoi par paquets ; hors ligne, la file attend sur le téléphone et part au retour du réseau (jusqu'à 72 h après).
-type Ev = { i: string; c: string; p: Placement; k: 'view' | 'click'; t: number };
+type Ev = { i: string; c: string; p: Placement; k: Kind; t: number };
+type Kind = 'imp' | 'view' | 'click';
 const QKEY = 'titre.adq';
 let queue: Ev[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
 let restored = false;
 const shown = new Map<string, string>(); // emplacement → identifiant de son affichage (une fois par ouverture de l'app)
+const sent = new Set<string>(); // « identifiant:type » déjà mis dans la file
 
 const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
   const r = (Math.random() * 16) | 0;
   return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
 });
-const save = () => acc.setLocal(QKEY, queue.length ? JSON.stringify(queue.slice(-15)) : null);
+const save = () => acc.setLocal(QKEY, queue.length ? JSON.stringify(queue.slice(-30)) : null);
 
 async function restore() {
   if (restored) return;
@@ -110,17 +112,19 @@ function push(e: Ev) {
 }
 
 /**
- * Affichage : la pub est restée une seconde à l'écran, app au premier plan. Un seul par emplacement et par
- * ouverture de l'app. Clic : seulement sur un affichage compté (on le compte d'abord s'il ne l'était pas).
+ * Impression ('imp') : la pub vient d'apparaître, même une fraction de seconde. Affichage ('view') : elle est restée
+ * une seconde, app au premier plan (c'est lui qui compte pour les objectifs et le prix). Clic ('click'). Chacun une
+ * seule fois par emplacement et par ouverture de l'app ; un affichage compte son impression, un clic son affichage.
  */
-export function adHit(card: Ad, click = false) {
+export function adHit(card: Ad, k: Kind = 'view') {
   if (!URL || !KEY || card.c.id === 'demo') return;
-  if (!click && AppState.currentState !== 'active') return;
+  if (k !== 'click' && AppState.currentState !== 'active') return;
   let id = shown.get(card.id);
-  if (!id) {
-    id = uuid();
-    shown.set(card.id, id);
-    push({ i: id, c: card.c.id, p: card.place, k: 'view', t: Date.now() });
+  if (!id) { id = uuid(); shown.set(card.id, id); }
+  const kinds: Kind[] = k === 'imp' ? ['imp'] : k === 'view' ? ['imp', 'view'] : ['imp', 'view', 'click'];
+  for (const x of kinds) {
+    if (sent.has(`${id}:${x}`)) continue;
+    sent.add(`${id}:${x}`);
+    push({ i: id, c: card.c.id, p: card.place, k: x, t: Date.now() });
   }
-  if (click) push({ i: id, c: card.c.id, p: card.place, k: 'click', t: Date.now() });
 }

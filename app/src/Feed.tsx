@@ -376,7 +376,7 @@ function CardContent({ card, k, here, step, W, H, tag, why, api, bottom, tiltX, 
           <Press
             onPress={() => {
               if (!card.c.url) return api.onToast("Ouvre le site de l'annonceur");
-              adHit(card, true);
+              adHit(card, 'click');
               Linking.openURL(card.c.url).catch(() => api.onToast('Lien indisponible'));
             }}
             style={styles.adCta}

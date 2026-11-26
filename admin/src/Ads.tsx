@@ -11,7 +11,9 @@ export type Campaign = {
   placements: Place[]; priority: 1 | 2 | 3; pacing: 'even' | 'fast';
 };
 type Place = 'edition' | 'flash' | 'rubrics';
-type Stat = { campaign_id: string; day: string; views: number; clicks: number; placement?: Place };
+/** impressions = pub apparue, même très brièvement ; views = affichages (1 s à l'écran) ; absente avant la migration 0039. */
+type Stat = { campaign_id: string; day: string; impressions?: number; views: number; clicks: number; placement?: Place };
+const imps = (s: Stat) => s.impressions ?? s.views;
 /** Rythme calculé par la base (fonction ad_report) : livré, part du jour, coefficient appliqué. */
 type Pace = { id: string; delivered: number; today: number; need_today: number | null; expected_now: number | null; days_left: number | null; factor: number };
 const PLACES: [Place, string][] = [['edition', 'Mon édition'], ['flash', 'Dernière minute'], ['rubrics', 'Rubriques']];
@@ -42,7 +44,7 @@ const demoStats: Stat[] = demoList.slice(0, 2).flatMap((c, k) =>
     campaign_id: c.id, day: dayShift(-i), placement: p,
     views: Math.round((900 + ((i * 37 + k * 11) % 400)) * (p === 'edition' ? 0.8 : 0.2) * (i === 0 ? 0.55 : 1)),
     clicks: Math.round((9 + ((i * 7 + k) % 12)) * (p === 'edition' ? 0.8 : 0.2)),
-  }))).flat());
+  }))).flat().map((s, i) => ({ ...s, impressions: Math.round(s.views * (1.25 + (i % 5) * 0.04)) })));
 
 const real = (sb: SupabaseClient) => ({
   list: async () => { const r = await sb.from('ad_campaigns').select('*').order('starts_on', { ascending: false }); if (r.error) throw new Error(r.error.message); return r.data as Campaign[]; },
@@ -155,12 +157,12 @@ export function AdsPage({ say }: { say: (m: string) => void }) {
   useEffect(() => { load(); }, []);
 
   const by = useMemo(() => {
-    const m: Record<string, { views: number; clicks: number; v7: number; c7: number }> = {};
+    const m: Record<string, { imps: number; views: number; clicks: number; i7: number; v7: number; c7: number }> = {};
     const from7 = dayShift(-6);
     for (const s of stats) {
-      const x = (m[s.campaign_id] ??= { views: 0, clicks: 0, v7: 0, c7: 0 });
-      x.views += s.views; x.clicks += s.clicks;
-      if (s.day >= from7) { x.v7 += s.views; x.c7 += s.clicks; }
+      const x = (m[s.campaign_id] ??= { imps: 0, views: 0, clicks: 0, i7: 0, v7: 0, c7: 0 });
+      x.imps += imps(s); x.views += s.views; x.clicks += s.clicks;
+      if (s.day >= from7) { x.i7 += imps(s); x.v7 += s.views; x.c7 += s.clicks; }
     }
     return m;
   }, [stats]);
@@ -180,7 +182,7 @@ export function AdsPage({ say }: { say: (m: string) => void }) {
   const plans = new Map(list.map((c) => [c.id, planOf(c, stats.filter((x) => x.campaign_id === c.id), pace.find((x) => x.id === c.id), states.get(c.id)!)]));
   const reserved = live.reduce((n, c) => n + (c.pacing === 'even' && !c.exclusive ? plans.get(c.id)?.need ?? 0 : 0), 0);
   const late = list.filter((c) => states.get(c.id) === 'live' && plans.get(c.id)?.tone === 'late');
-  const sum = (k: 'v7' | 'c7') => Object.values(by).reduce((n, x) => n + x[k], 0);
+  const sum = (k: 'i7' | 'v7' | 'c7') => Object.values(by).reduce((n, x) => n + x[k], 0);
   const from30 = dayShift(-29);
   const rev30 = list.reduce((n, c) => {
     if (c.pricing === 'flat') return n + (c.starts_on >= from30 && c.starts_on <= today() ? Number(c.price) : 0);
@@ -226,7 +228,8 @@ export function AdsPage({ say }: { say: (m: string) => void }) {
           <div className="tile-v">{capacity ? `≈ ${int(Math.round(capacity))}` : '—'}</div>
           <div className="muted small">{capacity ? `Objectifs en cours : ≈ ${int(Math.round(reserved))} par jour (${Math.round((reserved / capacity) * 100)} %)` : 'Pas encore d’historique : revenez dans quelques jours.'}</div>
         </div>
-        <div className="panel tile"><div className="muted small">Affichages, 7 jours</div><div className="tile-v">{int(sum('v7'))}</div></div>
+        <div className="panel tile"><div className="muted small">Impressions, 7 jours</div><div className="tile-v">{int(sum('i7'))}</div><div className="muted small">Pub apparue à l'écran, même un instant</div></div>
+        <div className="panel tile"><div className="muted small">Affichages, 7 jours</div><div className="tile-v">{int(sum('v7'))}</div><div className="muted small">Visibilité {pct(sum('v7'), sum('i7'))} (restée 1 s)</div></div>
         <div className="panel tile"><div className="muted small">Clics, 7 jours</div><div className="tile-v">{int(sum('c7'))}</div><div className="muted small">Taux de clic {pct(sum('c7'), sum('v7'))}</div></div>
         <div className="panel tile"><div className="muted small">Revenus estimés, 30 jours</div><div className="tile-v">{eur(rev30)}</div><div className="muted small">Affichages × prix pour 1 000, plus les forfaits commencés</div></div>
       </div>
@@ -239,11 +242,11 @@ export function AdsPage({ say }: { say: (m: string) => void }) {
       <h2>Campagnes</h2>
       {list.length ? (
         <table className="table">
-          <thead><tr><th>Campagne</th><th>Dates</th><th>Objectif</th><th>Affichages</th><th>Clics</th><th>Revenu estimé</th><th /></tr></thead>
+          <thead><tr><th>Campagne</th><th>Dates</th><th>Objectif</th><th>Impressions</th><th>Affichages</th><th>Clics</th><th>Revenu estimé</th><th /></tr></thead>
           <tbody>
             {list.map((c) => {
               const st = states.get(c.id)!;
-              const s = by[c.id] ?? { views: 0, clicks: 0 };
+              const s = by[c.id] ?? { imps: 0, views: 0, clicks: 0 };
               return (
                 <tr key={c.id}>
                   <td>
@@ -253,12 +256,14 @@ export function AdsPage({ say }: { say: (m: string) => void }) {
                   </td>
                   <td className="small">{fr(c.starts_on)} → {c.ends_on ? fr(c.ends_on) : 'sans fin'}</td>
                   <td>{plans.get(c.id) ? <Progress p={plans.get(c.id)!} /> : <span className="muted small">Aucun</span>}</td>
-                  <td>{int(s.views)}<Split stats={stats.filter((x) => x.campaign_id === c.id)} /></td>
+                  <td>{int(s.imps)}</td>
+                  <td>{int(s.views)}<div className="muted small">visibilité {pct(s.views, s.imps)}</div><Split stats={stats.filter((x) => x.campaign_id === c.id)} /></td>
                   <td>{int(s.clicks)}<div className="muted small">{pct(s.clicks, s.views)}</div></td>
                   <td>{eur(revenue(c, s.views))}<div className="muted small">{c.pricing === 'flat' ? 'forfait' : `${eur(Number(c.price))} / 1 000`}</div></td>
                   <td>
                     <div className="actions">
                       <button className="btn sm" onClick={() => setForm({ ...c })}>Modifier</button>
+                      <button className="btn sm" title="Tableau à envoyer à l'annonceur (s'ouvre dans Excel)" onClick={() => report(c, stats.filter((x) => x.campaign_id === c.id))}>Rapport</button>
                       <button className="btn sm" onClick={() => ads.save({ id: c.id, active: !c.active }).then(() => { load(); say(c.active ? 'Campagne en pause' : 'Campagne relancée'); }).catch(err)}>{c.active ? 'Pause' : 'Relancer'}</button>
                       <button className="btn sm ghost" onClick={() => { if (confirm(`Supprimer « ${c.name} » et ses statistiques ?`)) ads.remove(c.id).then(() => { load(); say('Campagne supprimée'); }).catch(err); }}>Supprimer</button>
                     </div>
@@ -269,9 +274,31 @@ export function AdsPage({ say }: { say: (m: string) => void }) {
           </tbody>
         </table>
       ) : <p className="muted">Aucune campagne pour l'instant.</p>}
-      <p className="muted small">Un affichage compte quand la pub reste une seconde à l'écran, app ouverte, une fois par emplacement et par ouverture de l'app. Chaque affichage porte un numéro unique : renvoyé deux fois, il ne compte qu'une fois. Hors ligne, l'app le garde et l'envoie au retour du réseau (jusqu'à 72 h). Au-delà de 30 affichages d'une même campagne par téléphone et par jour, ou de 3 000 par connexion, le surplus est ignoré (abus). Un clic ne compte que sur un affichage compté. Aucune donnée sur le lecteur n'est enregistrée. Le ciblage par rubrique ne s'applique qu'aux lecteurs qui ont accepté les pubs selon leurs centres d'intérêt ; les autres ne voient que les campagnes sans ciblage.</p>
+      <p className="muted small">Une impression compte dès que la pub apparaît à l'écran, même une fraction de seconde. Un affichage compte quand la pub reste une seconde à l'écran, app ouverte, une fois par emplacement et par ouverture de l'app. Chaque affichage porte un numéro unique : renvoyé deux fois, il ne compte qu'une fois. Hors ligne, l'app le garde et l'envoie au retour du réseau (jusqu'à 72 h). Au-delà de 30 affichages d'une même campagne par téléphone et par jour, ou de 3 000 par connexion, le surplus est ignoré (abus). Un clic ne compte que sur un affichage compté. Les objectifs et le prix pour 1 000 se calculent sur les affichages. « Rapport » télécharge le bilan jour par jour d'une campagne, prêt à envoyer à l'annonceur. Aucune donnée sur le lecteur n'est enregistrée. Le ciblage par rubrique ne s'applique qu'aux lecteurs qui ont accepté les pubs selon leurs centres d'intérêt ; les autres ne voient que les campagnes sans ciblage.</p>
     </>
   );
+}
+
+/** Bilan d'une campagne pour l'annonceur : un fichier CSV (Excel, Numbers, Google Sheets), jour par jour et par emplacement. */
+function report(c: Campaign, stats: Stat[]) {
+  const rows = [...stats].sort((a, b) => a.day.localeCompare(b.day) || (a.placement ?? '').localeCompare(b.placement ?? ''));
+  const rate = (a: number, b: number) => (b ? ((a / b) * 100).toFixed(2).replace('.', ',') : '');
+  const line = (cells: (string | number)[]) => cells.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(';');
+  const tot = rows.reduce((t, s) => ({ i: t.i + imps(s), v: t.v + s.views, k: t.k + s.clicks }), { i: 0, v: 0, k: 0 });
+  const csv = [
+    line([`Campagne : ${c.name}`]), line([`Annonceur : ${c.advertiser}`]),
+    line([`Période : du ${c.starts_on} au ${c.ends_on ?? today()}`]),
+    line(['Impression = pub apparue à l\'écran ; affichage = restée au moins 1 seconde, app ouverte ; clic = bouton touché après un affichage']),
+    '',
+    line(['Jour', 'Emplacement', 'Impressions', 'Affichages', 'Visibilité (%)', 'Clics', 'Taux de clic (%)']),
+    ...rows.map((s) => line([s.day, PLACES.find((p) => p[0] === (s.placement ?? 'edition'))?.[1] ?? '', imps(s), s.views, rate(s.views, imps(s)), s.clicks, rate(s.clicks, s.views)])),
+    line(['Total', '', tot.i, tot.v, rate(tot.v, tot.i), tot.k, rate(tot.k, tot.v)]),
+  ].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `rapport-${c.advertiser}-${c.name}.csv`.replace(/[^\w.-]+/g, '-');
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 /** Répartition des affichages par emplacement. */
