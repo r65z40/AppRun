@@ -338,7 +338,13 @@ function CardContent({ card, k, here, step, W, H, tag, why, api, bottom, tiltX, 
   const [whyOpen, setWhyOpen] = useState(false); // « Pourquoi cette info ? » ouvert
   // Lecteur d'écran (VoiceOver, TalkBack) : seule l'info à l'écran est lue ; on passe à la suivante par les actions du titre.
   const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
-  useEffect(() => { if (here && Platform.OS !== 'web' && titleRef.current) AccessibilityInfo.sendAccessibilityEvent(titleRef.current, 'focus'); }, [here]);
+  // Seulement si le lecteur d'écran est allumé : sinon cet appel fait parfois planter l'app sur iPhone (glissé, like, retour d'article).
+  useEffect(() => {
+    if (!here || Platform.OS === 'web') return;
+    AccessibilityInfo.isScreenReaderEnabled().then((on) => {
+      if (on && titleRef.current) AccessibilityInfo.sendAccessibilityEvent(titleRef.current, 'focus');
+    }).catch(() => {});
+  }, [here]);
   const nav = {
     ref: titleRef,
     accessibilityActions: [{ name: 'next', label: 'Info suivante' }, { name: 'prev', label: 'Info précédente' }],
