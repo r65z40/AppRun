@@ -105,7 +105,7 @@ export const cfg = {
 
 /** Photo des réglages utilisés, gardée dans le journal de chaque passage. */
 export function snapshot(kind: 'edition' | 'flash') {
-  const common = { modele: process.env.TITRE_MODEL || 'claude-opus-5-5', effort: cfg.effort(), consignes: cfg.guidelines() || '—', a_eviter: cfg.avoid() || '—' };
+  const common = { modele: process.env.TITRE_MODEL || 'claude-opus-5-5', modele_taches_simples: process.env.TITRE_MODEL_LIGHT || 'claude-haiku-5-5', effort: cfg.effort(), consignes: cfg.guidelines() || '—', a_eviter: cfg.avoid() || '—' };
   return kind === 'edition'
     ? {
         ...common, fenetre_h: cfg.windowHours(), par_rubrique: cfg.perRubric(), cartes_max: cfg.maxCards(), essentiels_max: cfg.maxEssential(),

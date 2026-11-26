@@ -902,7 +902,8 @@ function AIPage({ say, admin }: { say: (m: string) => void; admin: boolean }) {
           </section>
           <section className="panel settings">
             <h2>Comportement de l'IA</h2>
-            {st.Pick({ k: 'TITRE_MODEL', label: 'Modèle Claude', help: 'Opus écrit le mieux ; Sonnet et Haiku coûtent nettement moins cher.', def: 'claude-opus-5-5', options: MODELS })}
+            {st.Pick({ k: 'TITRE_MODEL', label: 'Modèle qui écrit les cartes', help: 'Opus écrit le mieux ; Sonnet est 2 fois moins cher, Haiku 40 fois.', def: 'claude-opus-5-5', options: MODELS })}
+            {st.Pick({ k: 'TITRE_MODEL_LIGHT', label: 'Modèle des tâches simples', help: 'Choisir les sujets, relire les cartes, Dernière minute et modération. Haiku suffit et coûte très peu.', def: 'claude-haiku-5-5', options: MODELS })}
             {st.Pick({ k: 'TITRE_EFFORT', label: 'Niveau de réflexion', help: "Plus de réflexion = sujets mieux choisis et cartes plus soignées, mais plus lent et plus cher.", def: 'medium', options: [['low', 'Rapide'], ['medium', 'Équilibré'], ['high', 'Approfondi']] })}
             {st.Text({ k: 'AI_GUIDELINES', label: 'Consignes de la rédaction', help: "Votre ligne éditoriale, donnée à l'IA à chaque passage (choix des sujets, écriture, Dernière minute). Elle ne peut pas l'amener à inventer ou déformer un fait.", placeholder: "Exemples :\n- Ton direct, phrases courtes, pas de jargon.\n- Toujours expliquer l'impact concret pour un jeune actif.\n- Privilégier les sujets européens en Monde." })}
             {st.Text({ k: 'AI_AVOID', label: 'Sujets à écarter', help: "L'IA ne retiendra jamais ces sujets, ni dans l'édition ni en Dernière minute.", placeholder: "Exemples :\n- Faits divers sans portée nationale\n- Rumeurs de transferts au football\n- Vie privée des célébrités" })}
