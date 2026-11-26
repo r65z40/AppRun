@@ -260,6 +260,8 @@ export function CommentsSheet({ a, open, onClose, H, comments, total, loading, o
           ))}
         </ScrollView>
         <View style={[styles.compose, { paddingBottom: Math.max(16, insets.bottom + 4) }]}>
+          {/* Fond de la barre, prolongé jusqu'en bas derrière le clavier. Placé en premier : il reste sous le champ et le bouton. */}
+          <View pointerEvents="none" style={styles.composeUnder} />
           <View style={{ flex: 1, justifyContent: 'center' }}>
             <TextInput
               value={txt}
@@ -279,8 +281,6 @@ export function CommentsSheet({ a, open, onClose, H, comments, total, loading, o
               <Icon name="send" size={20} />
             </LinearGradient>
           </Press>
-          {/* Prolonge le fond de la barre jusqu'en bas, derrière le clavier (sinon bande grise sur les côtés). */}
-          <View pointerEvents="none" style={styles.composeUnder} />
         </View>
       </KeyboardAvoidingView>
       {card ? <ReaderCardView who={card.who} card={card.data} onClose={() => setCard(null)} /> : null}
@@ -370,8 +370,8 @@ const styles = StyleSheet.create({
   cmtAct: { flexDirection: 'row', gap: 18, paddingLeft: 34, alignItems: 'center' },
   vote: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 28 },
   voteTxt: { color: C.text2, fontFamily: F.regular, fontSize: 12 },
-  composeUnder: { position: 'absolute', left: 0, right: 0, top: '100%', height: 1000, backgroundColor: alpha(C.night, 0.6) },
-  compose: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 18, paddingTop: 12, borderTopWidth: 1, borderColor: C.line, backgroundColor: alpha(C.night, 0.6) },
+  composeUnder: { position: 'absolute', left: 0, right: 0, top: 0, bottom: -1000, backgroundColor: alpha(C.night, 0.6) },
+  compose: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 18, paddingTop: 12, borderTopWidth: 1, borderColor: C.line },
   input: { height: 46, borderRadius: 15, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, color: '#fff', fontFamily: F.regular, fontSize: 15, paddingLeft: 14, paddingRight: 46 },
   count: { position: 'absolute', right: 12, color: C.text3, fontFamily: F.regular, fontSize: 11 },
   send: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
