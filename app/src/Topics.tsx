@@ -53,8 +53,8 @@ export function FollowRow({ a, onOpen, onToast }: { a: Article; onOpen: (topic: 
 /* ---------- Écran « Mes sujets » (liste, puis frise d'un sujet) ---------- */
 export function TopicsScreen({ W, start, onClose, onToast, onOpenArticle }: {
   W: number; start: string | null; onClose: () => void; onToast: (m: string) => void;
-  /** Ouvre une info de la frise si elle est dans l'édition chargée ; renvoie faux sinon. */
-  onOpenArticle: (id: string) => boolean;
+  /** Ouvre une info de la frise en grand ; renvoie faux si elle est introuvable. */
+  onOpenArticle: (id: string) => Promise<boolean>;
 }) {
   const insets = useSafeAreaInsets();
   const t = useTopics();
@@ -119,7 +119,7 @@ function TopicList({ t, onOpen, onToast, bottom }: { t: Topics | null; onOpen: (
 }
 
 /* ---------- La frise ---------- */
-function TimelineView({ topic, onToast, onOpenArticle, onUnfollow }: { topic: string; onToast: (m: string) => void; onOpenArticle: (id: string) => boolean; onUnfollow: () => void }) {
+function TimelineView({ topic, onToast, onOpenArticle, onUnfollow }: { topic: string; onToast: (m: string) => void; onOpenArticle: (id: string) => Promise<boolean>; onUnfollow: () => void }) {
   const insets = useSafeAreaInsets();
   const t = useTopics();
   const [tl, setTl] = useState<Timeline | null>(null);
@@ -157,7 +157,7 @@ function TimelineView({ topic, onToast, onOpenArticle, onUnfollow }: { topic: st
               {k < tl.items.length - 1 ? <View style={styles.line} /> : null}
             </View>
             <Pressable style={{ flex: 1, paddingBottom: 22 }} disabled={i.kind !== 'a'} accessibilityRole={i.kind === 'a' ? 'button' : undefined}
-              onPress={() => { if (!onOpenArticle(i.id)) onToast('Cette info date d’une édition précédente.'); }}>
+              onPress={async () => { if (!(await onOpenArticle(i.id))) onToast('Impossible d’ouvrir cette info pour le moment.'); }}>
               <Text style={styles.when}>{when(i.at).toUpperCase()}{i.kind === 'f' ? ' · DERNIÈRE MINUTE' : i.rubric ? ` · ${(RUBRIC_LIST.find((r) => r.id === i.rubric)?.name ?? '').toUpperCase()}` : ''}{i.fresh ? ' · NOUVEAU' : ''}</Text>
               <Text style={styles.stepT}>{i.title}</Text>
               <Text style={styles.stepP}>{i.sentence.replace(/<\/?b>/g, '')}</Text>

@@ -18,7 +18,7 @@ import { Bravo, End, Onboarding, PastDays, Settings, Splash, Toast, Welcome, typ
 import { initFeel, feel, prefs as feelPrefs } from './src/feel';
 import { syncWidget } from './src/headline';
 import { dayLabel, isoDay, shortDay } from './src/dates';
-import { WEEK, loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, weekScore, type AppMessage } from './src/remote';
+import { WEEK, loadArticle, loadConfig, loadEdition, loadFlashes, loadMessages, remoteConfigured, weekScore, type AppMessage } from './src/remote';
 import { Account } from './src/Account';
 import { Premium } from './src/Premium';
 import { ShareCardHost } from './src/ShareCard';
@@ -220,11 +220,11 @@ function Main() {
   // Appui sur une alerte « sujet suivi » : la frise du sujet s'ouvre.
   useEffect(() => (phase === 'feed' ? onAlertTap((t) => { setSummary(null); setTopicView(t); }) : undefined), [phase]);
   useEffect(() => (phase === 'feed' ? onRecapTap(() => { setSummary(null); setOverlay(null); onPast(WEEK); }) : undefined), [phase]);
-  const openFromTimeline = (id: string) => {
-    const a = RUBRICS.flatMap((r) => r.items).find((x) => x.id === id);
+  // Une info de la frise s'ouvre en grand par-dessus la frise (on y revient en fermant) ; une info d'un autre jour est chargée à part.
+  const openFromTimeline = async (id: string) => {
+    const a = RUBRICS.flatMap((r) => r.items).find((x) => x.id === id) ?? await loadArticle(id);
     if (!a) return false;
-    setTopicView(undefined);
-    setTimeout(() => openRead(a), 300);
+    openRead(a);
     return true;
   };
   // De temps en temps, pendant la lecture : proposer un compte (sans compte) ou Premium (compte gratuit).
@@ -687,6 +687,27 @@ function Main() {
         />
       ) : null}
 
+      {overlay === 'settings' ? (
+        <Settings
+          W={W}
+          prefs={p}
+          onSave={onSave}
+          onClose={() => setOverlay(null)}
+          account={me ? me.pseudo ?? '' : null}
+          onAccount={() => (acc.accountsOn ? setAccount({ reason: null }) : showToast('Les comptes arrivent avec la vraie base (mode démo).'))}
+          onResetTaste={onResetTaste}
+          onTopics={() => setTopicView(null)}
+          pastDay={pastDay}
+          onPast={onPast}
+          premium={premium}
+          onPremium={() => setShowPremium(true)}
+        />
+      ) : null}
+      {/* La frise d'un sujet sous la lecture : une info ouverte depuis la frise s'affiche par-dessus. */}
+      {topicView !== undefined ? (
+        <TopicsScreen W={W} start={topicView} onClose={() => setTopicView(undefined)} onToast={showToast} onOpenArticle={openFromTimeline} />
+      ) : null}
+
       <SummarySheet
         a={summary}
         open={!!summary}
@@ -716,25 +737,6 @@ function Main() {
         loadCard={(c) => (acc.isLive(c.id) ? acc.readerCard(c.id) : Promise.resolve(demoCard(c)))}
       />
 
-      {overlay === 'settings' ? (
-        <Settings
-          W={W}
-          prefs={p}
-          onSave={onSave}
-          onClose={() => setOverlay(null)}
-          account={me ? me.pseudo ?? '' : null}
-          onAccount={() => (acc.accountsOn ? setAccount({ reason: null }) : showToast('Les comptes arrivent avec la vraie base (mode démo).'))}
-          onResetTaste={onResetTaste}
-          onTopics={() => setTopicView(null)}
-          pastDay={pastDay}
-          onPast={onPast}
-          premium={premium}
-          onPremium={() => setShowPremium(true)}
-        />
-      ) : null}
-      {topicView !== undefined ? (
-        <TopicsScreen W={W} start={topicView} onClose={() => setTopicView(undefined)} onToast={showToast} onOpenArticle={openFromTimeline} />
-      ) : null}
       {overlay === 'bravo' ? (
         <Bravo
           n={seen.size}
